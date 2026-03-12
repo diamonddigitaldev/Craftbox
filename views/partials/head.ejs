@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= typeof title !== 'undefined' ? title + ' — Craftbox' : 'Craftbox' %></title>
+    <link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/vendor/material-icons/material-icons.css">
+    <link rel="stylesheet" href="/vendor/material-icons/outlined.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<% if (typeof navbar !== 'undefined' && navbar) { %>
+    <%- include('navbar', { user: typeof user !== 'undefined' ? user : null }) %>
+<% } %>
+<main class="<%= typeof fluid !== 'undefined' && fluid ? 'container-fluid' : 'container' %> py-4">
+    <%- include('flash', { messages: typeof messages !== 'undefined' ? messages : {} }) %>

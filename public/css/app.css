@@ -1,0 +1,146 @@
+/* ========================================
+   Craftbox — Custom Styles
+   ======================================== */
+
+:root {
+    --craftbox-green: #4caf50;
+    --console-bg: #0d1117;
+    --console-text: #c9d1d9;
+    --console-input-bg: #161b22;
+}
+
+/* ---- General ---- */
+body {
+    min-height: 100vh;
+    background-color: #0e0e10;
+}
+
+.card {
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ---- Server Cards ---- */
+.server-card {
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.server-card:hover {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* ---- State Badge Animations ---- */
+.badge .material-icons-outlined {
+    vertical-align: middle;
+}
+
+[data-state="starting"] .server-state-badge,
+[data-state="stopping"] .server-state-badge {
+    animation: pulse-badge 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ---- Console ---- */
+.console-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 240px);
+    min-height: 400px;
+    background: var(--console-bg);
+    overflow: hidden;
+}
+
+.console-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--console-text);
+    word-break: break-all;
+}
+
+.console-output::-webkit-scrollbar {
+    width: 8px;
+}
+
+.console-output::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.console-output::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+
+.console-output::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.console-line {
+    padding: 1px 0;
+    white-space: pre-wrap;
+}
+
+.console-line-info {
+    color: #58a6ff;
+}
+
+.console-line-warn {
+    color: #d29922;
+}
+
+.console-line-error {
+    color: #f85149;
+}
+
+.console-line-command {
+    color: var(--craftbox-green);
+}
+
+.console-input-bar {
+    background: var(--console-input-bg);
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.console-input-bar input {
+    outline: none;
+    box-shadow: none;
+    font-size: 0.85rem;
+}
+
+.console-input-bar input:focus {
+    box-shadow: none;
+}
+
+.console-prompt {
+    user-select: none;
+}
+
+/* ---- Toasts ---- */
+.toast-container .toast {
+    animation: toast-slide-in 0.35s ease-out;
+}
+
+@keyframes toast-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(2rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+    .console-container {
+        height: calc(100vh - 300px);
+        min-height: 300px;
+    }
+}

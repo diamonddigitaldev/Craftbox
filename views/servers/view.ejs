@@ -1,0 +1,142 @@
+<%- include('../partials/head', { title: server.name, navbar: true, fluid: true }) %>
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
+        <span class="material-icons-outlined" style="font-size: 1.2rem;">arrow_back</span>
+    </a>
+    <h4 class="mb-0"><%= server.name %></h4>
+    <%
+    const stateColors = {
+        stopped: 'secondary',
+        starting: 'info',
+        running: 'success',
+        stopping: 'warning',
+        crashed: 'danger'
+    };
+    const stateIcons = {
+        stopped: 'stop_circle',
+        starting: 'hourglass_top',
+        running: 'play_circle',
+        stopping: 'pending',
+        crashed: 'error'
+    };
+    const color = stateColors[server.state] || 'secondary';
+    const icon = stateIcons[server.state] || 'help';
+    %>
+    <span class="badge bg-<%= color %> d-flex align-items-center gap-1" id="server-state-badge">
+        <span class="material-icons-outlined" style="font-size: 0.9rem;" id="state-icon"><%= icon %></span>
+        <span id="state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
+    </span>
+    <span class="text-body-secondary ms-2" style="font-size: 0.85rem;">
+        Vanilla <%= server.version %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
+    </span>
+</div>
+
+<!-- Action Buttons -->
+<div class="d-flex flex-wrap gap-2 mb-3" id="server-controls">
+    <form method="POST" action="/servers/<%= server.id %>/start" class="d-inline server-action-form" data-action="start">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn btn-success btn-sm d-flex align-items-center gap-1"
+            <%= !['stopped', 'crashed'].includes(server.state) ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
+        </button>
+    </form>
+    <form method="POST" action="/servers/<%= server.id %>/stop" class="d-inline server-action-form" data-action="stop">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn btn-warning btn-sm d-flex align-items-center gap-1"
+            <%= !['running', 'starting'].includes(server.state) ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
+        </button>
+    </form>
+    <form method="POST" action="/servers/<%= server.id %>/restart" class="d-inline server-action-form" data-action="restart">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn btn-info btn-sm d-flex align-items-center gap-1"
+            <%= server.state !== 'running' ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
+        </button>
+    </form>
+    <form method="POST" action="/servers/<%= server.id %>/kill" class="d-inline server-action-form" data-action="kill">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1"
+            <%= !['running', 'starting', 'stopping'].includes(server.state) ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">dangerous</span> Kill
+        </button>
+    </form>
+
+    <div class="ms-auto d-flex gap-2">
+        <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
+            <input class="form-check-input" type="checkbox" id="autoRestart"
+                <%= server.autoRestart ? 'checked' : '' %>>
+            <label class="form-check-label small" for="autoRestart">Auto-restart on crash</label>
+        </div>
+        <form method="POST" action="/servers/<%= server.id %>/delete" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1"
+                <%= ['running', 'starting', 'stopping'].includes(server.state) ? 'disabled' : '' %>>
+                <span class="material-icons-outlined" style="font-size: 1rem;">delete</span> Delete
+            </button>
+        </form>
+    </div>
+</div>
+
+<% if (server.state === 'crashed') { %>
+<div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
+    <span class="material-icons-outlined">error</span>
+    <div>
+        Server crashed<%= server.crashReason === 'oom' ? ' due to <strong>Out of Memory</strong>' : '' %>.
+        Exit code: <strong><%= server.exitCode %></strong>.
+        <% if (server.autoRestart) { %>Auto-restart is enabled.<% } %>
+    </div>
+</div>
+<% } %>
+
+<!-- Console -->
+<div data-server-id="<%= server.id %>" data-server-state="<%= server.state %>" id="console-wrapper">
+    <%- include('../partials/console', { server }) %>
+</div>
+
+<!-- Kill Confirmation Modal -->
+<div class="modal fade" id="killModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-danger">dangerous</span>
+                    Force Kill Server
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                This will immediately terminate the server process. Unsaved world data may be lost.
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm" id="confirm-kill">Kill Server</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-danger">delete_forever</span>
+                    Delete Server
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                This will permanently delete <strong><%= server.name %></strong> and all of its files. This cannot be undone.
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm" id="confirm-delete">Delete Server</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/console.js'] }) %>

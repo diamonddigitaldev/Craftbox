@@ -1,0 +1,81 @@
+<%
+const stateColors = {
+    stopped: 'secondary',
+    starting: 'info',
+    running: 'success',
+    stopping: 'warning',
+    crashed: 'danger'
+};
+const stateIcons = {
+    stopped: 'stop_circle',
+    starting: 'hourglass_top',
+    running: 'play_circle',
+    stopping: 'pending',
+    crashed: 'error'
+};
+const color = stateColors[server.state] || 'secondary';
+const icon = stateIcons[server.state] || 'help';
+%>
+<div class="col-md-6 col-xl-4 mb-4">
+    <div class="card server-card h-100 border-<%= color %>" data-server-id="<%= server.id %>">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                    <h5 class="card-title mb-1">
+                        <a href="/servers/<%= server.id %>" class="text-decoration-none text-light"><%= server.name %></a>
+                    </h5>
+                    <small class="text-body-secondary">Vanilla <%= server.version %></small>
+                </div>
+                <span class="badge bg-<%= color %> d-flex align-items-center gap-1 server-state-badge">
+                    <span class="material-icons-outlined" style="font-size: 0.9rem;"><%= icon %></span>
+                    <span class="server-state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
+                </span>
+            </div>
+            <div class="d-flex gap-3 text-body-secondary mb-3" style="font-size: 0.85rem;">
+                <span class="d-flex align-items-center gap-1">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">lan</span>
+                    Port <%= server.port %>
+                </span>
+                <span class="d-flex align-items-center gap-1">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">memory</span>
+                    <%= server.memory %> MB
+                </span>
+            </div>
+            <div class="d-flex gap-2 server-actions">
+                <% if (['stopped', 'crashed'].includes(server.state)) { %>
+                    <form method="POST" action="/servers/<%= server.id %>/start" class="d-inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn btn-success btn-sm d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
+                        </button>
+                    </form>
+                <% } %>
+                <% if (['running', 'starting'].includes(server.state)) { %>
+                    <form method="POST" action="/servers/<%= server.id %>/stop" class="d-inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn btn-warning btn-sm d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
+                        </button>
+                    </form>
+                <% } %>
+                <% if (server.state === 'running') { %>
+                    <form method="POST" action="/servers/<%= server.id %>/restart" class="d-inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn btn-info btn-sm d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
+                        </button>
+                    </form>
+                <% } %>
+                <a href="/servers/<%= server.id %>" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1 ms-auto">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">terminal</span> Console
+                </a>
+            </div>
+        </div>
+        <% if (server.state === 'crashed') { %>
+        <div class="card-footer bg-danger bg-opacity-10 text-danger small">
+            <span class="material-icons-outlined align-middle me-1" style="font-size: 1rem;">warning</span>
+            Server crashed<%= server.crashReason === 'oom' ? ' (Out of Memory)' : '' %> — Exit code: <%= server.exitCode %>
+        </div>
+        <% } %>
+    </div>
+</div>

@@ -1,0 +1,104 @@
+// Dashboard WebSocket client for live server state updates
+(function () {
+    const grid = document.getElementById('server-grid');
+    if (!grid) return;
+
+    const stateColors = {
+        stopped: 'secondary',
+        starting: 'info',
+        running: 'success',
+        stopping: 'warning',
+        crashed: 'danger'
+    };
+    const stateIcons = {
+        stopped: 'stop_circle',
+        starting: 'hourglass_top',
+        running: 'play_circle',
+        stopping: 'pending',
+        crashed: 'error'
+    };
+
+    let ws = null;
+    let reconnectAttempts = 0;
+
+    // Collect all server IDs on the page
+    function getServerIds() {
+        const cards = grid.querySelectorAll('.server-card');
+        return Array.from(cards).map(c => c.dataset.serverId).filter(Boolean);
+    }
+
+    function connect() {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${location.host}`);
+
+        ws.onopen = () => {
+            reconnectAttempts = 0;
+            // Subscribe to all servers
+            getServerIds().forEach(id => {
+                ws.send(JSON.stringify({ type: 'subscribe', serverId: id }));
+            });
+        };
+
+        ws.onmessage = (event) => {
+            let msg;
+            try {
+                msg = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+
+            if (msg.type === 'state' && msg.serverId) {
+                updateCard(msg.serverId, msg.state);
+            }
+        };
+
+        ws.onclose = () => {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+            setTimeout(connect, delay);
+        };
+
+        ws.onerror = () => {};
+    }
+
+    function updateCard(serverId, state) {
+        const card = grid.querySelector(`.server-card[data-server-id="${serverId}"]`);
+        if (!card) return;
+
+        const color = stateColors[state] || 'secondary';
+        const icon = stateIcons[state] || 'help';
+
+        // Update badge
+        const badge = card.querySelector('.server-state-badge');
+        if (badge) {
+            badge.className = `badge bg-${color} d-flex align-items-center gap-1 server-state-badge`;
+            const iconEl = badge.querySelector('.material-icons-outlined');
+            if (iconEl) iconEl.textContent = icon;
+            const textEl = badge.querySelector('.server-state-text');
+            if (textEl) textEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+        }
+
+        // Update card border
+        card.className = card.className.replace(/border-\w+/g, '') + ` border-${color}`;
+        card.dataset.state = state;
+    }
+
+    // Periodic state refresh as a fallback
+    async function refreshStates() {
+        try {
+            const res = await fetch('/api/servers');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.servers) {
+                data.servers.forEach(s => updateCard(s.id, s.state));
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    // Refresh every 30 seconds as fallback
+    setInterval(refreshStates, 30000);
+
+    connect();
+})();

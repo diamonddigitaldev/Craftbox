@@ -1,0 +1,121 @@
+<%- include('../partials/head', { title: 'Create Server', navbar: true }) %>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+        <div class="d-flex align-items-center gap-2 mb-4">
+            <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
+                <span class="material-icons-outlined" style="font-size: 1.2rem;">arrow_back</span>
+            </a>
+            <h4 class="mb-0">Create New Server</h4>
+        </div>
+
+        <div class="card">
+            <div class="card-body p-4">
+                <form method="POST" action="/servers/create" id="create-server-form" novalidate>
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Server Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required
+                            minlength="1" maxlength="50" pattern="[a-zA-Z0-9 _\-]+"
+                            placeholder="My Minecraft Server" autofocus>
+                        <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="version" class="form-label">Minecraft Version</label>
+                            <select class="form-select" id="version" name="version" required>
+                                <option value="" disabled selected>Loading versions...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mt-3 mt-md-0">
+                            <label for="port" class="form-label">Server Port</label>
+                            <input type="number" class="form-control" id="port" name="port"
+                                value="25565" min="1024" max="65535" required>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="gamemode" class="form-label">Game Mode</label>
+                            <select class="form-select" id="gamemode" name="gamemode">
+                                <option value="survival" selected>Survival</option>
+                                <option value="creative">Creative</option>
+                                <option value="adventure">Adventure</option>
+                                <option value="spectator">Spectator</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mt-3 mt-md-0">
+                            <label for="difficulty" class="form-label">Difficulty</label>
+                            <select class="form-select" id="difficulty" name="difficulty">
+                                <option value="peaceful">Peaceful</option>
+                                <option value="easy" selected>Easy</option>
+                                <option value="normal">Normal</option>
+                                <option value="hard">Hard</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mt-3 mt-md-0">
+                            <label for="seed" class="form-label">World Seed</label>
+                            <input type="text" class="form-control" id="seed" name="seed"
+                                placeholder="Optional">
+                        </div>
+                    </div>
+
+                    <!-- Advanced Options -->
+                    <div class="mb-3">
+                        <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+                           data-bs-toggle="collapse" href="#advancedOptions" role="button" aria-expanded="false">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">tune</span>
+                            Advanced Options
+                        </a>
+                        <div class="collapse mt-3" id="advancedOptions">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="memory" class="form-label">Memory (MB)</label>
+                                    <input type="number" class="form-control" id="memory" name="memory"
+                                        value="2048" min="512" max="65536" step="256" required>
+                                    <div class="form-text">RAM allocated to the server (-Xmx).</div>
+                                </div>
+                                <div class="col-md-6 mt-3 mt-md-0">
+                                    <label for="javaArgs" class="form-label">Additional JVM Arguments</label>
+                                    <input type="text" class="form-control" id="javaArgs" name="javaArgs"
+                                        placeholder="-XX:+UseG1GC">
+                                    <div class="form-text">Optional. Extra Java flags.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <div class="form-check mb-4">
+                        <input class="form-check-input" type="checkbox" id="eula" name="eula" required>
+                        <label class="form-check-label" for="eula">
+                            I agree to the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener noreferrer">Minecraft End User License Agreement</a>
+                        </label>
+                        <div class="form-text">You must accept the EULA before creating a server.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2" id="create-btn" disabled>
+                        <span class="material-icons-outlined" style="font-size: 1.2rem;">add</span>
+                        Create Server
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress overlay (shown during server creation) -->
+<div id="create-overlay" class="d-none position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1050; background: rgba(0, 0, 0, 0.75);">
+    <div class="text-center">
+        <div class="spinner-border text-success mb-3" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Creating server...</span>
+        </div>
+        <h5 class="mb-1">Setting up your [SERVER TYPE HERE][SERVER VERSION HERE] server...</h5>
+        <p class="text-body-secondary mb-0">Downloading Minecraft server executable. This may take a minute.</p>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/create.js'] }) %>

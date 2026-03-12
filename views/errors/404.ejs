@@ -1,0 +1,13 @@
+<%- include('../partials/head', { title: '404', navbar: typeof user !== 'undefined' && user, fluid: false }) %>
+
+<div class="text-center py-5">
+    <span class="material-icons-outlined text-body-secondary mb-3" style="font-size: 5rem;">search_off</span>
+    <h2 class="fw-bold">404 — Not Found</h2>
+    <p class="text-body-secondary mb-4"><%= typeof message !== 'undefined' && message ? message : 'The page you are looking for does not exist.' %></p>
+    <a href="/dashboard" class="btn btn-outline-success d-inline-flex align-items-center gap-2">
+        <span class="material-icons-outlined" style="font-size: 1.2rem;">home</span>
+        Back to Dashboard
+    </a>
+</div>
+
+<%- include('../partials/foot', { scripts: [] }) %>

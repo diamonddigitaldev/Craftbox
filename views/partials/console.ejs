@@ -1,0 +1,22 @@
+<div class="console-container rounded border border-secondary" id="console-container">
+    <div class="console-output font-monospace" id="console-output">
+        <div class="text-body-secondary text-center py-3" id="console-placeholder">
+            <span class="material-icons-outlined d-block mb-2" style="font-size: 2rem;">terminal</span>
+            Waiting for console output...
+        </div>
+    </div>
+    <div class="console-input-bar border-top border-secondary d-flex align-items-center">
+        <span class="console-prompt text-success px-2 font-monospace fw-bold">&gt;</span>
+        <input
+            type="text"
+            id="console-input"
+            class="form-control bg-transparent text-light border-0 font-monospace"
+            placeholder="Type a command..."
+            autocomplete="off"
+            <% if (typeof server !== 'undefined' && !['running'].includes(server.state)) { %>disabled<% } %>
+        >
+        <button id="console-send" class="btn btn-sm btn-outline-success me-2 d-flex align-items-center" title="Send">
+            <span class="material-icons-outlined" style="font-size: 1.1rem;">send</span>
+        </button>
+    </div>
+</div>

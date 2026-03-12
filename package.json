@@ -1,0 +1,45 @@
+{
+    "name": "craftbox",
+    "version": "1.0.0",
+    "description": "Configure and manage multiple Minecraft servers from a single user-friendly web interface.",
+    "main": "src/server.js",
+    "funding": {
+        "type": "buymeacoffee",
+        "url": "https://www.buymeacoffee.com/willtda"
+    },
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "start": "node src/server.js",
+        "dev": "node --watch src/server.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/WillTDA/Craftbox"
+    },
+    "keywords": [
+        "minecraft",
+        "server",
+        "management",
+        "admin",
+        "dashboard",
+        "utility",
+        "tool",
+        "self-hosted"
+    ],
+    "author": "Diamond Digital Development <https://diamonddigital.dev>",
+    "license": "AGPL-3.0-only",
+    "dependencies": {
+        "bcrypt": "^6.0.0",
+        "better-sqlite3": "^12.6.2",
+        "bootstrap": "^5.3.8",
+        "ejs": "^5.0.1",
+        "express": "^5.2.1",
+        "express-session": "^1.19.0",
+        "material-icons": "^1.13.14",
+        "passport": "^0.7.0",
+        "passport-local": "^1.0.0",
+        "quick.db": "^9.1.7",
+        "uuid": "^13.0.0",
+        "ws": "^8.19.0"
+    }
+}

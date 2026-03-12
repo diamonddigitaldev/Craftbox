@@ -1,0 +1,32 @@
+<%- include('partials/head', { title: 'Dashboard', navbar: true, fluid: true }) %>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0 d-flex align-items-center gap-2">
+        <span class="material-icons-outlined">dns</span>
+        Servers
+    </h4>
+    <a href="/servers/create" class="btn btn-success d-flex align-items-center gap-1">
+        <span class="material-icons-outlined" style="font-size: 1.2rem;">add</span>
+        New Server
+    </a>
+</div>
+
+<% if (servers && servers.length > 0) { %>
+    <div class="row" id="server-grid">
+        <% servers.forEach(function(server) { %>
+            <%- include('partials/serverCard', { server, csrfToken }) %>
+        <% }) %>
+    </div>
+<% } else { %>
+    <div class="text-center py-5">
+        <span class="material-icons-outlined text-body-secondary mb-3" style="font-size: 4rem;">dns</span>
+        <h5 class="text-body-secondary">No servers yet</h5>
+        <p class="text-body-secondary mb-4">Create your first Minecraft server to get started.</p>
+        <a href="/servers/create" class="btn btn-success btn-lg d-inline-flex align-items-center gap-2">
+            <span class="material-icons-outlined">add</span>
+            Create Server
+        </a>
+    </div>
+<% } %>
+
+<%- include('partials/foot', { scripts: ['/js/dashboard.js'] }) %>

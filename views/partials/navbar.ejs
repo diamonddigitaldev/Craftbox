@@ -1,0 +1,39 @@
+<nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
+    <div class="container-fluid">
+        <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="/dashboard">
+            <span class="material-icons-outlined" style="font-size: 1.6rem; color: var(--bs-success);">inventory_2</span>
+            Craftbox
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="/dashboard">
+                        <span class="material-icons-outlined align-middle me-1" style="font-size: 1.2rem;">dashboard</span>Dashboard
+                    </a>
+                </li>
+            </ul>
+            <% if (user) { %>
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary btn-sm dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
+                    <span class="material-icons-outlined" style="font-size: 1.2rem;">account_circle</span>
+                    <%= user.username %>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                        <form method="POST" action="/logout">
+                            <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+                            <button type="submit" class="dropdown-item d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined" style="font-size: 1.2rem;">logout</span>
+                                Log Out
+                            </button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+            <% } %>
+        </div>
+    </div>
+</nav>
