@@ -34,6 +34,4 @@ RUN groupadd -r craftbox && useradd -r -g craftbox craftbox && \
     chown -R craftbox:craftbox /app
 USER craftbox
 
-ENV NODE_ENV=production
-
 CMD ["node", "src/server.js"]

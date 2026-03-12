@@ -13,7 +13,8 @@ services:
       - craftbox-data:/app/data
     environment:
       - LOG_LEVEL=INFO
-      # - PORT=6464
+      # - NODE_ENV=production # Will require HTTPS for secure cookies, so only enable if you have a reverse proxy with SSL
+      # - PORT=6464 # Change if you want to run the web panel on a different port
     stop_grace_period: 45s
 
 volumes:
