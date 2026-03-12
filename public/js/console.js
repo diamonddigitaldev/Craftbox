@@ -152,9 +152,12 @@
             }
         });
 
-        // Update console input
+        // Update console input and send button
         if (input) {
             input.disabled = state !== 'running';
+        }
+        if (sendBtn) {
+            sendBtn.disabled = state !== 'running';
         }
 
         // Update delete button

@@ -5,12 +5,21 @@ eulaCheck.addEventListener('change', () => {
     createBtn.disabled = !eulaCheck.checked;
 });
 
-// Show progress overlay on form submit
+// Show progress overlay on form submit and disable button
 const form = document.getElementById('create-server-form');
 form.addEventListener('submit', () => {
     const overlay = document.getElementById('create-overlay');
     overlay.classList.remove('d-none');
     createBtn.disabled = true;
+    createBtn.innerHTML =
+        '<span class="spinner-border spinner-border-sm" role="status"></span> Creating...';
+
+    // Set overlay title with version
+    const version = document.getElementById('version');
+    const title = document.getElementById('create-overlay-title');
+    if (title && version && version.value) {
+        title.textContent = 'Setting up your Vanilla ' + version.value + ' server...';
+    }
 });
 
 // Fetch Minecraft versions

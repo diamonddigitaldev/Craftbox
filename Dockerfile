@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jre-noble
+FROM eclipse-temurin:25-jre-noble
 
 # Install Node.js 22.x LTS
 RUN apt-get update && \
@@ -23,7 +23,7 @@ RUN mkdir -p /app/data/servers
 
 # Expose panel port and Minecraft server port range
 EXPOSE 6464
-EXPOSE 25565-25575
+EXPOSE 25500-25600
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

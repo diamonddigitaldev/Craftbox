@@ -12,7 +12,6 @@ services:
     volumes:
       - craftbox-data:/app/data
     environment:
-      - NODE_ENV=production
       - LOG_LEVEL=INFO
       # - PORT=6464
     stop_grace_period: 45s
