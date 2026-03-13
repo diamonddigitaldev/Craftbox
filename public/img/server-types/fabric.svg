@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Fabric - interwoven pattern inspired by Fabric's logo -->
+  <circle cx="32" cy="32" r="28" fill="#DBD0B4" opacity="0.2"/>
+  <!-- Woven strands -->
+  <path d="M16 16c8 0 8 8 16 8s8-8 16-8" stroke="#BFA97A" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M16 28c8 0 8 8 16 8s8-8 16-8" stroke="#8D764B" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M16 40c8 0 8 8 16 8s8-8 16-8" stroke="#BFA97A" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <!-- Vertical cross-threads -->
+  <path d="M24 12v40" stroke="#A68F5B" stroke-width="3" stroke-linecap="round" stroke-dasharray="6 6" opacity="0.5"/>
+  <path d="M40 12v40" stroke="#A68F5B" stroke-width="3" stroke-linecap="round" stroke-dasharray="6 6" opacity="0.5"/>
+</svg>

@@ -7,8 +7,9 @@ const BASE = 'https://meta.fabricmc.net/v2';
 module.exports = {
     id: 'fabric',
     name: 'Fabric',
-    description: 'Lightweight modding framework',
+    description: 'Lightweight modding ecosystem',
     icon: 'style',
+    logo: '/img/server-types/fabric.svg',
 
     async listVersions() {
         const res = await fetch(`${BASE}/versions/game`);

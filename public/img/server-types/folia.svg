@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Folia - leaf symbol (folia = leaves in Latin) -->
+  <circle cx="32" cy="32" r="28" fill="#1B5E20" opacity="0.15"/>
+  <path d="M32 8C20 20 14 36 18 50c4-8 10-14 14-16 4 2 10 8 14 16 4-14-2-30-14-42z" fill="#4CAF50"/>
+  <!-- Leaf vein -->
+  <path d="M32 16v32" stroke="#2E7D32" stroke-width="2" stroke-linecap="round"/>
+  <path d="M32 24l-8 8M32 30l-6 6M32 24l8 8M32 30l6 6" stroke="#2E7D32" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

@@ -1,8 +1,23 @@
-FROM eclipse-temurin:25-jre-noble
+FROM ubuntu:24.04
 
-# Install Node.js 22.x LTS
+# Install multiple Java versions (Adoptium Temurin JREs) + Node.js
 RUN apt-get update && \
-    apt-get install -y curl && \
+    apt-get install -y curl gnupg software-properties-common && \
+    # Add Adoptium repository for Temurin JREs
+    curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | \
+        gpg --dearmor -o /usr/share/keyrings/adoptium.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb noble main" \
+        > /etc/apt/sources.list.d/adoptium.list && \
+    apt-get update && \
+    # Java 8  — MC 1.7–1.16
+    apt-get install -y temurin-8-jre && \
+    # Java 17 — MC 1.17–1.20.4
+    apt-get install -y temurin-17-jre && \
+    # Java 21 — MC 1.20.5+
+    apt-get install -y temurin-21-jre && \
+    # Java 25 — latest, default fallback
+    apt-get install -y temurin-25-jre && \
+    # Node.js 22.x LTS
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*

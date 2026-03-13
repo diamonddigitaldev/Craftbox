@@ -7,8 +7,9 @@ const BASE = 'https://api.purpurmc.org/v2/purpur';
 module.exports = {
     id: 'purpur',
     name: 'Purpur',
-    description: 'Paper fork with extra features',
+    description: 'Feature-rich, customisable Paper fork',
     icon: 'blur_on',
+    logo: '/img/server-types/purpur.svg',
 
     async listVersions() {
         const res = await fetch(BASE);

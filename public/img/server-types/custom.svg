@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Custom - upload/package icon -->
+  <rect x="8" y="20" width="48" height="36" rx="4" fill="#424242"/>
+  <rect x="8" y="20" width="48" height="12" rx="4" fill="#616161"/>
+  <!-- Upload arrow -->
+  <path d="M32 14l8 8h-5v10h-6V22h-5l8-8z" fill="#90CAF9"/>
+  <!-- Package detail lines -->
+  <rect x="16" y="40" width="12" height="3" rx="1.5" fill="#757575"/>
+  <rect x="16" y="46" width="20" height="3" rx="1.5" fill="#757575"/>
+  <!-- Dot indicators -->
+  <circle cx="44" cy="26" r="3" fill="#4CAF50"/>
+</svg>

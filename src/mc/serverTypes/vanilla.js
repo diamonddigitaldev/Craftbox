@@ -7,8 +7,9 @@ const VERSION_MANIFEST_URL = 'https://launchermeta.mojang.com/mc/game/version_ma
 module.exports = {
     id: 'vanilla',
     name: 'Vanilla',
-    description: 'Official Mojang server',
+    description: 'Official Minecraft server from Mojang',
     icon: 'cube',
+    logo: '/img/server-types/vanilla.svg',
 
     async listVersions() {
         const res = await fetch(VERSION_MANIFEST_URL);

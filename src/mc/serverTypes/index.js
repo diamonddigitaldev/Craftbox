@@ -3,9 +3,10 @@ const paper = require('./paper');
 const folia = require('./folia');
 const purpur = require('./purpur');
 const fabric = require('./fabric');
+const forge = require('./forge');
 const custom = require('./custom');
 
-const providers = { vanilla, paper, folia, purpur, fabric, custom };
+const providers = { vanilla, forge, fabric, paper, purpur, folia, custom };
 
 function getProvider(type) {
     return providers[type] || null;
@@ -16,7 +17,8 @@ function listProviders() {
         id: p.id,
         name: p.name,
         description: p.description,
-        icon: p.icon
+        icon: p.icon,
+        logo: p.logo || null
     }));
 }
 

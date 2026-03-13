@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Forge - anvil/hammer symbol -->
+  <!-- Anvil body -->
+  <path d="M14 36h36v6a4 4 0 01-4 4H18a4 4 0 01-4-4v-6z" fill="#455A64"/>
+  <rect x="20" y="30" width="24" height="6" rx="1" fill="#607D8B"/>
+  <rect x="24" y="24" width="16" height="6" rx="1" fill="#78909C"/>
+  <!-- Anvil horn -->
+  <path d="M40 28h10a4 4 0 010 8H40" fill="#546E7A"/>
+  <!-- Hammer -->
+  <rect x="29" y="6" width="6" height="20" rx="2" fill="#8D6E63"/>
+  <rect x="22" y="4" width="20" height="8" rx="3" fill="#37474F"/>
+  <!-- Sparks -->
+  <circle cx="18" cy="28" r="2" fill="#FFB74D" opacity="0.8"/>
+  <circle cx="12" cy="24" r="1.5" fill="#FFA726" opacity="0.6"/>
+  <circle cx="16" cy="20" r="1" fill="#FFCC02" opacity="0.7"/>
+  <!-- Base -->
+  <rect x="10" y="46" width="44" height="6" rx="3" fill="#37474F"/>
+</svg>

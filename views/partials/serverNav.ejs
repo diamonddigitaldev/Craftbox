@@ -25,7 +25,8 @@ const _icon = _stateIcons[server.state] || 'help';
         <span class="material-icons-outlined" style="font-size: 0.9rem;" id="state-icon"><%= _icon %></span>
         <span id="state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
     </span>
-    <span class="text-body-secondary ms-2" style="font-size: 0.85rem;">
+    <span class="text-body-secondary ms-2 d-flex align-items-center gap-1" style="font-size: 0.85rem;">
+        <img src="/img/server-types/<%= server.serverType || 'vanilla' %>.svg" alt="" class="server-type-logo">
         <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= server.version %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
     </span>
 </div>

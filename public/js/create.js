@@ -57,8 +57,11 @@ function renderTypeCards(types) {
         card.className = 'card type-card text-center p-2' + (t.id === selectedType ? ' selected' : '');
         card.dataset.type = t.id;
         card.setAttribute('role', 'button');
+        const iconHtml = t.logo
+            ? `<img src="${t.logo}" alt="${t.name}" class="type-card-logo mb-1">`
+            : `<span class="material-icons-outlined mb-1" style="font-size: 2rem;">${t.icon}</span>`;
         card.innerHTML = `
-            <span class="material-icons-outlined mb-1" style="font-size: 2rem;">${t.icon}</span>
+            ${iconHtml}
             <div class="small fw-semibold">${t.name}</div>
             <div class="text-body-secondary" style="font-size: 0.7rem;">${t.description}</div>
         `;

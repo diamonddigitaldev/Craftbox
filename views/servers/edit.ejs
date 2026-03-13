@@ -121,6 +121,35 @@
             </div>
         </div>
     </div>
+
+        <!-- Update Checker -->
+        <% if ((server.serverType || 'vanilla') !== 'custom') { %>
+        <div class="card mt-3">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <h6 class="mb-1">Server Jar Updates</h6>
+                        <small class="text-body-secondary" id="update-status">
+                            <% if (server.build) { %>
+                                Current build: #<%= server.build %>
+                            <% } else { %>
+                                No build number recorded.
+                            <% } %>
+                        </small>
+                    </div>
+                    <div class="d-flex gap-2" id="update-actions">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                            id="check-update-btn" data-server-id="<%= server.id %>">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">refresh</span>
+                            Check for Updates
+                        </button>
+                    </div>
+                </div>
+                <div id="update-result" class="d-none mt-2"></div>
+            </div>
+        </div>
+        <% } %>
+    </div>
 </div>
 
 <!-- Restart Required Modal -->

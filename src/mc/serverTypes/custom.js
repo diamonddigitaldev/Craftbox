@@ -5,8 +5,9 @@ const { log } = require('../../utils/log');
 module.exports = {
     id: 'custom',
     name: 'Custom',
-    description: 'Provide your own server jar URL',
+    description: 'Bring your own server jar via URL',
     icon: 'upload_file',
+    logo: '/img/server-types/custom.svg',
 
     async listVersions() {
         // Custom type has no version list

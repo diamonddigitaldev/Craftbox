@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Purpur block - purple prismarine-like pattern -->
+  <rect x="4" y="4" width="56" height="56" rx="6" fill="#9C27B0"/>
+  <!-- Purpur pillar texture pattern -->
+  <rect x="12" y="12" width="16" height="16" rx="2" fill="#AB47BC" opacity="0.6"/>
+  <rect x="36" y="12" width="16" height="16" rx="2" fill="#CE93D8" opacity="0.4"/>
+  <rect x="12" y="36" width="16" height="16" rx="2" fill="#CE93D8" opacity="0.4"/>
+  <rect x="36" y="36" width="16" height="16" rx="2" fill="#AB47BC" opacity="0.6"/>
+  <!-- Center diamond accent -->
+  <path d="M32 20l8 12-8 12-8-12z" fill="#E1BEE7" opacity="0.5"/>
+</svg>

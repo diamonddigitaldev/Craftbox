@@ -3,37 +3,69 @@ const path = require('path');
 const { log } = require('../../utils/log');
 
 /**
- * Factory that creates a provider for any PaperMC API v2 project
- * (Paper, Folia, Velocity, etc.).
+ * Factory that creates a provider for any PaperMC API v3 project
+ * (Paper, Folia, Velocity, etc.) using fill.papermc.io.
  */
-function createPaperApiProvider({ project, id, name, description, icon }) {
-    const BASE = `https://api.papermc.io/v2/projects/${project}`;
+function createPaperApiProvider({ project, id, name, description, icon, logo }) {
+    const BASE = `https://fill.papermc.io/v3/projects/${project}`;
 
     return {
         id,
         name,
         description,
         icon,
+        logo,
 
         async listVersions() {
             const res = await fetch(BASE);
             if (!res.ok) throw new Error(`Failed to fetch ${name} versions: HTTP ${res.status}`);
             const data = await res.json();
 
-            // API returns versions oldest-first; reverse for newest-first
-            const versions = [...data.versions].reverse().map(v => ({ id: v }));
-            return { versions, latest: versions[0]?.id || null };
+            // v3 returns versions grouped by major: { versions: { "1.21": ["1.21.11", ...], "1.20": [...] } }
+            const grouped = data.versions;
+            if (!grouped || typeof grouped !== 'object') {
+                throw new Error(`Unexpected ${name} API response format.`);
+            }
+
+            // Sort major version keys descending (e.g. 1.21 before 1.20)
+            const majorKeys = Object.keys(grouped).sort((a, b) => {
+                const aParts = a.split('.').map(Number);
+                const bParts = b.split('.').map(Number);
+                for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+                    const diff = (bParts[i] || 0) - (aParts[i] || 0);
+                    if (diff !== 0) return diff;
+                }
+                return 0;
+            });
+
+            // Flatten into a single newest-first array
+            const allVersions = [];
+            for (const major of majorKeys) {
+                // Sub-versions within each group: reverse for newest-first
+                const subVersions = [...grouped[major]].reverse();
+                allVersions.push(...subVersions);
+            }
+
+            return {
+                versions: allVersions.map(v => ({ id: v })),
+                latest: allVersions[0] || null
+            };
         },
 
         async getBuilds(version) {
-            const res = await fetch(`${BASE}/versions/${version}/builds`);
+            const res = await fetch(`${BASE}/versions/${version}/builds?channel=STABLE`);
             if (!res.ok) throw new Error(`Failed to fetch ${name} builds for ${version}: HTTP ${res.status}`);
             const data = await res.json();
 
-            // Return builds newest-first
-            return data.builds
-                .map(b => ({ build: b.build, channel: b.channel }))
-                .reverse();
+            // v3 returns an array of build objects:
+            // { id, time, channel, downloads: { "server:default": { name, url, checksums, size } } }
+            if (!Array.isArray(data)) {
+                throw new Error(`Unexpected ${name} builds response format.`);
+            }
+
+            return data
+                .map(b => ({ build: b.id, channel: b.channel }))
+                .reverse(); // newest-first
         },
 
         async downloadJar(version, build, destPath) {
@@ -46,16 +78,18 @@ function createPaperApiProvider({ project, id, name, description, icon }) {
                 build = builds[0].build;
             }
 
-            // Get the download filename
+            // Fetch build details to get the direct download URL
             const buildRes = await fetch(`${BASE}/versions/${version}/builds/${build}`);
             if (!buildRes.ok) throw new Error(`Failed to fetch ${name} build info: HTTP ${buildRes.status}`);
             const buildData = await buildRes.json();
 
-            const filename = buildData.downloads?.application?.name;
-            if (!filename) throw new Error(`No download available for ${name} ${version} build ${build}.`);
+            const download = buildData.downloads?.['server:default'];
+            if (!download || !download.url) {
+                throw new Error(`No download available for ${name} ${version} build ${build}.`);
+            }
 
             log('info', `Downloading ${name} ${version} build ${build}...`);
-            const jarRes = await fetch(`${BASE}/versions/${version}/builds/${build}/downloads/${filename}`);
+            const jarRes = await fetch(download.url);
             if (!jarRes.ok) throw new Error(`Failed to download ${name} jar: HTTP ${jarRes.status}`);
 
             fs.mkdirSync(path.dirname(destPath), { recursive: true });

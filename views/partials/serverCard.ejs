@@ -24,7 +24,10 @@ const icon = stateIcons[server.state] || 'help';
                     <h5 class="card-title mb-1">
                         <a href="/servers/<%= server.id %>" class="text-decoration-none text-light"><%= server.name %></a>
                     </h5>
-                    <small class="text-body-secondary"><%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= server.version %></small>
+                    <small class="text-body-secondary d-flex align-items-center gap-1">
+                        <img src="/img/server-types/<%= server.serverType || 'vanilla' %>.svg" alt="" class="server-type-logo">
+                        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= server.version %>
+                    </small>
                 </div>
                 <span class="badge bg-<%= color %> d-flex align-items-center gap-1 server-state-badge">
                     <span class="material-icons-outlined" style="font-size: 0.9rem;"><%= icon %></span>

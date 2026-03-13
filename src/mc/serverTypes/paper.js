@@ -4,6 +4,7 @@ module.exports = createPaperApiProvider({
     project: 'paper',
     id: 'paper',
     name: 'Paper',
-    description: 'High performance Spigot fork',
-    icon: 'description'
+    description: 'Fast, stable plugin server standard',
+    icon: 'description',
+    logo: '/img/server-types/paper.svg'
 });

@@ -6,6 +6,7 @@ const readline = require('readline');
 const { STATES, canTransition } = require('./stateMachine');
 const { serversDb } = require('../db');
 const { log } = require('../utils/log');
+const { getJavaForVersion, getDefaultJava } = require('../utils/javaVersion');
 
 // Pattern that indicates the server is done starting
 const DONE_PATTERN = /\]: Done \(/;
@@ -82,11 +83,13 @@ class ServerProcess extends EventEmitter {
 
         await this.setState(STATES.STARTING);
 
+        // Resolve the correct Java binary for this MC version
+        const javaPath = this.config.version
+            ? getJavaForVersion(this.config.version)
+            : getDefaultJava();
+
         // Build the Java command
         const jarPath = path.join(this.serverDir, this.config.jarFile || 'server.jar');
-        if (!fs.existsSync(jarPath)) {
-            throw new Error(`Server jar not found: ${jarPath}`);
-        }
 
         const args = [];
         args.push(`-Xmx${this.config.memory || 2048}M`);
@@ -98,16 +101,32 @@ class ServerProcess extends EventEmitter {
             args.push(...extraArgs);
         }
 
-        args.push('-jar', jarPath, 'nogui');
+        // Forge 1.17+ uses @args file instead of -jar
+        if (this.config.serverType === 'forge') {
+            const argsFile = this._findForgeArgsFile();
+            if (argsFile) {
+                args.push(`@${argsFile}`, 'nogui');
+            } else if (fs.existsSync(jarPath)) {
+                args.push('-jar', jarPath, 'nogui');
+            } else {
+                throw new Error('Forge server jar or args file not found.');
+            }
+        } else {
+            if (!fs.existsSync(jarPath)) {
+                throw new Error(`Server jar not found: ${jarPath}`);
+            }
+            args.push('-jar', jarPath, 'nogui');
+        }
 
-        log('info', `[${this.config.name}] Spawning: java ${args.join(' ')}`);
+        log('info', `[${this.config.name}] Using Java: ${javaPath}`);
+        log('info', `[${this.config.name}] Spawning: ${javaPath} ${args.join(' ')}`);
 
         // Open log stream
         const logsDir = path.join(this.serverDir, 'logs');
         fs.mkdirSync(logsDir, { recursive: true });
         this.logStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
 
-        this.child = spawn('java', args, {
+        this.child = spawn(javaPath, args, {
             cwd: this.serverDir,
             stdio: ['pipe', 'pipe', 'pipe'],
             windowsHide: true
@@ -128,6 +147,26 @@ class ServerProcess extends EventEmitter {
             log('error', `[${this.config.name}] Process error: ${err.message}`);
             this._appendLine(`[Craftbox] Process error: ${err.message}`);
         });
+    }
+
+    /**
+     * Find Forge args file for 1.17+ style installations.
+     */
+    _findForgeArgsFile() {
+        const libDir = path.join(this.serverDir, 'libraries', 'net', 'minecraftforge', 'forge');
+        if (!fs.existsSync(libDir)) return null;
+
+        try {
+            const versions = fs.readdirSync(libDir);
+            for (const ver of versions) {
+                const argsName = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
+                const argsPath = path.join(libDir, ver, argsName);
+                if (fs.existsSync(argsPath)) {
+                    return path.relative(this.serverDir, argsPath);
+                }
+            }
+        } catch {}
+        return null;
     }
 
     /**
