@@ -121,6 +121,30 @@ body {
     user-select: none;
 }
 
+/* ---- Server Type Selector ---- */
+.type-card {
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.type-card:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.type-card.selected {
+    border-color: var(--craftbox-green);
+    box-shadow: 0 0 0 1px var(--craftbox-green);
+}
+
+.type-card .material-icons-outlined {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.type-card.selected .material-icons-outlined {
+    color: var(--craftbox-green);
+}
+
 /* ---- Advanced Options Toggle ---- */
 .advanced-toggle .advanced-arrow {
     transition: transform 0.25s ease;

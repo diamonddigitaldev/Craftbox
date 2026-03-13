@@ -126,7 +126,7 @@ const PORT = process.env.PORT || 6464;
         const server = http.createServer(app);
 
         // ── 9. Initialize WebSocket ──
-        initWebSocket(server, sessionMiddleware, serverManager);
+        const wss = initWebSocket(server, sessionMiddleware, serverManager);
 
         // ── 10. Listen ──
         server.listen(PORT, () => {
@@ -146,6 +146,13 @@ const PORT = process.env.PORT || 6464;
             } catch (err) {
                 log('error', `Error stopping servers: ${err.message}`);
             }
+
+            // Close WebSocket server and all connections
+            log('info', 'Closing WebSocket connections...');
+            for (const client of wss.clients) {
+                client.close(1001, 'Server shutting down');
+            }
+            wss.close();
 
             // Close HTTP server
             log('info', 'Closing HTTP server...');

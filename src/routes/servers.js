@@ -5,7 +5,8 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, SERVERS_DIR } = require('../db');
-const { downloadVanillaJar } = require('../mc/downloader');
+const { downloadServerJar } = require('../mc/downloader');
+const { getProvider } = require('../mc/serverTypes');
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
@@ -24,10 +25,10 @@ router.get('/servers/create', ensureAuth, (req, res) => {
 
 // POST /servers/create — Create a new server
 router.post('/servers/create', ensureAuth, async (req, res) => {
-    const { name, version, port, memory, javaArgs, eula, gamemode, difficulty, seed } = req.body;
+    const { name, version, port, memory, javaArgs, eula, gamemode, difficulty, seed, serverType, customJarUrl } = req.body;
 
     // Validation
-    if (!name || !version || !port || !memory) {
+    if (!name || !port || !memory) {
         req.session.flash = { error: 'All required fields must be filled.' };
         return res.redirect('/servers/create');
     }
@@ -59,10 +60,36 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
         return res.redirect('/servers/create');
     }
 
-    const versionStr = String(version).trim();
-    if (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(versionStr) && versionStr !== 'latest') {
-        req.session.flash = { error: 'Invalid Minecraft version format.' };
+    // Validate server type
+    const type = serverType || 'vanilla';
+    const provider = getProvider(type);
+    if (!provider) {
+        req.session.flash = { error: 'Invalid server type.' };
         return res.redirect('/servers/create');
+    }
+
+    // Custom type requires a URL instead of a version
+    if (type === 'custom') {
+        if (!customJarUrl || typeof customJarUrl !== 'string' || customJarUrl.trim().length === 0) {
+            req.session.flash = { error: 'A download URL is required for custom server jars.' };
+            return res.redirect('/servers/create');
+        }
+        try {
+            const parsed = new URL(customJarUrl.trim());
+            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+        } catch {
+            req.session.flash = { error: 'Invalid jar download URL.' };
+            return res.redirect('/servers/create');
+        }
+    }
+
+    const versionStr = String(version || '').trim();
+    // Validate version format for non-custom types
+    if (type !== 'custom') {
+        if (!versionStr || (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(versionStr) && versionStr !== 'latest')) {
+            req.session.flash = { error: 'Invalid Minecraft version format.' };
+            return res.redirect('/servers/create');
+        }
     }
 
     // Sanitize javaArgs — only allow safe JVM flag patterns
@@ -81,10 +108,11 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
         const logsDir = path.join(serverDir, 'logs');
         fs.mkdirSync(logsDir, { recursive: true });
 
-        log('info', `Creating server "${trimmedName}" (${id}) — version ${versionStr}`);
+        log('info', `Creating server "${trimmedName}" (${id}) — ${type} ${type === 'custom' ? '' : versionStr}`);
 
-        // Download server jar
-        await downloadVanillaJar(versionStr, path.join(serverDir, 'server.jar'));
+        // Download server jar via the appropriate provider
+        const jarVersion = type === 'custom' ? customJarUrl.trim() : versionStr;
+        const downloadResult = await downloadServerJar(type, jarVersion, null, path.join(serverDir, 'server.jar'));
 
         // Write server.properties and eula.txt
         writeServerProperties(serverDir, {
@@ -99,6 +127,8 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
         const server = {
             id,
             name: trimmedName,
+            serverType: type,
+            build: downloadResult?.build || null,
             state: 'stopped',
             port: portNum,
             memory: memoryNum,

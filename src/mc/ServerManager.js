@@ -117,25 +117,29 @@ class ServerManager {
 
         const stopPromises = running.map(({ id, proc }) => {
             return new Promise((resolve) => {
+                const onStateChange = (state) => {
+                    if (['stopped', 'crashed'].includes(state)) {
+                        clearTimeout(timeout);
+                        proc.removeListener('stateChange', onStateChange);
+                        resolve();
+                    }
+                };
+
                 const timeout = setTimeout(() => {
                     log('warn', `[${proc.config.name}] Shutdown timeout, force killing.`);
+                    proc.removeListener('stateChange', onStateChange);
                     proc._killTree();
                     resolve();
                 }, 30000);
 
-                proc.once('stateChange', (state) => {
-                    if (['stopped', 'crashed'].includes(state)) {
-                        clearTimeout(timeout);
-                        resolve();
-                    }
-                });
+                proc.on('stateChange', onStateChange);
 
-                try {
-                    proc.stop();
-                } catch (err) {
+                proc.stop().catch((err) => {
+                    log('warn', `[${proc.config.name}] stop() failed: ${err.message}`);
                     clearTimeout(timeout);
+                    proc.removeListener('stateChange', onStateChange);
                     resolve();
-                }
+                });
             });
         });
 

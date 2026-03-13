@@ -22,12 +22,16 @@
                     </div>
 
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Minecraft Version</label>
-                            <input type="text" class="form-control" value="<%= server.version %>" disabled>
-                            <div class="form-text">Version cannot be changed after creation.</div>
+                        <div class="col-md-4">
+                            <label class="form-label">Server Type</label>
+                            <input type="text" class="form-control" value="<%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %>" disabled>
                         </div>
-                        <div class="col-md-6 mt-3 mt-md-0">
+                        <div class="col-md-4 mt-3 mt-md-0">
+                            <label class="form-label">Version</label>
+                            <input type="text" class="form-control" value="<%= server.version %>" disabled>
+                            <div class="form-text">Type and version cannot be changed.</div>
+                        </div>
+                        <div class="col-md-4 mt-3 mt-md-0">
                             <label for="port" class="form-label">Server Port</label>
                             <input type="number" class="form-control" id="port" name="port"
                                 value="<%= server.port %>" min="1024" max="65535" required>

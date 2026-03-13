@@ -26,7 +26,7 @@ const _icon = _stateIcons[server.state] || 'help';
         <span id="state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
     </span>
     <span class="text-body-secondary ms-2" style="font-size: 0.85rem;">
-        Vanilla <%= server.version %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
+        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= server.version %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
     </span>
 </div>
 <ul class="nav nav-pills mb-3" id="server-nav">

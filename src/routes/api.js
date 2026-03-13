@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb } = require('../db');
+const { getProvider, listProviders } = require('../mc/serverTypes');
 const { log } = require('../utils/log');
 
 // GET /api/servers — JSON list of all servers
@@ -49,21 +50,44 @@ router.get('/api/servers/:id', ensureAuth, async (req, res) => {
     }
 });
 
-// GET /api/versions — Fetch Minecraft versions from Mojang
+// GET /api/server-types — List available server types
+router.get('/api/server-types', ensureAuth, (req, res) => {
+    res.json({ types: listProviders() });
+});
+
+// GET /api/versions — Fetch versions for a server type (?type=vanilla|paper|...)
 router.get('/api/versions', ensureAuth, async (req, res) => {
+    const type = req.query.type || 'vanilla';
+    const provider = getProvider(type);
+    if (!provider) {
+        return res.status(400).json({ error: `Unknown server type: ${type}` });
+    }
+
     try {
-        const response = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
-        if (!response.ok) throw new Error('Failed to fetch version manifest');
-
-        const manifest = await response.json();
-        const releases = manifest.versions
-            .filter(v => v.type === 'release')
-            .map(v => ({ id: v.id, url: v.url }));
-
-        res.json({ versions: releases, latest: manifest.latest.release });
+        const result = await provider.listVersions();
+        if (!result) {
+            return res.json({ versions: [], latest: null });
+        }
+        res.json({ versions: result.versions, latest: result.latest });
     } catch (err) {
-        log('error', `Failed to fetch MC versions: ${err.message}`);
-        res.status(500).json({ error: 'Failed to fetch Minecraft versions.' });
+        log('error', `Failed to fetch versions for ${type}: ${err.message}`);
+        res.status(500).json({ error: `Failed to fetch versions for ${type}.` });
+    }
+});
+
+// GET /api/versions/:type/builds/:version — Get builds for a version (Paper, Purpur, Folia)
+router.get('/api/versions/:type/builds/:version', ensureAuth, async (req, res) => {
+    const provider = getProvider(req.params.type);
+    if (!provider) {
+        return res.status(400).json({ error: 'Unknown server type.' });
+    }
+
+    try {
+        const builds = await provider.getBuilds(req.params.version);
+        res.json({ builds: builds || [] });
+    } catch (err) {
+        log('error', `Failed to fetch builds for ${req.params.type} ${req.params.version}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to fetch builds.' });
     }
 });
 
