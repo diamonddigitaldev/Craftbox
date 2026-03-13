@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { spawn } = require('child_process');
 const { log } = require('../../utils/log');
-const { getDefaultJava } = require('../../utils/javaVersion');
+const { getJavaForVersion } = require('../../utils/javaVersion');
 
 const PROMOTIONS_URL = 'https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json';
 const MAVEN_BASE = 'https://maven.minecraftforge.net/net/minecraftforge/forge';
@@ -89,18 +89,19 @@ module.exports = {
         log('info', `Forge installer downloaded (${(installerBuffer.length / 1024 / 1024).toFixed(1)} MB). Running installer...`);
 
         // Run the installer
-        const javaPath = getDefaultJava();
+        // Use the Java version required for the target MC version (important in Docker where multiple JREs are present)
+        const javaPath = getJavaForVersion(version);
         try {
-            execFileSync(javaPath, ['-jar', installerPath, '--installServer'], {
-                cwd: serverDir,
-                stdio: 'pipe',
-                timeout: 300000 // 5 minute timeout
-            });
+            // Use spawn() to avoid execFileSync buffer limits (ENOBUFS) during noisy installs.
+            await runForgeInstaller(javaPath, installerPath, serverDir, 300000);
         } catch (err) {
             // Clean up installer on failure
             try { fs.unlinkSync(installerPath); } catch {}
-            const stderr = err.stderr ? err.stderr.toString().slice(-500) : '';
-            throw new Error(`Forge installer failed: ${err.message}${stderr ? '\n' + stderr : ''}`);
+            const installerLogTail = readFileTail(path.join(serverDir, 'installer.log'), 8192);
+            throw new Error(
+                `Forge installer failed: ${err.message}` +
+                (installerLogTail ? `\n\n--- installer.log (tail) ---\n${installerLogTail}` : '')
+            );
         }
 
         // Clean up installer jar
@@ -182,3 +183,73 @@ function findForgeJar(serverDir, mcVersion, forgeVersion) {
 
 // Export helper for use by ServerProcess
 module.exports.findForgeArgsFile = findForgeArgsFile;
+
+function runForgeInstaller(javaPath, installerPath, serverDir, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const args = ['-jar', installerPath, '--installServer'];
+        const child = spawn(javaPath, args, {
+            cwd: serverDir,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true
+        });
+
+        let stdoutTail = '';
+        let stderrTail = '';
+        const tailLimit = 64 * 1024; // chars
+
+        const timer = setTimeout(() => {
+            try { child.kill('SIGKILL'); } catch {}
+            reject(new Error(`Timed out after ${Math.ceil(timeoutMs / 1000)}s`));
+        }, timeoutMs);
+        timer.unref?.();
+
+        child.on('error', (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+
+        if (child.stdout) {
+            child.stdout.on('data', (chunk) => {
+                stdoutTail = appendTail(stdoutTail, chunk, tailLimit);
+            });
+        }
+        if (child.stderr) {
+            child.stderr.on('data', (chunk) => {
+                stderrTail = appendTail(stderrTail, chunk, tailLimit);
+            });
+        }
+
+        child.on('close', (code, signal) => {
+            clearTimeout(timer);
+            if (code === 0) return resolve();
+
+            const combinedTail = (stderrTail || stdoutTail).trim();
+            const exitDesc = `exit code ${code}${signal ? ` (signal ${signal})` : ''}`;
+            reject(new Error(`${exitDesc}${combinedTail ? `\n${combinedTail}` : ''}`));
+        });
+    });
+}
+
+function appendTail(current, chunk, limitChars) {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+    const next = current + text;
+    return next.length > limitChars ? next.slice(-limitChars) : next;
+}
+
+function readFileTail(filePath, maxBytes) {
+    try {
+        if (!fs.existsSync(filePath)) return '';
+        const stat = fs.statSync(filePath);
+        const start = Math.max(0, stat.size - maxBytes);
+        const fd = fs.openSync(filePath, 'r');
+        try {
+            const buffer = Buffer.alloc(stat.size - start);
+            fs.readSync(fd, buffer, 0, buffer.length, start);
+            return buffer.toString('utf8').trim();
+        } finally {
+            fs.closeSync(fd);
+        }
+    } catch {
+        return '';
+    }
+}
