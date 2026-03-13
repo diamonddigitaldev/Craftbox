@@ -293,6 +293,7 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
     }
     res.render('servers/edit', {
         server,
+        user: req.user,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -361,7 +362,7 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
     if (proc) Object.assign(proc.config, server);
 
     req.session.flash = { success: 'Server settings saved.' };
-    res.redirect(`/servers/${id}/edit`);
+    res.redirect(`/servers/${id}/edit?saved=1`);
 });
 
 // ═══════════════════════════════════════════
@@ -384,6 +385,7 @@ router.get('/servers/:id/properties', ensureAuth, async (req, res) => {
         properties,
         propertyMeta: PROPERTY_META,
         groups: GROUPS,
+        user: req.user,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -422,12 +424,23 @@ router.post('/servers/:id/properties', ensureAuth, async (req, res) => {
     await serversDb.set(`server_${id}`, server);
 
     req.session.flash = { success: 'Server properties saved.' };
-    res.redirect(`/servers/${id}/properties`);
+    res.redirect(`/servers/${id}/properties?saved=1`);
 });
 
 // ═══════════════════════════════════════════
-// File Browser
+// File Browser & Editor
 // ═══════════════════════════════════════════
+
+const TEXT_EXTENSIONS = new Set([
+    '.txt', '.log', '.properties', '.json', '.yml', '.yaml', '.xml',
+    '.cfg', '.conf', '.ini', '.toml', '.csv', '.md', '.sh', '.bat',
+    '.cmd', '.ps1', '.js', '.ts', '.py', '.java', '.html', '.css',
+    '.mcmeta', '.lang', '.sk', '.nbt'
+]);
+
+function isTextFile(filename) {
+    return TEXT_EXTENSIONS.has(path.extname(filename).toLowerCase());
+}
 
 async function handleFiles(req, res, subpath) {
     const server = await getServerWithState(req);
@@ -464,7 +477,8 @@ async function handleFiles(req, res, subpath) {
             size: stat.size,
             sizeFormatted: formatSize(stat.size),
             modified: stat.mtime,
-            modifiedFormatted: stat.mtime.toISOString().replace('T', ' ').substring(0, 19)
+            modifiedFormatted: stat.mtime.toISOString().replace('T', ' ').substring(0, 19),
+            editable: !entry.isDirectory() && isTextFile(entry.name)
         };
     }).filter(Boolean).sort((a, b) => {
         if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
@@ -480,6 +494,7 @@ async function handleFiles(req, res, subpath) {
         breadcrumbs,
         currentPath: subpath || '',
         parentPath,
+        user: req.user,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -498,6 +513,14 @@ router.get('/servers/:id/download', ensureAuth, async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Not found' });
 
+    // Only allow downloads when server is stopped to avoid file corruption
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager?.getProcess(server.id);
+    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+        req.session.flash = { error: 'Stop the server before downloading files.' };
+        return res.redirect(`/servers/${server.id}/files`);
+    }
+
     const filePath = req.query.path;
     if (!filePath) return res.status(400).json({ error: 'No path specified' });
 
@@ -509,13 +532,35 @@ router.get('/servers/:id/download', ensureAuth, async (req, res) => {
         return res.status(404).json({ error: 'File not found' });
     }
 
-    res.download(targetPath);
+    const fileName = path.basename(targetPath);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    const stream = fs.createReadStream(targetPath);
+    stream.on('error', (err) => {
+        if (!res.headersSent) {
+            if (err.code === 'EBUSY') {
+                res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
+            } else {
+                res.status(500).json({ error: 'Failed to download file.' });
+            }
+        }
+    });
+    stream.pipe(res);
 });
 
 // Full server directory download as .zip
 router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Not found' });
+
+    // Only allow ZIP download when server is stopped to avoid file corruption
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager?.getProcess(server.id);
+    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+        req.session.flash = { error: 'Stop the server before downloading.' };
+        return res.redirect(`/servers/${server.id}/files`);
+    }
 
     const serverDir = path.join(SERVERS_DIR, server.id);
     if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Directory not found' });
@@ -534,6 +579,115 @@ router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
     archive.pipe(res);
     archive.directory(serverDir, false);
     archive.finalize();
+});
+
+router.get('/servers/:id/edit-file', ensureAuth, async (req, res) => {
+    const server = await getServerWithState(req);
+    if (!server) {
+        return res.status(404).render('errors/404', {
+            title: '404', navbar: true, user: req.user, message: 'Server not found.'
+        });
+    }
+
+    const filePath = req.query.path;
+    if (!filePath) return res.redirect(`/servers/${server.id}/files`);
+
+    const serverDir = path.resolve(SERVERS_DIR, server.id);
+    const targetPath = path.resolve(serverDir, filePath);
+
+    if (!targetPath.startsWith(serverDir)) {
+        return res.status(403).render('errors/403', {
+            title: 'Forbidden', navbar: true, user: req.user, message: 'Access denied.'
+        });
+    }
+
+    if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+        return res.status(404).render('errors/404', {
+            title: '404', navbar: true, user: req.user, message: 'File not found.'
+        });
+    }
+
+    if (!isTextFile(path.basename(targetPath))) {
+        return res.status(400).render('errors/404', {
+            title: 'Not Editable', navbar: true, user: req.user, message: 'This file type cannot be edited.'
+        });
+    }
+
+    let content;
+    try {
+        content = fs.readFileSync(targetPath, 'utf8');
+    } catch (err) {
+        req.session.flash = { error: 'Could not read file: ' + err.message };
+        return res.redirect(`/servers/${server.id}/files`);
+    }
+
+    const breadcrumbs = filePath.split('/').filter(Boolean);
+    const fileName = breadcrumbs[breadcrumbs.length - 1];
+
+    res.render('servers/fileEdit', {
+        server,
+        filePath,
+        fileName,
+        content,
+        breadcrumbs,
+        user: req.user,
+        messages: req.session.flash || {},
+        csrfToken: res.locals.csrfToken
+    });
+    delete req.session.flash;
+});
+
+router.post('/servers/:id/edit-file', ensureAuth, async (req, res) => {
+    const id = req.params.id;
+    const server = await serversDb.get(`server_${id}`);
+    if (!server) {
+        req.session.flash = { error: 'Server not found.' };
+        return res.redirect('/dashboard');
+    }
+
+    const filePath = req.body.filePath;
+    if (!filePath) {
+        req.session.flash = { error: 'No file path specified.' };
+        return res.redirect(`/servers/${id}/files`);
+    }
+
+    const serverDir = path.resolve(SERVERS_DIR, id);
+    const targetPath = path.resolve(serverDir, filePath);
+
+    if (!targetPath.startsWith(serverDir)) {
+        req.session.flash = { error: 'Access denied.' };
+        return res.redirect(`/servers/${id}/files`);
+    }
+
+    if (!isTextFile(path.basename(targetPath))) {
+        req.session.flash = { error: 'This file type cannot be edited.' };
+        return res.redirect(`/servers/${id}/files`);
+    }
+
+    try {
+        const content = req.body.content || '';
+        fs.writeFileSync(targetPath, content, 'utf8');
+        log('info', `File edited: ${filePath} on server ${server.name} (${id})`);
+
+        // If server.properties was edited, sync mirrored fields back to DB
+        if (path.basename(targetPath) === 'server.properties') {
+            const props = parseServerProperties(path.dirname(targetPath));
+            if (props['server-port']) server.port = parseInt(props['server-port'], 10) || server.port;
+            if (props['gamemode']) server.gamemode = props['gamemode'];
+            if (props['difficulty']) server.difficulty = props['difficulty'];
+            if (props['level-seed'] !== undefined) server.seed = props['level-seed'];
+            await serversDb.set(`server_${id}`, server);
+        }
+
+        req.session.flash = { success: `File "${path.basename(targetPath)}" saved.` };
+    } catch (err) {
+        log('error', `Failed to save file ${filePath}: ${err.message}`);
+        req.session.flash = { error: 'Failed to save file: ' + err.message };
+    }
+
+    // Redirect back to the parent directory in the file browser
+    const parentDir = filePath.split('/').slice(0, -1).join('/');
+    res.redirect(`/servers/${id}/files${parentDir ? '/' + parentDir : ''}`);
 });
 
 module.exports = router;

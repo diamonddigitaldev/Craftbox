@@ -1,4 +1,4 @@
-<%- include('../partials/head', { title: server.name + ' — Properties', navbar: true }) %>
+<%- include('../partials/head', { title: server.name + ' — Properties', navbar: true, fluid: true }) %>
 
 <%- include('../partials/serverNav', { server, active: 'properties' }) %>
 
@@ -25,11 +25,12 @@
                             <% groupProps.forEach(function([key, meta]) { %>
                                 <div class="col-md-6 col-lg-4">
                                     <% if (meta.type === 'boolean') { %>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox"
+                                        <label class="form-label d-block"><%= meta.label %></label>
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input prop-toggle" type="checkbox"
                                                 id="prop_<%= key %>" name="<%= key %>" value="true"
                                                 <%= properties[key] === 'true' ? 'checked' : '' %>>
-                                            <label class="form-check-label" for="prop_<%= key %>"><%= meta.label %></label>
+                                            <label class="form-check-label text-body-secondary small prop-toggle-label" for="prop_<%= key %>"><%= properties[key] === 'true' ? 'Enabled' : 'Disabled' %></label>
                                         </div>
                                         <% if (meta.description) { %>
                                             <div class="form-text"><%= meta.description %></div>
@@ -104,4 +105,27 @@
     </div>
 </div>
 
-<%- include('../partials/foot', { scripts: [] }) %>
+<!-- Restart Required Modal -->
+<div class="modal fade" id="restartModal" tabindex="-1" data-server-state="<%= server.state %>">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-info">restart_alt</span>
+                    Restart Required
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                Properties have been saved. The server must be restarted for changes to take effect.
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Later</button>
+                <button type="button" class="btn btn-info btn-sm" id="restart-now-btn"
+                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Restart Now</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/properties.js', '/js/restart-modal.js'] }) %>

@@ -107,14 +107,11 @@ router.post('/login', loginLimiter, (req, res, next) => {
             return res.redirect('/login');
         }
 
-        // Regenerate session to prevent fixation
+        // Passport 0.7 internally regenerates the session to prevent fixation
         const returnTo = req.session.returnTo;
-        req.session.regenerate((err) => {
+        req.login(user, (err) => {
             if (err) return next(err);
-            req.login(user, (err) => {
-                if (err) return next(err);
-                res.redirect(returnTo || '/dashboard');
-            });
+            res.redirect(returnTo || '/dashboard');
         });
     })(req, res, next);
 });

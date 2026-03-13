@@ -1,4 +1,4 @@
-<%- include('../partials/head', { title: 'Edit ' + server.name, navbar: true }) %>
+<%- include('../partials/head', { title: 'Edit ' + server.name, navbar: true, fluid: true }) %>
 
 <%- include('../partials/serverNav', { server, active: 'settings' }) %>
 
@@ -88,13 +88,10 @@
 
                     <hr class="my-4">
 
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-success flex-grow-1 d-flex align-items-center justify-content-center gap-2">
-                            <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
-                            Save Changes
-                        </button>
-                        <a href="/servers/<%= server.id %>" class="btn btn-outline-secondary">Cancel</a>
-                    </div>
+                    <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2">
+                        <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
+                        Save Changes
+                    </button>
                 </form>
             </div>
         </div>
@@ -122,4 +119,27 @@
     </div>
 </div>
 
-<%- include('../partials/foot', { scripts: ['/js/edit.js'] }) %>
+<!-- Restart Required Modal -->
+<div class="modal fade" id="restartModal" tabindex="-1" data-server-state="<%= server.state %>">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-info">restart_alt</span>
+                    Restart Required
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                Settings have been saved. The server must be restarted for changes to take effect.
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Later</button>
+                <button type="button" class="btn btn-info btn-sm" id="restart-now-btn"
+                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Restart Now</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/edit.js', '/js/restart-modal.js'] }) %>
