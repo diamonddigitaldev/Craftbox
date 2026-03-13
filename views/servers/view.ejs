@@ -1,36 +1,6 @@
 <%- include('../partials/head', { title: server.name, navbar: true, fluid: true }) %>
 
-<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-    <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
-        <span class="material-icons-outlined" style="font-size: 1.2rem;">arrow_back</span>
-    </a>
-    <h4 class="mb-0"><%= server.name %></h4>
-    <%
-    const stateColors = {
-        stopped: 'secondary',
-        starting: 'info',
-        running: 'success',
-        stopping: 'warning',
-        crashed: 'danger'
-    };
-    const stateIcons = {
-        stopped: 'stop_circle',
-        starting: 'hourglass_top',
-        running: 'play_circle',
-        stopping: 'pending',
-        crashed: 'error'
-    };
-    const color = stateColors[server.state] || 'secondary';
-    const icon = stateIcons[server.state] || 'help';
-    %>
-    <span class="badge bg-<%= color %> d-flex align-items-center gap-1" id="server-state-badge">
-        <span class="material-icons-outlined" style="font-size: 0.9rem;" id="state-icon"><%= icon %></span>
-        <span id="state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
-    </span>
-    <span class="text-body-secondary ms-2" style="font-size: 0.85rem;">
-        Vanilla <%= server.version %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
-    </span>
-</div>
+<%- include('../partials/serverNav', { server, active: 'console' }) %>
 
 <!-- Action Buttons -->
 <div class="d-flex flex-wrap gap-2 mb-3" id="server-controls">
@@ -63,11 +33,16 @@
         </button>
     </form>
 
-    <div class="ms-auto d-flex gap-2">
+    <div class="ms-auto d-flex gap-2 align-items-center">
         <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
             <input class="form-check-input" type="checkbox" id="autoRestart"
                 <%= server.autoRestart ? 'checked' : '' %>>
-            <label class="form-check-label small" for="autoRestart">Auto-restart on crash</label>
+            <label class="form-check-label small" for="autoRestart">Auto-restart</label>
+        </div>
+        <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
+            <input class="form-check-input" type="checkbox" id="autoStart"
+                <%= server.autoStart ? 'checked' : '' %>>
+            <label class="form-check-label small" for="autoStart">Auto-start</label>
         </div>
         <form method="POST" action="/servers/<%= server.id %>/delete" class="d-inline">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">

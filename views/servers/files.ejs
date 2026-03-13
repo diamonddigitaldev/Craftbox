@@ -1,0 +1,100 @@
+<%- include('../partials/head', { title: server.name + ' — Files', navbar: true, fluid: true }) %>
+
+<%- include('../partials/serverNav', { server, active: 'files' }) %>
+
+<!-- Breadcrumb -->
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item">
+            <a href="/servers/<%= server.id %>/files" class="d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 1rem;">home</span>
+                root
+            </a>
+        </li>
+        <%
+        let crumbPath = '';
+        breadcrumbs.forEach(function(crumb, i) {
+            crumbPath += (crumbPath ? '/' : '') + crumb;
+        %>
+            <% if (i === breadcrumbs.length - 1) { %>
+                <li class="breadcrumb-item active"><%= crumb %></li>
+            <% } else { %>
+                <li class="breadcrumb-item">
+                    <a href="/servers/<%= server.id %>/files/<%= crumbPath %>"><%= crumb %></a>
+                </li>
+            <% } %>
+        <% }) %>
+    </ol>
+</nav>
+
+<!-- Actions -->
+<div class="d-flex gap-2 mb-3">
+    <a href="/servers/<%= server.id %>/download-zip" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1">
+        <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
+        Download Server (.zip)
+    </a>
+</div>
+
+<!-- File listing -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"></th>
+                    <th>Name</th>
+                    <th style="width: 120px;">Size</th>
+                    <th style="width: 180px;">Modified</th>
+                    <th style="width: 60px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <% if (breadcrumbs.length > 0) { %>
+                <tr>
+                    <td>
+                        <span class="material-icons-outlined text-body-secondary" style="font-size: 1.2rem;">arrow_upward</span>
+                    </td>
+                    <td colspan="4">
+                        <a href="/servers/<%= server.id %>/files<%= parentPath ? '/' + parentPath : '' %>" class="text-decoration-none">..</a>
+                    </td>
+                </tr>
+                <% } %>
+                <% files.forEach(function(file) { %>
+                <tr>
+                    <td>
+                        <span class="material-icons-outlined text-body-secondary" style="font-size: 1.2rem;">
+                            <%= file.isDirectory ? 'folder' : 'description' %>
+                        </span>
+                    </td>
+                    <td>
+                        <% if (file.isDirectory) { %>
+                            <a href="/servers/<%= server.id %>/files/<%= currentPath ? currentPath + '/' : '' %><%= file.name %>" class="text-decoration-none">
+                                <%= file.name %>/
+                            </a>
+                        <% } else { %>
+                            <%= file.name %>
+                        <% } %>
+                    </td>
+                    <td class="text-body-secondary small"><%= file.isDirectory ? '—' : file.sizeFormatted %></td>
+                    <td class="text-body-secondary small"><%= file.modifiedFormatted %></td>
+                    <td>
+                        <% if (!file.isDirectory) { %>
+                        <a href="/servers/<%= server.id %>/download?path=<%= encodeURIComponent((currentPath ? currentPath + '/' : '') + file.name) %>"
+                           class="btn btn-outline-secondary btn-sm d-flex align-items-center" title="Download">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
+                        </a>
+                        <% } %>
+                    </td>
+                </tr>
+                <% }) %>
+                <% if (files.length === 0) { %>
+                <tr>
+                    <td colspan="5" class="text-center text-body-secondary py-4">This directory is empty.</td>
+                </tr>
+                <% } %>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: [] }) %>

@@ -6,7 +6,8 @@ const { v4: uuidv4 } = require('uuid');
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, SERVERS_DIR } = require('../db');
 const { downloadVanillaJar } = require('../mc/downloader');
-const { writeServerProperties, writeEula } = require('../mc/serverProperties');
+const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../mc/serverProperties');
+const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
 
 // GET /servers/create — Server creation form
@@ -255,6 +256,284 @@ router.post('/servers/:id/delete', ensureAuth, async (req, res) => {
         req.session.flash = { error: `Failed to delete server: ${err.message}` };
         res.redirect(`/servers/${id}`);
     }
+});
+
+// ── Helper: load server with live state ──
+async function getServerWithState(req) {
+    const id = req.params.id;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+    const server = await serversDb.get(`server_${id}`);
+    if (!server) return null;
+    const serverManager = req.app.get('serverManager');
+    if (serverManager) {
+        const proc = serverManager.getProcess(id);
+        if (proc) server.state = proc.state;
+    }
+    return server;
+}
+
+// ── Helper: format file size ──
+function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + units[i];
+}
+
+// ═══════════════════════════════════════════
+// Edit Server Settings
+// ═══════════════════════════════════════════
+
+router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
+    const server = await getServerWithState(req);
+    if (!server) {
+        return res.status(404).render('errors/404', {
+            title: '404', navbar: true, user: req.user, message: 'Server not found.'
+        });
+    }
+    res.render('servers/edit', {
+        server,
+        messages: req.session.flash || {},
+        csrfToken: res.locals.csrfToken
+    });
+    delete req.session.flash;
+});
+
+router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
+    const id = req.params.id;
+    const server = await serversDb.get(`server_${id}`);
+    if (!server) {
+        req.session.flash = { error: 'Server not found.' };
+        return res.redirect('/dashboard');
+    }
+
+    const { name, port, memory, javaArgs, gamemode, difficulty, seed } = req.body;
+
+    const trimmedName = String(name).trim();
+    if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
+        req.session.flash = { error: 'Invalid server name.' };
+        return res.redirect(`/servers/${id}/edit`);
+    }
+
+    const portNum = parseInt(port, 10);
+    if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+        req.session.flash = { error: 'Port must be between 1024 and 65535.' };
+        return res.redirect(`/servers/${id}/edit`);
+    }
+
+    const memoryNum = parseInt(memory, 10);
+    if (isNaN(memoryNum) || memoryNum < 512 || memoryNum > 65536) {
+        req.session.flash = { error: 'Memory must be between 512 and 65536 MB.' };
+        return res.redirect(`/servers/${id}/edit`);
+    }
+
+    const validGamemodes = ['survival', 'creative', 'adventure', 'spectator'];
+    const validDifficulties = ['peaceful', 'easy', 'normal', 'hard'];
+    const gamemodeStr = validGamemodes.includes(gamemode) ? gamemode : server.gamemode;
+    const difficultyStr = validDifficulties.includes(difficulty) ? difficulty : server.difficulty;
+    const seedStr = String(seed || '').trim();
+    const safeJavaArgs = String(javaArgs || '').trim();
+
+    // Update DB
+    server.name = trimmedName;
+    server.port = portNum;
+    server.memory = memoryNum;
+    server.javaArgs = safeJavaArgs;
+    server.gamemode = gamemodeStr;
+    server.difficulty = difficultyStr;
+    server.seed = seedStr;
+    await serversDb.set(`server_${id}`, server);
+
+    // Update server.properties
+    const serverDir = path.join(SERVERS_DIR, id);
+    if (fs.existsSync(path.join(serverDir, 'server.properties'))) {
+        updateServerProperties(serverDir, {
+            'server-port': String(portNum),
+            'gamemode': gamemodeStr,
+            'difficulty': difficultyStr,
+            'level-seed': seedStr
+        });
+    }
+
+    // Update live process config
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager?.getProcess(id);
+    if (proc) Object.assign(proc.config, server);
+
+    req.session.flash = { success: 'Server settings saved.' };
+    res.redirect(`/servers/${id}/edit`);
+});
+
+// ═══════════════════════════════════════════
+// Server Properties Editor (Phase 3)
+// ═══════════════════════════════════════════
+
+router.get('/servers/:id/properties', ensureAuth, async (req, res) => {
+    const server = await getServerWithState(req);
+    if (!server) {
+        return res.status(404).render('errors/404', {
+            title: '404', navbar: true, user: req.user, message: 'Server not found.'
+        });
+    }
+
+    const serverDir = path.join(SERVERS_DIR, server.id);
+    const properties = parseServerProperties(serverDir);
+
+    res.render('servers/properties', {
+        server,
+        properties,
+        propertyMeta: PROPERTY_META,
+        groups: GROUPS,
+        messages: req.session.flash || {},
+        csrfToken: res.locals.csrfToken
+    });
+    delete req.session.flash;
+});
+
+router.post('/servers/:id/properties', ensureAuth, async (req, res) => {
+    const id = req.params.id;
+    const server = await serversDb.get(`server_${id}`);
+    if (!server) {
+        req.session.flash = { error: 'Server not found.' };
+        return res.redirect('/dashboard');
+    }
+
+    const serverDir = path.join(SERVERS_DIR, id);
+    const currentProps = parseServerProperties(serverDir);
+    const updates = {};
+
+    for (const key of Object.keys(currentProps)) {
+        const meta = PROPERTY_META[key];
+        if (meta && meta.type === 'boolean') {
+            // Unchecked checkboxes don't send a value
+            updates[key] = req.body[key] === 'true' ? 'true' : 'false';
+        } else if (req.body[key] !== undefined) {
+            updates[key] = String(req.body[key]);
+        }
+    }
+
+    updateServerProperties(serverDir, updates);
+
+    // Sync mirrored DB fields
+    if (updates['server-port']) server.port = parseInt(updates['server-port'], 10) || server.port;
+    if (updates['gamemode']) server.gamemode = updates['gamemode'];
+    if (updates['difficulty']) server.difficulty = updates['difficulty'];
+    if (updates['level-seed'] !== undefined) server.seed = updates['level-seed'];
+    await serversDb.set(`server_${id}`, server);
+
+    req.session.flash = { success: 'Server properties saved.' };
+    res.redirect(`/servers/${id}/properties`);
+});
+
+// ═══════════════════════════════════════════
+// File Browser
+// ═══════════════════════════════════════════
+
+async function handleFiles(req, res, subpath) {
+    const server = await getServerWithState(req);
+    if (!server) {
+        return res.status(404).render('errors/404', {
+            title: '404', navbar: true, user: req.user, message: 'Server not found.'
+        });
+    }
+
+    const serverDir = path.resolve(SERVERS_DIR, server.id);
+    const targetPath = path.resolve(serverDir, subpath || '');
+
+    // Security: prevent directory traversal
+    if (!targetPath.startsWith(serverDir)) {
+        return res.status(403).render('errors/403', {
+            title: 'Forbidden', navbar: true, user: req.user, message: 'Access denied.'
+        });
+    }
+
+    if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isDirectory()) {
+        return res.status(404).render('errors/404', {
+            title: '404', navbar: true, user: req.user, message: 'Directory not found.'
+        });
+    }
+
+    const entries = fs.readdirSync(targetPath, { withFileTypes: true });
+    const files = entries.map(entry => {
+        const entryPath = path.join(targetPath, entry.name);
+        let stat;
+        try { stat = fs.statSync(entryPath); } catch { return null; }
+        return {
+            name: entry.name,
+            isDirectory: entry.isDirectory(),
+            size: stat.size,
+            sizeFormatted: formatSize(stat.size),
+            modified: stat.mtime,
+            modifiedFormatted: stat.mtime.toISOString().replace('T', ' ').substring(0, 19)
+        };
+    }).filter(Boolean).sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    const breadcrumbs = subpath ? subpath.split('/').filter(Boolean) : [];
+    const parentPath = breadcrumbs.length > 1 ? breadcrumbs.slice(0, -1).join('/') : '';
+
+    res.render('servers/files', {
+        server,
+        files,
+        breadcrumbs,
+        currentPath: subpath || '',
+        parentPath,
+        messages: req.session.flash || {},
+        csrfToken: res.locals.csrfToken
+    });
+    delete req.session.flash;
+}
+
+router.get('/servers/:id/files', ensureAuth, (req, res) => handleFiles(req, res, ''));
+router.get('/servers/:id/files/*subpath', ensureAuth, (req, res) => {
+    // Express 5 returns wildcard params as an array of segments
+    const sub = Array.isArray(req.params.subpath) ? req.params.subpath.join('/') : req.params.subpath;
+    handleFiles(req, res, sub);
+});
+
+// Individual file download
+router.get('/servers/:id/download', ensureAuth, async (req, res) => {
+    const server = await serversDb.get(`server_${req.params.id}`);
+    if (!server) return res.status(404).json({ error: 'Not found' });
+
+    const filePath = req.query.path;
+    if (!filePath) return res.status(400).json({ error: 'No path specified' });
+
+    const serverDir = path.resolve(SERVERS_DIR, server.id);
+    const targetPath = path.resolve(serverDir, filePath);
+
+    if (!targetPath.startsWith(serverDir)) return res.status(403).json({ error: 'Access denied' });
+    if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+
+    res.download(targetPath);
+});
+
+// Full server directory download as .zip
+router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
+    const server = await serversDb.get(`server_${req.params.id}`);
+    if (!server) return res.status(404).json({ error: 'Not found' });
+
+    const serverDir = path.join(SERVERS_DIR, server.id);
+    if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Directory not found' });
+
+    const archiver = require('archiver');
+    const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.zip"`);
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.on('error', (err) => {
+        log('error', `Archive error for ${server.name}: ${err.message}`);
+        if (!res.headersSent) res.status(500).json({ error: 'Archive failed' });
+    });
+    archive.pipe(res);
+    archive.directory(serverDir, false);
+    archive.finalize();
 });
 
 module.exports = router;

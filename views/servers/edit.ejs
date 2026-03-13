@@ -1,0 +1,125 @@
+<%- include('../partials/head', { title: 'Edit ' + server.name, navbar: true }) %>
+
+<%- include('../partials/serverNav', { server, active: 'settings' }) %>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+            <span class="material-icons-outlined">info</span>
+            Changes take effect on next server restart.
+        </div>
+
+        <div class="card">
+            <div class="card-body p-4">
+                <form method="POST" action="/servers/<%= server.id %>/edit" novalidate>
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Server Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required
+                            minlength="1" maxlength="50" pattern="[a-zA-Z0-9 _\-]+"
+                            value="<%= server.name %>">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Minecraft Version</label>
+                            <input type="text" class="form-control" value="<%= server.version %>" disabled>
+                            <div class="form-text">Version cannot be changed after creation.</div>
+                        </div>
+                        <div class="col-md-6 mt-3 mt-md-0">
+                            <label for="port" class="form-label">Server Port</label>
+                            <input type="number" class="form-control" id="port" name="port"
+                                value="<%= server.port %>" min="1024" max="65535" required>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="gamemode" class="form-label">Game Mode</label>
+                            <select class="form-select" id="gamemode" name="gamemode">
+                                <option value="survival" <%= server.gamemode === 'survival' ? 'selected' : '' %>>Survival</option>
+                                <option value="creative" <%= server.gamemode === 'creative' ? 'selected' : '' %>>Creative</option>
+                                <option value="adventure" <%= server.gamemode === 'adventure' ? 'selected' : '' %>>Adventure</option>
+                                <option value="spectator" <%= server.gamemode === 'spectator' ? 'selected' : '' %>>Spectator</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mt-3 mt-md-0">
+                            <label for="difficulty" class="form-label">Difficulty</label>
+                            <select class="form-select" id="difficulty" name="difficulty">
+                                <option value="peaceful" <%= server.difficulty === 'peaceful' ? 'selected' : '' %>>Peaceful</option>
+                                <option value="easy" <%= server.difficulty === 'easy' ? 'selected' : '' %>>Easy</option>
+                                <option value="normal" <%= server.difficulty === 'normal' ? 'selected' : '' %>>Normal</option>
+                                <option value="hard" <%= server.difficulty === 'hard' ? 'selected' : '' %>>Hard</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mt-3 mt-md-0">
+                            <label for="seed" class="form-label">World Seed</label>
+                            <input type="text" class="form-control" id="seed" name="seed"
+                                value="<%= server.seed || '' %>" placeholder="Optional">
+                        </div>
+                    </div>
+
+                    <!-- Advanced Options -->
+                    <div class="mb-3 text-center">
+                        <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 advanced-toggle"
+                           data-bs-toggle="collapse" href="#advancedOptions" role="button" aria-expanded="false">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">tune</span>
+                            Advanced Options
+                            <span class="material-icons-outlined advanced-arrow" style="font-size: 1rem;">expand_more</span>
+                        </a>
+                        <div class="collapse mt-3" id="advancedOptions">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="memory" class="form-label">Memory (MB)</label>
+                                    <input type="number" class="form-control" id="memory" name="memory"
+                                        value="<%= server.memory %>" min="512" max="65536" step="256" required>
+                                    <div class="form-text">RAM allocated to the server (-Xmx).</div>
+                                </div>
+                                <div class="col-md-6 mt-3 mt-md-0">
+                                    <label for="javaArgs" class="form-label">Additional JVM Arguments</label>
+                                    <input type="text" class="form-control" id="javaArgs" name="javaArgs"
+                                        value="<%= server.javaArgs || '' %>" placeholder="-XX:+UseG1GC">
+                                    <div class="form-text">Optional. Extra Java flags.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success flex-grow-1 d-flex align-items-center justify-content-center gap-2">
+                            <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
+                            Save Changes
+                        </button>
+                        <a href="/servers/<%= server.id %>" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Server Behavior -->
+        <div class="card mt-3">
+            <div class="card-body p-4">
+                <h6 class="mb-3">Server Behavior</h6>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input toggle-switch" type="checkbox" id="autoRestart"
+                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                        data-endpoint="autorestart"
+                        <%= server.autoRestart ? 'checked' : '' %>>
+                    <label class="form-check-label" for="autoRestart">Auto-restart on crash</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input toggle-switch" type="checkbox" id="autoStart"
+                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                        data-endpoint="autostart"
+                        <%= server.autoStart ? 'checked' : '' %>>
+                    <label class="form-check-label" for="autoStart">Start with Craftbox</label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/edit.js'] }) %>

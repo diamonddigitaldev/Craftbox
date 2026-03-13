@@ -87,4 +87,24 @@ router.post('/api/servers/:id/autorestart', ensureAuth, async (req, res) => {
     }
 });
 
+// POST /api/servers/:id/autostart — Toggle auto-start
+router.post('/api/servers/:id/autostart', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        server.autoStart = !!req.body.enabled;
+        await serversDb.set(`server_${server.id}`, server);
+
+        // Update live process config
+        const serverManager = req.app.get('serverManager');
+        const proc = serverManager?.getProcess(server.id);
+        if (proc) proc.config.autoStart = server.autoStart;
+
+        res.json({ autoStart: server.autoStart });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update setting.' });
+    }
+});
+
 module.exports = router;

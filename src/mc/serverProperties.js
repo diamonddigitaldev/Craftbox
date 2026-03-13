@@ -77,4 +77,56 @@ function writeEula(serverDir) {
     fs.writeFileSync(path.join(serverDir, 'eula.txt'), content);
 }
 
-module.exports = { writeServerProperties, writeEula, DEFAULT_PROPERTIES };
+/**
+ * Parse an existing server.properties file into a key-value object.
+ */
+function parseServerProperties(serverDir) {
+    const filePath = path.join(serverDir, 'server.properties');
+    if (!fs.existsSync(filePath)) return {};
+    const content = fs.readFileSync(filePath, 'utf8');
+    const props = {};
+    for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx === -1) continue;
+        props[trimmed.substring(0, eqIdx)] = trimmed.substring(eqIdx + 1);
+    }
+    return props;
+}
+
+/**
+ * Update specific keys in an existing server.properties file,
+ * preserving comments and ordering.
+ */
+function updateServerProperties(serverDir, updates) {
+    const filePath = path.join(serverDir, 'server.properties');
+    if (!fs.existsSync(filePath)) return;
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+    const updatedKeys = new Set();
+
+    const result = lines.map(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return line;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx === -1) return line;
+        const key = trimmed.substring(0, eqIdx);
+        if (key in updates) {
+            updatedKeys.add(key);
+            return key + '=' + updates[key];
+        }
+        return line;
+    });
+
+    // Append new keys not already in the file
+    for (const [key, value] of Object.entries(updates)) {
+        if (!updatedKeys.has(key)) {
+            result.push(key + '=' + value);
+        }
+    }
+
+    fs.writeFileSync(filePath, result.join('\n'));
+}
+
+module.exports = { writeServerProperties, writeEula, parseServerProperties, updateServerProperties, DEFAULT_PROPERTIES };

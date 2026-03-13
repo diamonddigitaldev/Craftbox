@@ -1,0 +1,107 @@
+<%- include('../partials/head', { title: server.name + ' — Properties', navbar: true }) %>
+
+<%- include('../partials/serverNav', { server, active: 'properties' }) %>
+
+<div class="row justify-content-center">
+    <div class="col-lg-10 col-xl-8">
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+            <span class="material-icons-outlined">info</span>
+            Changes take effect on next server restart.
+        </div>
+
+        <form method="POST" action="/servers/<%= server.id %>/properties" novalidate>
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+            <% groups.forEach(function(group) { %>
+                <% const groupProps = Object.entries(propertyMeta).filter(function([k, m]) { return m.group === group.id && properties[k] !== undefined; }); %>
+                <% if (groupProps.length > 0) { %>
+                <div class="card mb-3">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <span class="material-icons-outlined" style="font-size: 1.2rem;"><%= group.icon %></span>
+                        <strong><%= group.label %></strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <% groupProps.forEach(function([key, meta]) { %>
+                                <div class="col-md-6 col-lg-4">
+                                    <% if (meta.type === 'boolean') { %>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox"
+                                                id="prop_<%= key %>" name="<%= key %>" value="true"
+                                                <%= properties[key] === 'true' ? 'checked' : '' %>>
+                                            <label class="form-check-label" for="prop_<%= key %>"><%= meta.label %></label>
+                                        </div>
+                                        <% if (meta.description) { %>
+                                            <div class="form-text"><%= meta.description %></div>
+                                        <% } %>
+                                    <% } else if (meta.type === 'enum') { %>
+                                        <label for="prop_<%= key %>" class="form-label"><%= meta.label %></label>
+                                        <select class="form-select form-select-sm" id="prop_<%= key %>" name="<%= key %>">
+                                            <% meta.options.forEach(function(opt) { %>
+                                                <option value="<%= opt.value %>" <%= properties[key] === opt.value ? 'selected' : '' %>><%= opt.label %></option>
+                                            <% }) %>
+                                        </select>
+                                        <% if (meta.description) { %>
+                                            <div class="form-text"><%= meta.description %></div>
+                                        <% } %>
+                                    <% } else if (meta.type === 'number') { %>
+                                        <label for="prop_<%= key %>" class="form-label"><%= meta.label %></label>
+                                        <input type="number" class="form-control form-control-sm"
+                                            id="prop_<%= key %>" name="<%= key %>"
+                                            value="<%= properties[key] %>"
+                                            <% if (meta.min !== undefined) { %>min="<%= meta.min %>"<% } %>
+                                            <% if (meta.max !== undefined) { %>max="<%= meta.max %>"<% } %>>
+                                        <% if (meta.description) { %>
+                                            <div class="form-text"><%= meta.description %></div>
+                                        <% } %>
+                                    <% } else { %>
+                                        <label for="prop_<%= key %>" class="form-label"><%= meta.label %></label>
+                                        <input type="text" class="form-control form-control-sm"
+                                            id="prop_<%= key %>" name="<%= key %>"
+                                            value="<%= properties[key] %>">
+                                        <% if (meta.description) { %>
+                                            <div class="form-text"><%= meta.description %></div>
+                                        <% } %>
+                                    <% } %>
+                                </div>
+                            <% }) %>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
+            <% }) %>
+
+            <%
+            const knownKeys = Object.keys(propertyMeta);
+            const unknownProps = Object.entries(properties).filter(function([k]) { return !knownKeys.includes(k); });
+            %>
+            <% if (unknownProps.length > 0) { %>
+            <div class="card mb-3">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined" style="font-size: 1.2rem;">help_outline</span>
+                    <strong>Other</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <% unknownProps.forEach(function([key, value]) { %>
+                            <div class="col-md-6 col-lg-4">
+                                <label for="prop_<%= key %>" class="form-label"><%= key %></label>
+                                <input type="text" class="form-control form-control-sm"
+                                    id="prop_<%= key %>" name="<%= key %>"
+                                    value="<%= value %>">
+                            </div>
+                        <% }) %>
+                    </div>
+                </div>
+            </div>
+            <% } %>
+
+            <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2 mb-4">
+                <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
+                Save Properties
+            </button>
+        </form>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: [] }) %>

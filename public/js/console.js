@@ -226,26 +226,29 @@
         });
     }
 
-    // Auto-restart toggle
-    const autoRestartToggle = document.getElementById('autoRestart');
-    if (autoRestartToggle) {
-        autoRestartToggle.addEventListener('change', async () => {
+    // Toggle helpers for auto-restart and auto-start
+    function bindToggle(id, endpoint) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('change', async () => {
             try {
                 const csrfInput = document.querySelector('input[name="_csrf"]');
-                await fetch(`/api/servers/${serverId}/autorestart`, {
+                const res = await fetch('/api/servers/' + serverId + '/' + endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRF-Token': csrfInput ? csrfInput.value : ''
                     },
-                    body: JSON.stringify({ enabled: autoRestartToggle.checked })
+                    body: JSON.stringify({ enabled: el.checked })
                 });
+                if (!res.ok) el.checked = !el.checked;
             } catch {
-                // Revert on failure
-                autoRestartToggle.checked = !autoRestartToggle.checked;
+                el.checked = !el.checked;
             }
         });
     }
+    bindToggle('autoRestart', 'autorestart');
+    bindToggle('autoStart', 'autostart');
 
     // Start connection
     connect();
