@@ -15,6 +15,9 @@ const stateIcons = {
 };
 const color = stateColors[server.state] || 'secondary';
 const icon = stateIcons[server.state] || 'help';
+const displayVersion = (server.serverType || 'vanilla') === 'custom'
+    ? '(Unknown Version)'
+    : (server.version || '(Unknown Version)');
 %>
 <div class="col-md-6 col-xl-4 mb-4">
     <div class="card server-card h-100 border-<%= color %>" data-server-id="<%= server.id %>">
@@ -26,7 +29,7 @@ const icon = stateIcons[server.state] || 'help';
                     </h5>
                     <small class="text-body-secondary d-flex align-items-center gap-1">
                         <img src="/img/server-types/<%= server.serverType || 'vanilla' %>.svg" alt="" class="server-type-logo">
-                        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= server.version %>
+                        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= displayVersion %>
                     </small>
                 </div>
                 <span class="badge bg-<%= color %> d-flex align-items-center gap-1 server-state-badge">

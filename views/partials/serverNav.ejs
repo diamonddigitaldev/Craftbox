@@ -15,6 +15,9 @@ const _stateIcons = {
 };
 const _color = _stateColors[server.state] || 'secondary';
 const _icon = _stateIcons[server.state] || 'help';
+const _displayVersion = (server.serverType || 'vanilla') === 'custom'
+    ? '(Unknown Version)'
+    : (server.version || '(Unknown Version)');
 %>
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
@@ -27,7 +30,7 @@ const _icon = _stateIcons[server.state] || 'help';
     </span>
     <span class="text-body-secondary ms-2 d-flex align-items-center gap-1" style="font-size: 0.85rem;">
         <img src="/img/server-types/<%= server.serverType || 'vanilla' %>.svg" alt="" class="server-type-logo">
-        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= server.version %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
+        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= _displayVersion %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
     </span>
 </div>
 <ul class="nav nav-pills mb-3" id="server-nav">

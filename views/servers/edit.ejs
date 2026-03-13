@@ -2,6 +2,12 @@
 
 <%- include('../partials/serverNav', { server, active: 'settings' }) %>
 
+<%
+const _displayVersion = (server.serverType || 'vanilla') === 'custom'
+    ? '(Unknown Version)'
+    : (server.version || '(Unknown Version)');
+%>
+
 <div class="row justify-content-center">
     <div class="col-lg-8 col-xl-6">
         <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
@@ -28,7 +34,7 @@
                         </div>
                         <div class="col-md-4 mt-3 mt-md-0">
                             <label class="form-label">Version</label>
-                            <input type="text" class="form-control" value="<%= server.version %>" disabled>
+                            <input type="text" class="form-control" value="<%= _displayVersion %>" disabled>
                             <div class="form-text">Type and version cannot be changed.</div>
                         </div>
                         <div class="col-md-4 mt-3 mt-md-0">
