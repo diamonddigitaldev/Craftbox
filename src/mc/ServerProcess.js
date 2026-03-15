@@ -81,6 +81,25 @@ class ServerProcess extends EventEmitter {
 
         this._stopRequested = false;
 
+        // Forge: remove 0-byte .jar files left by the installer
+        if (this.config.serverType === 'forge') {
+            try {
+                const files = fs.readdirSync(this.serverDir);
+                for (const file of files) {
+                    if (file.endsWith('.jar')) {
+                        const filePath = path.join(this.serverDir, file);
+                        const stat = fs.statSync(filePath);
+                        if (stat.size === 0) {
+                            fs.unlinkSync(filePath);
+                            log('info', `[${this.config.name}] Removed 0-byte jar: ${file}`);
+                        }
+                    }
+                }
+            } catch (err) {
+                log('warn', `[${this.config.name}] Failed to clean 0-byte jars: ${err.message}`);
+            }
+        }
+
         await this.setState(STATES.STARTING);
 
         // Resolve the correct Java binary for this MC version
@@ -420,6 +439,33 @@ class ServerProcess extends EventEmitter {
         }
 
         this._stopRequested = false;
+    }
+
+    /**
+     * Wait for the process to reach a target state.
+     * Returns a Promise that resolves when the state is reached or rejects on timeout.
+     */
+    waitForState(targetState, timeoutMs = 60000) {
+        return new Promise((resolve, reject) => {
+            if (this.state === targetState) return resolve();
+            const terminalStates = [STATES.STOPPED, STATES.CRASHED];
+            const onStateChange = (state) => {
+                if (state === targetState) {
+                    clearTimeout(timeout);
+                    this.removeListener('stateChange', onStateChange);
+                    resolve();
+                } else if (terminalStates.includes(state) && state !== targetState) {
+                    clearTimeout(timeout);
+                    this.removeListener('stateChange', onStateChange);
+                    reject(new Error(`Server reached state '${state}' while waiting for '${targetState}'`));
+                }
+            };
+            const timeout = setTimeout(() => {
+                this.removeListener('stateChange', onStateChange);
+                reject(new Error(`Timed out waiting for state: ${targetState}`));
+            }, timeoutMs);
+            this.on('stateChange', onStateChange);
+        });
     }
 
     /**

@@ -213,4 +213,85 @@ router.post('/api/servers/:id/update-jar', ensureAuth, async (req, res) => {
     }
 });
 
+// POST /api/servers/:id/backup-schedule — Update backup schedule settings
+router.post('/api/servers/:id/backup-schedule', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const { enabled, intervalHours, countdownMinutes } = req.body;
+
+        if (!server.backupSchedule) {
+            server.backupSchedule = {
+                enabled: false,
+                intervalHours: 24,
+                countdownMinutes: 5,
+                retentionCount: 5,
+                retentionDays: 0
+            };
+        }
+
+        if (typeof enabled === 'boolean') server.backupSchedule.enabled = enabled;
+        if (intervalHours != null) {
+            const h = parseInt(intervalHours, 10);
+            if (h >= 1 && h <= 168) server.backupSchedule.intervalHours = h;
+        }
+        if (countdownMinutes != null) {
+            const m = parseInt(countdownMinutes, 10);
+            if (m >= 1 && m <= 30) server.backupSchedule.countdownMinutes = m;
+        }
+
+        await serversDb.set(`server_${server.id}`, server);
+
+        // Update the scheduler
+        const backupScheduler = req.app.get('backupScheduler');
+        if (backupScheduler) {
+            if (server.backupSchedule.enabled) {
+                await backupScheduler.restartSchedule(server.id);
+            } else {
+                backupScheduler.stopSchedule(server.id);
+            }
+        }
+
+        res.json({ backupSchedule: server.backupSchedule });
+    } catch (err) {
+        log('error', `Failed to update backup schedule: ${err.message}`);
+        res.status(500).json({ error: 'Failed to update backup schedule.' });
+    }
+});
+
+// POST /api/servers/:id/backup-retention — Update retention policy
+router.post('/api/servers/:id/backup-retention', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        if (!server.backupSchedule) {
+            server.backupSchedule = {
+                enabled: false,
+                intervalHours: 24,
+                countdownMinutes: 5,
+                retentionCount: 5,
+                retentionDays: 0
+            };
+        }
+
+        const { retentionCount, retentionDays } = req.body;
+        if (retentionCount != null) {
+            const n = parseInt(retentionCount, 10);
+            if (n >= 0 && n <= 100) server.backupSchedule.retentionCount = n;
+        }
+        if (retentionDays != null) {
+            const d = parseInt(retentionDays, 10);
+            if (d >= 0 && d <= 365) server.backupSchedule.retentionDays = d;
+        }
+
+        await serversDb.set(`server_${server.id}`, server);
+        res.json({ backupSchedule: server.backupSchedule });
+    } catch (err) {
+        log('error', `Failed to update backup retention: ${err.message}`);
+        res.status(500).json({ error: 'Failed to update retention policy.' });
+    }
+});
+
 module.exports = router;

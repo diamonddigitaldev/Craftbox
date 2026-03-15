@@ -1,6 +1,7 @@
 const ServerProcess = require('./ServerProcess');
 const { serversDb } = require('../db');
 const { canPerformAction } = require('./stateMachine');
+const { syncServerConfig } = require('./syncServerConfig');
 const { log } = require('../utils/log');
 
 class ServerManager {
@@ -22,7 +23,8 @@ class ServerManager {
         let proc = this.processes.get(serverId);
         if (proc) return proc;
 
-        const config = await serversDb.get(`server_${serverId}`);
+        // Sync DB from server.properties before creating the process
+        const config = await syncServerConfig(serverId);
         if (!config) throw new Error('Server not found.');
 
         proc = new ServerProcess(config);

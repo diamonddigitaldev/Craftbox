@@ -29,6 +29,7 @@
     "author": "Diamond Digital Development <https://diamonddigital.dev>",
     "license": "AGPL-3.0-only",
     "dependencies": {
+        "adm-zip": "^0.5.16",
         "archiver": "^7.0.1",
         "bcrypt": "^6.0.0",
         "better-sqlite3": "^12.6.2",

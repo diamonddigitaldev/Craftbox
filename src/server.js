@@ -13,6 +13,7 @@ const { passport } = require('./auth');
 const { securityHeaders, csrfToken, csrfValidate } = require('./security');
 const { initWebSocket } = require('./websocket');
 const ServerManager = require('./mc/ServerManager');
+const BackupScheduler = require('./mc/BackupScheduler');
 const mountRoutes = require('./routes');
 
 const PORT = process.env.PORT || 6464;
@@ -41,9 +42,12 @@ const PORT = process.env.PORT || 6464;
         app.set('view engine', 'ejs');
         app.set('views', path.join(__dirname, '..', 'views'));
 
-        // ── 4. Initialize ServerManager ──
+        // ── 4. Initialize ServerManager & BackupScheduler ──
         const serverManager = new ServerManager();
         app.set('serverManager', serverManager);
+
+        const backupScheduler = new BackupScheduler(serverManager);
+        app.set('backupScheduler', backupScheduler);
 
         // ── 5. Middleware stack ──
 
@@ -133,12 +137,16 @@ const PORT = process.env.PORT || 6464;
             log('info', `Craftbox v${version} is running. | PORT: ${PORT}`);
         });
 
-        // ── 11. Auto-start servers ──
+        // ── 11. Auto-start servers & backup schedules ──
         await serverManager.autoStartServers();
+        await backupScheduler.init();
 
         // ── 12. Graceful shutdown ──
         const handleShutdown = async () => {
             log('info', 'Craftbox is shutting down...');
+
+            // Stop backup schedules
+            backupScheduler.stopAll();
 
             // Stop all Minecraft servers gracefully
             try {

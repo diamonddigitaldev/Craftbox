@@ -10,6 +10,7 @@ const { getProvider } = require('../mc/serverTypes');
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
+const { syncServerConfig } = require('../mc/syncServerConfig');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, (req, res) => {
@@ -269,6 +270,12 @@ router.post('/servers/:id/delete', ensureAuth, async (req, res) => {
         // Remove process from manager
         serverManager?.removeProcess(id);
 
+        // Stop backup schedule and delete all backups
+        const backupScheduler = req.app.get('backupScheduler');
+        if (backupScheduler) backupScheduler.stopSchedule(id);
+        const { deleteAllBackups } = require('../mc/BackupManager');
+        await deleteAllBackups(id);
+
         // Delete server directory
         const serverDir = path.join(SERVERS_DIR, id);
         if (fs.existsSync(serverDir)) {
@@ -446,12 +453,8 @@ router.post('/servers/:id/properties', ensureAuth, async (req, res) => {
 
     updateServerProperties(serverDir, updates);
 
-    // Sync mirrored DB fields
-    if (updates['server-port']) server.port = parseInt(updates['server-port'], 10) || server.port;
-    if (updates['gamemode']) server.gamemode = updates['gamemode'];
-    if (updates['difficulty']) server.difficulty = updates['difficulty'];
-    if (updates['level-seed'] !== undefined) server.seed = updates['level-seed'];
-    await serversDb.set(`server_${id}`, server);
+    // Sync mirrored DB fields from the updated server.properties
+    await syncServerConfig(id);
 
     req.session.flash = { success: 'Server properties saved.' };
     res.redirect(`/servers/${id}/properties?saved=1`);
@@ -701,12 +704,7 @@ router.post('/servers/:id/edit-file', ensureAuth, async (req, res) => {
 
         // If server.properties was edited, sync mirrored fields back to DB
         if (path.basename(targetPath) === 'server.properties') {
-            const props = parseServerProperties(path.dirname(targetPath));
-            if (props['server-port']) server.port = parseInt(props['server-port'], 10) || server.port;
-            if (props['gamemode']) server.gamemode = props['gamemode'];
-            if (props['difficulty']) server.difficulty = props['difficulty'];
-            if (props['level-seed'] !== undefined) server.seed = props['level-seed'];
-            await serversDb.set(`server_${id}`, server);
+            await syncServerConfig(id);
         }
 
         req.session.flash = { success: `File "${path.basename(targetPath)}" saved.` };
