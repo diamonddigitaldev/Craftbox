@@ -28,6 +28,21 @@
 </nav>
 
 <% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
+<%
+const _isPluginsOrMods = currentPath === 'plugins' || currentPath === 'mods';
+const _contentTypes = { paper: 'Plugins', purpur: 'Plugins', folia: 'Plugins', fabric: 'Mods', forge: 'Mods' };
+const _hasContentTab = !!_contentTypes[server.serverType];
+%>
+<% if (_isPluginsOrMods && !_serverStopped) { %>
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+    <span class="material-icons-outlined">warning</span>
+    <div>
+        Stop the server before modifying files in this folder. Changes while running may not take effect or could cause instability.
+        <% if (_hasContentTab) { %>
+        Use the <a href="/servers/<%= server.id %>/plugins" class="alert-link"><%=_contentTypes[server.serverType]%></a> tab for easier management.<% } %>
+    </div>
+</div>
+<% } %>
 <!-- Actions -->
 <div class="d-flex gap-2 mb-3">
     <% if (_serverStopped) { %>

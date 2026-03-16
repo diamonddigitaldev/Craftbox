@@ -8,7 +8,7 @@ const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const { version } = require('../package.json');
-const { initDb, configDb } = require('./db');
+const { initDb, configDb, markAllServersStoppedInDb } = require('./db');
 const { passport } = require('./auth');
 const { securityHeaders, csrfToken, csrfValidate } = require('./security');
 const { initWebSocket } = require('./websocket');
@@ -146,7 +146,10 @@ const PORT = process.env.PORT || 6464;
         await backupScheduler.init();
 
         // ── 12. Graceful shutdown ──
+        let shuttingDown = false;
         const handleShutdown = async () => {
+            if (shuttingDown) return;
+            shuttingDown = true;
             log('info', 'Craftbox is shutting down...');
 
             // Stop backup schedules
@@ -158,6 +161,9 @@ const PORT = process.env.PORT || 6464;
             } catch (err) {
                 log('error', `Error stopping servers: ${err.message}`);
             }
+
+            // Ensure stale RUNNING/STARTING/STOPPING states never persist across restarts
+            await markAllServersStoppedInDb({ reason: 'shutdown' });
 
             // Close WebSocket server and all connections
             log('info', 'Closing WebSocket connections...');

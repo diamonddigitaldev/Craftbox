@@ -12,6 +12,7 @@ const { logEvent, pruneEvents } = require('../utils/eventLogger');
 // Pattern that indicates the server is done starting
 const DONE_PATTERN = /\]: Done \(/;
 const OOM_PATTERN = /java\.lang\.OutOfMemoryError/;
+const CRASH_REPORT_PATTERN = /Preparing crash report|This crash report has been saved to/;
 const JOIN_PATTERN = /\]: (\S+) joined the game$/;
 const LEAVE_PATTERN = /\]: (\S+) left the game$/;
 
@@ -28,6 +29,7 @@ class ServerProcess extends EventEmitter {
         this.players = new Set(); // Currently online player names
         this._stopRequested = false;
         this._restartPending = false;
+        this._crashDetected = false; // Set when crash report is detected in logs
     }
 
     get serverDir() {
@@ -100,6 +102,7 @@ class ServerProcess extends EventEmitter {
         }
 
         this._stopRequested = false;
+        this._crashDetected = false;
 
         // Forge: remove 0-byte .jar files left by the installer
         if (this.config.serverType === 'forge') {
@@ -359,6 +362,11 @@ class ServerProcess extends EventEmitter {
             this.setState(STATES.RUNNING);
         }
 
+        // Detect crash report (Minecraft watchdog / fatal error)
+        if (CRASH_REPORT_PATTERN.test(line)) {
+            this._crashDetected = true;
+        }
+
         // Player join/leave detection
         if (this.state === STATES.RUNNING) {
             const joinMatch = JOIN_PATTERN.exec(line);
@@ -430,12 +438,15 @@ class ServerProcess extends EventEmitter {
         log('info', `[${this.config.name}] Process exited with code ${code}, signal ${signal}`);
         this._appendLine(`[Craftbox] Server process exited (code: ${code}, signal: ${signal || 'none'})`);
 
-        // Detect crash type
+        // Detect crash type — check multiple signals
         const wasOOM = this.lastLines.some(l => OOM_PATTERN.test(l));
+        const hadCrashReport = this._crashDetected;
+        const wasNonZeroExit = code !== null && code !== 0;
+        const isCrash = !this._stopRequested && (wasOOM || hadCrashReport || wasNonZeroExit);
 
-        if (this._stopRequested) {
-            // Clean shutdown
-            await this.setState(STATES.STOPPED);
+        if (this._stopRequested && !hadCrashReport) {
+            // Clean shutdown — user requested stop
+            await this._setStateRobust(STATES.STOPPED);
 
             // Update DB
             try {
@@ -447,7 +458,7 @@ class ServerProcess extends EventEmitter {
                     await serversDb.set(`server_${this.id}`, server);
                 }
             } catch (err) {
-                // ignore
+                log('warn', `[${this.config.name}] Failed to update DB after stop: ${err.message}`);
             }
 
             // Handle pending restart
@@ -458,12 +469,17 @@ class ServerProcess extends EventEmitter {
                 logEvent(this.id, 'restarted', 'Server restarted').catch(() => {});
                 setTimeout(() => this.start(), 2000);
             }
-        } else {
+        } else if (isCrash) {
             // Crash or unexpected exit
-            const crashReason = wasOOM ? 'oom' : 'exit_code';
-            await this.setState(STATES.CRASHED);
+            const crashReason = wasOOM ? 'oom' : hadCrashReport ? 'crash_report' : 'exit_code';
+            await this._setStateRobust(STATES.CRASHED);
 
-            this._appendLine(`[Craftbox] Server crashed! ${wasOOM ? 'Out of Memory detected.' : `Exit code: ${code}`}`);
+            const crashMsg = wasOOM
+                ? 'Out of Memory detected.'
+                : hadCrashReport
+                    ? 'Crash report detected.'
+                    : `Exit code: ${code}`;
+            this._appendLine(`[Craftbox] Server crashed! ${crashMsg}`);
 
             // Update DB with crash info
             try {
@@ -475,7 +491,7 @@ class ServerProcess extends EventEmitter {
                     await serversDb.set(`server_${this.id}`, server);
                 }
             } catch (err) {
-                // ignore
+                log('warn', `[${this.config.name}] Failed to update DB after crash: ${err.message}`);
             }
 
             // Auto-restart on crash if enabled
@@ -488,9 +504,80 @@ class ServerProcess extends EventEmitter {
                     }
                 }, 5000);
             }
+        } else {
+            // Process exited with code 0 but stop wasn't requested — treat as clean stop
+            await this._setStateRobust(STATES.STOPPED);
+
+            try {
+                const server = await serversDb.get(`server_${this.id}`);
+                if (server) {
+                    server.exitCode = code;
+                    server.crashReason = null;
+                    server.crashDetected = false;
+                    await serversDb.set(`server_${this.id}`, server);
+                }
+            } catch (err) {
+                log('warn', `[${this.config.name}] Failed to update DB after exit: ${err.message}`);
+            }
         }
 
         this._stopRequested = false;
+        this._crashDetected = false;
+    }
+
+    /**
+     * Robust state setter — if the normal state transition is rejected,
+     * force-correct the state to prevent zombie processes stuck in a stale state.
+     * This is a safety net; under normal circumstances setState() should succeed.
+     */
+    async _setStateRobust(targetState) {
+        const oldState = this.state;
+
+        // Try the normal validated transition first
+        await this.setState(targetState);
+
+        // If setState rejected the transition, force it — the process is gone,
+        // so keeping a stale state (like 'running') would be worse.
+        if (this.state !== targetState) {
+            log('warn', `[${this.config.name}] Force-correcting state: ${this.state} -> ${targetState} (process is dead)`);
+            this.state = targetState;
+
+            // Clear players on stop/crash
+            if ([STATES.STOPPED, STATES.CRASHED].includes(targetState)) {
+                this.players.clear();
+            }
+
+            // Persist the forced state
+            try {
+                const server = await serversDb.get(`server_${this.id}`);
+                if (server) {
+                    server.state = targetState;
+                    if (targetState === STATES.STOPPED) server.lastStopped = new Date().toISOString();
+                    await serversDb.set(`server_${this.id}`, server);
+                }
+            } catch (err) {
+                log('error', `[${this.config.name}] Failed to persist forced state: ${err.message}`);
+            }
+
+            // Log event for forced transition
+            const eventTypes = {
+                [STATES.STOPPED]: 'stopped',
+                [STATES.CRASHED]: 'crashed'
+            };
+            if (eventTypes[targetState]) {
+                logEvent(this.id, eventTypes[targetState], `Server ${eventTypes[targetState]} (forced from ${oldState})`).catch(() => {});
+            }
+
+            // Broadcast state change
+            this.broadcast({
+                type: 'state',
+                serverId: this.id,
+                state: targetState,
+                exitCode: this.config.exitCode || null
+            });
+
+            this.emit('stateChange', targetState, oldState);
+        }
     }
 
     /**

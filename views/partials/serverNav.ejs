@@ -49,6 +49,18 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
             <span class="material-icons-outlined" style="font-size: 1rem;">tune</span> Properties
         </a>
     </li>
+    <%
+    const _contentTypes = { paper: 'Plugins', purpur: 'Plugins', folia: 'Plugins', fabric: 'Mods', forge: 'Mods' };
+    const _contentLabel = _contentTypes[server.serverType] || null;
+    const _contentIcon = 'extension';
+    %>
+    <% if (_contentLabel) { %>
+    <li class="nav-item">
+        <a class="nav-link d-flex align-items-center gap-1<%= active === 'plugins' ? ' active' : '' %>" href="/servers/<%= server.id %>/plugins">
+            <span class="material-icons-outlined" style="font-size: 1rem;"><%= _contentIcon %></span> <%= _contentLabel %>
+        </a>
+    </li>
+    <% } %>
     <li class="nav-item">
         <a class="nav-link d-flex align-items-center gap-1<%= active === 'files' ? ' active' : '' %>" href="/servers/<%= server.id %>/files">
             <span class="material-icons-outlined" style="font-size: 1rem;">folder</span> Files

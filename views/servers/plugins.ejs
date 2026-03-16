@@ -1,0 +1,179 @@
+<%- include('../partials/head', { title: server.name + ' — ' + contentType.label, navbar: true, fluid: true }) %>
+
+<%- include('../partials/serverNav', { server, active: 'plugins' }) %>
+
+<% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
+
+<!-- CSRF token for JS fetch calls -->
+<input type="hidden" id="csrf-token" value="<%= csrfToken %>">
+
+<% if (!_serverStopped) { %>
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+    <span class="material-icons-outlined">warning</span>
+    <div>The server must be stopped before uploading or deleting <%= contentType.label.toLowerCase() %>.</div>
+</div>
+<% } %>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <h6 class="text-body-secondary mb-0"><%= files.length %> <%= contentType.label.toLowerCase() %> installed</h6>
+    <% if (files.length > 0) { %>
+    <div class="d-flex gap-2">
+        <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1">
+            <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
+            Download All
+        </a>
+        <% if (_serverStopped) { %>
+        <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" id="delete-all-btn">
+            <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span>
+            Delete All
+        </button>
+        <% } else { %>
+        <button class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" disabled title="Stop the server to delete">
+            <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span>
+            Delete All
+        </button>
+        <% } %>
+    </div>
+    <% } %>
+</div>
+
+<% if (files.length > 0) { %>
+<div class="input-group input-group-sm mb-3" style="max-width: 350px;">
+    <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
+    <input type="text" class="form-control" id="search-input" placeholder="Search <%= contentType.label.toLowerCase() %>...">
+</div>
+<% } %>
+
+<!-- Upload -->
+<div class="d-flex gap-2 mb-3">
+    <% if (_serverStopped) { %>
+    <input type="file" class="form-control form-control-sm" id="file-input"
+        accept=".jar" multiple style="max-width: 400px;">
+    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
+        id="upload-btn" disabled>
+        <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
+        Upload
+    </button>
+    <% } else { %>
+    <input type="file" class="form-control form-control-sm" disabled style="max-width: 400px;">
+    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
+        disabled title="Stop the server to upload">
+        <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
+        Upload
+    </button>
+    <% } %>
+</div>
+
+<!-- File listing -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"></th>
+                    <th>Name</th>
+                    <th style="width: 120px;">Size</th>
+                    <th style="width: 180px;">Modified</th>
+                    <th style="width: 90px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <% files.forEach(function(file) { %>
+                <tr data-filename="<%= file.name %>">
+                    <td>
+                        <span class="material-icons-outlined text-body-secondary" style="font-size: 1.2rem;"><%= contentType.icon %></span>
+                    </td>
+                    <td><%= file.name %></td>
+                    <td class="text-body-secondary small"><%= file.sizeFormatted %></td>
+                    <td class="text-body-secondary small"><%= file.modifiedFormatted %></td>
+                    <td class="text-center">
+                        <div class="d-inline-flex gap-1">
+                            <a href="/servers/<%= server.id %>/plugins/download?file=<%= encodeURIComponent(file.name) %>"
+                               class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center"
+                               style="width: 32px; height: 32px; padding: 0;" title="Download">
+                                <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
+                            </a>
+                            <% if (_serverStopped) { %>
+                            <button type="button"
+                                class="btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center delete-btn"
+                                style="width: 32px; height: 32px; padding: 0;" title="Delete"
+                                data-filename="<%= file.name %>">
+                                <span class="material-icons-outlined" style="font-size: 1rem;">delete</span>
+                            </button>
+                            <% } else { %>
+                            <button class="btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center"
+                                style="width: 32px; height: 32px; padding: 0;" disabled title="Stop the server to delete">
+                                <span class="material-icons-outlined" style="font-size: 1rem;">delete</span>
+                            </button>
+                            <% } %>
+                        </div>
+                    </td>
+                </tr>
+                <% }) %>
+                <% if (files.length === 0) { %>
+                <tr>
+                    <td colspan="5" class="text-center text-body-secondary py-4">No <%= contentType.label.toLowerCase() %> installed. Upload some <code>.jar</code> files!</td>
+                </tr>
+                <% } %>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-danger">delete</span>
+                    Delete <%= contentType.label === 'Plugins' ? 'Plugin' : 'Mod' %>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                Permanently delete "<span id="delete-filename"></span>"?
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm" id="confirm-delete-btn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete All Confirmation Modal -->
+<div class="modal fade" id="deleteAllModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-danger">delete_sweep</span>
+                    Delete All <%= contentType.label %>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                Permanently delete all <strong><%= files.length %></strong> <%= contentType.label.toLowerCase() %>? This cannot be undone.
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm" id="confirm-delete-all-btn">Delete All</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Overlay -->
+<div id="upload-overlay" class="d-none position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+     style="z-index: 1050; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);">
+    <div class="text-center">
+        <div class="spinner-border text-success mb-3" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Uploading...</span>
+        </div>
+        <h5 class="mb-1">Uploading <%= contentType.label.toLowerCase() %>...</h5>
+        <p class="text-body-secondary mb-0">This may take a moment for large files.</p>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/plugins.js'] }) %>

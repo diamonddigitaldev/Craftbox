@@ -12,6 +12,7 @@ const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
 const { deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
+const { getContentType } = require('../utils/contentType');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, (req, res) => {
@@ -109,6 +110,12 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
         const serverDir = path.join(SERVERS_DIR, id);
         const logsDir = path.join(serverDir, 'logs');
         fs.mkdirSync(logsDir, { recursive: true });
+
+        // Create plugins/mods directory for supported server types
+        const contentType = getContentType(type);
+        if (contentType) {
+            fs.mkdirSync(path.join(serverDir, contentType.folder), { recursive: true });
+        }
 
         log('info', `Creating server "${trimmedName}" (${id}) — ${type} ${type === 'custom' ? '' : versionStr}`);
 
