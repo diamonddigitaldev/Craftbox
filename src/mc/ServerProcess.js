@@ -30,6 +30,7 @@ class ServerProcess extends EventEmitter {
         this._stopRequested = false;
         this._restartPending = false;
         this._crashDetected = false; // Set when crash report is detected in logs
+        this._oomKillInProgress = false; // Guards against multiple OOM kill attempts
     }
 
     get serverDir() {
@@ -103,6 +104,7 @@ class ServerProcess extends EventEmitter {
 
         this._stopRequested = false;
         this._crashDetected = false;
+        this._oomKillInProgress = false;
 
         // Forge: remove 0-byte .jar files left by the installer
         if (this.config.serverType === 'forge') {
@@ -367,6 +369,16 @@ class ServerProcess extends EventEmitter {
             this._crashDetected = true;
         }
 
+        // Live OOM detection — immediately kill the server to prevent data corruption
+        if (OOM_PATTERN.test(line) && this.child && !this._oomKillInProgress) {
+            this._oomKillInProgress = true;
+            log('error', `[${this.config.name}] OutOfMemoryError detected! Killing server immediately to prevent data corruption.`);
+            this._appendLine('[Craftbox] ⚠ OutOfMemoryError detected! Emergency shutdown initiated to prevent data corruption.');
+            // Force kill without setting _stopRequested so _handleClose treats it as a crash
+            this._crashDetected = true;
+            this._killTree();
+        }
+
         // Player join/leave detection
         if (this.state === STATES.RUNNING) {
             const joinMatch = JOIN_PATTERN.exec(line);
@@ -523,6 +535,7 @@ class ServerProcess extends EventEmitter {
 
         this._stopRequested = false;
         this._crashDetected = false;
+        this._oomKillInProgress = false;
     }
 
     /**
