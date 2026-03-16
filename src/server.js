@@ -141,9 +141,9 @@ const PORT = process.env.PORT || 6464;
             log('info', `Craftbox v${version} is running. | PORT: ${PORT}`);
         });
 
-        // ── 11. Auto-start servers & backup schedules ──
-        await serverManager.autoStartServers();
+        // ── 11. Catch-up backups & auto-start servers ──
         await backupScheduler.init();
+        await serverManager.autoStartServers();
 
         // ── 12. Graceful shutdown ──
         let shuttingDown = false;

@@ -37,7 +37,7 @@ class BackupScheduler {
 
     /**
      * Initialize schedules for all servers that have backupSchedule.enabled.
-     * Called once at boot after serverManager.autoStartServers().
+     * Called once at boot BEFORE serverManager.autoStartServers().
      * Also checks for missed backups while Craftbox was offline.
      */
     async init() {
@@ -75,9 +75,25 @@ class BackupScheduler {
             const timeSinceLast = Date.now() - new Date(lastScheduled.createdAt).getTime();
             if (timeSinceLast > intervalMs) {
                 log('info', `[${server.name}] Missed scheduled backup detected (last: ${lastScheduled.createdAt}). Creating catch-up backup...`);
+
+                // Stop server if running before creating backup
+                const proc = this.serverManager.getProcess(server.id);
+                const wasRunning = proc && proc.state === STATES.RUNNING;
+                if (wasRunning) {
+                    log('info', `[${server.name}] Stopping server for catch-up backup...`);
+                    await this.serverManager.stopServer(server.id);
+                    await proc.waitForState(STATES.STOPPED, 60000);
+                }
+
                 await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
                 await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
                 log('info', `[${server.name}] Catch-up backup completed.`);
+
+                // Restart if it was running before
+                if (wasRunning) {
+                    log('info', `[${server.name}] Restarting server after catch-up backup...`);
+                    await this.serverManager.startServer(server.id);
+                }
             }
         } catch (err) {
             log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
@@ -159,7 +175,7 @@ class BackupScheduler {
                 entry.nextBackupAt = new Date(Date.now() + intervalMs);
             }
 
-            // If server is not running, just backup directly
+            // If server is not running, just backup directly (no stop/restart needed)
             if (!proc || [STATES.STOPPED, STATES.CRASHED].includes(proc.state)) {
                 log('info', `[${server.name}] Scheduled backup: server already stopped, creating backup...`);
                 await createBackup(serverId, 'Scheduled Backup', 'scheduled');
