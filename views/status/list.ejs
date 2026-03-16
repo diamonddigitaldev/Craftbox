@@ -1,0 +1,61 @@
+<%- include('../partials/head', { title: 'Server Status', navbar: false, fluid: false }) %>
+
+<div class="text-center mb-4 mt-3">
+    <span class="material-icons-outlined text-success" style="font-size: 2.5rem;">inventory_2</span>
+    <h3 class="fw-bold mt-2">Craftbox</h3>
+    <p class="text-body-secondary">Select a server to view detailed information.</p>
+</div>
+
+<% if (servers.length === 0) { %>
+<div class="text-center py-5">
+    <span class="material-icons-outlined text-body-secondary mb-2" style="font-size: 3rem; opacity: 0.3;">dns</span>
+    <p class="text-body-secondary">No public servers available.</p>
+</div>
+<% } else { %>
+<div class="row justify-content-center">
+    <% servers.forEach(function(server) { %>
+    <%
+    const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger' };
+    const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error' };
+    const color = stateColors[server.state] || 'secondary';
+    const icon = stateIcons[server.state] || 'help';
+    %>
+    <div class="col-md-6 col-xl-4 mb-4">
+        <a href="/status/<%= server.id %>" class="text-decoration-none">
+            <div class="card status-card h-100 border-<%= color %>">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="card-title mb-0 text-light"><%= server.name %></h5>
+                        <span class="badge bg-<%= color %> d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 0.9rem;"><%= icon %></span>
+                            <%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %>
+                        </span>
+                    </div>
+                    <small class="text-body-secondary d-flex align-items-center gap-1 mb-3">
+                        <img src="/img/server-types/<%= server.serverType %>.svg" alt="" class="server-type-logo">
+                        <%= server.serverType.charAt(0).toUpperCase() + server.serverType.slice(1) %>
+                        <%= server.version || '' %>
+                    </small>
+                    <div class="d-flex flex-wrap gap-3 text-body-secondary" style="font-size: 0.85rem;">
+                        <span class="d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">people</span>
+                            <%= server.playerCount %> online
+                        </span>
+                        <span class="d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">schedule</span>
+                            <%= server.uptimeFormatted %>
+                        </span>
+                        <span class="d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">lan</span>
+                            <span class="server-ip" data-port="<%= server.port %>">:<%= server.port %></span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <% }) %>
+</div>
+<% } %>
+
+<%- include('../partials/foot', { scripts: ['/js/status.js'] }) %>

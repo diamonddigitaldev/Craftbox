@@ -37,7 +37,7 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
                     <span class="server-state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
                 </span>
             </div>
-            <div class="d-flex gap-3 text-body-secondary mb-3" style="font-size: 0.85rem;">
+            <div class="d-flex flex-wrap gap-3 text-body-secondary mb-3" style="font-size: 0.85rem;">
                 <span class="d-flex align-items-center gap-1">
                     <span class="material-icons-outlined" style="font-size: 1rem;">lan</span>
                     Port <%= server.port %>
@@ -45,6 +45,14 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
                 <span class="d-flex align-items-center gap-1">
                     <span class="material-icons-outlined" style="font-size: 1rem;">memory</span>
                     <%= server.memory %> MB
+                </span>
+                <span class="d-flex align-items-center gap-1">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">people</span>
+                    <span class="card-stat-players">0</span> online
+                </span>
+                <span class="d-flex align-items-center gap-1">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">schedule</span>
+                    <span class="card-stat-uptime">--</span>
                 </span>
             </div>
             <div class="d-flex gap-2 server-actions">

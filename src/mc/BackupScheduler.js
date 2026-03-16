@@ -1,6 +1,6 @@
 const { serversDb } = require('../db');
 const { log } = require('../utils/log');
-const { createBackup, applyRetention } = require('./BackupManager');
+const { createBackup, applyRetention, listBackups } = require('./BackupManager');
 const { STATES } = require('./stateMachine');
 
 /**
@@ -38,6 +38,7 @@ class BackupScheduler {
     /**
      * Initialize schedules for all servers that have backupSchedule.enabled.
      * Called once at boot after serverManager.autoStartServers().
+     * Also checks for missed backups while Craftbox was offline.
      */
     async init() {
         try {
@@ -46,10 +47,40 @@ class BackupScheduler {
                 const server = row.value;
                 if (server?.backupSchedule?.enabled) {
                     this.startSchedule(server.id);
+                    await this._catchUpIfMissed(server);
                 }
             }
         } catch (err) {
             log('error', `BackupScheduler init failed: ${err.message}`);
+        }
+    }
+
+    /**
+     * If a scheduled backup was missed while Craftbox was offline, run one now.
+     * A backup is "missed" when the last scheduled backup is older than the interval.
+     */
+    async _catchUpIfMissed(server) {
+        try {
+            const schedule = server.backupSchedule;
+            const intervalMs = (schedule.intervalHours || 24) * 60 * 60 * 1000;
+
+            const backups = await listBackups(server.id);
+            const lastScheduled = backups.find(b => b.type === 'scheduled');
+
+            if (!lastScheduled) {
+                // No scheduled backup has ever been made — don't force one on first boot
+                return;
+            }
+
+            const timeSinceLast = Date.now() - new Date(lastScheduled.createdAt).getTime();
+            if (timeSinceLast > intervalMs) {
+                log('info', `[${server.name}] Missed scheduled backup detected (last: ${lastScheduled.createdAt}). Creating catch-up backup...`);
+                await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
+                await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
+                log('info', `[${server.name}] Catch-up backup completed.`);
+            }
+        } catch (err) {
+            log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
         }
     }
 

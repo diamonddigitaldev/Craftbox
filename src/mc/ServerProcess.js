@@ -7,10 +7,13 @@ const { STATES, canTransition } = require('./stateMachine');
 const { serversDb } = require('../db');
 const { log } = require('../utils/log');
 const { getJavaForVersion, getDefaultJava } = require('../utils/javaVersion');
+const { logEvent, pruneEvents } = require('../utils/eventLogger');
 
 // Pattern that indicates the server is done starting
 const DONE_PATTERN = /\]: Done \(/;
 const OOM_PATTERN = /java\.lang\.OutOfMemoryError/;
+const JOIN_PATTERN = /\]: (\S+) joined the game$/;
+const LEAVE_PATTERN = /\]: (\S+) left the game$/;
 
 class ServerProcess extends EventEmitter {
     constructor(config) {
@@ -22,6 +25,7 @@ class ServerProcess extends EventEmitter {
         this.subscribers = new Set(); // WebSocket clients
         this.lastLines = []; // Last 200 lines for history
         this.logStream = null;
+        this.players = new Set(); // Currently online player names
         this._stopRequested = false;
         this._restartPending = false;
     }
@@ -47,6 +51,11 @@ class ServerProcess extends EventEmitter {
         this.state = newState;
         log('info', `[${this.config.name}] State: ${oldState} -> ${newState}`);
 
+        // Clear players on stop/crash
+        if ([STATES.STOPPED, STATES.CRASHED].includes(newState)) {
+            this.players.clear();
+        }
+
         // Persist to database
         try {
             const server = await serversDb.get(`server_${this.id}`);
@@ -58,6 +67,17 @@ class ServerProcess extends EventEmitter {
             }
         } catch (err) {
             log('error', `[${this.config.name}] Failed to persist state: ${err.message}`);
+        }
+
+        // Log state-change events
+        const eventTypes = {
+            [STATES.RUNNING]: 'started',
+            [STATES.STOPPED]: 'stopped',
+            [STATES.CRASHED]: 'crashed'
+        };
+        if (eventTypes[newState]) {
+            logEvent(this.id, eventTypes[newState], `Server ${eventTypes[newState]}`).catch(() => {});
+            pruneEvents(this.id, 500).catch(() => {});
         }
 
         // Broadcast state change to all WebSocket subscribers
@@ -281,7 +301,9 @@ class ServerProcess extends EventEmitter {
             type: 'subscribed',
             serverId: this.id,
             state: this.state,
-            history: this.lastLines.slice(-200)
+            history: this.lastLines.slice(-200),
+            players: Array.from(this.players),
+            playerCount: this.players.size
         });
         if (ws.readyState === 1) ws.send(msg);
     }
@@ -335,6 +357,35 @@ class ServerProcess extends EventEmitter {
         // Detect server ready
         if (this.state === STATES.STARTING && DONE_PATTERN.test(line)) {
             this.setState(STATES.RUNNING);
+        }
+
+        // Player join/leave detection
+        if (this.state === STATES.RUNNING) {
+            const joinMatch = JOIN_PATTERN.exec(line);
+            if (joinMatch) {
+                const playerName = joinMatch[1];
+                this.players.add(playerName);
+                this.broadcast({
+                    type: 'players',
+                    serverId: this.id,
+                    players: Array.from(this.players),
+                    count: this.players.size
+                });
+                logEvent(this.id, 'player_join', `${playerName} joined`, { playerName }).catch(() => {});
+            }
+
+            const leaveMatch = LEAVE_PATTERN.exec(line);
+            if (leaveMatch) {
+                const playerName = leaveMatch[1];
+                this.players.delete(playerName);
+                this.broadcast({
+                    type: 'players',
+                    serverId: this.id,
+                    players: Array.from(this.players),
+                    count: this.players.size
+                });
+                logEvent(this.id, 'player_leave', `${playerName} left`, { playerName }).catch(() => {});
+            }
         }
     }
 
@@ -404,6 +455,7 @@ class ServerProcess extends EventEmitter {
                 this._restartPending = false;
                 log('info', `[${this.config.name}] Restarting server...`);
                 this._appendLine('[Craftbox] Restarting server...');
+                logEvent(this.id, 'restarted', 'Server restarted').catch(() => {});
                 setTimeout(() => this.start(), 2000);
             }
         } else {

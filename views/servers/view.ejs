@@ -65,6 +65,26 @@
 </div>
 <% } %>
 
+<!-- Resource Stats Bar -->
+<div class="d-flex flex-wrap gap-3 mb-3 text-body-secondary" style="font-size: 0.85rem;" id="stats-bar" data-server-id="<%= server.id %>">
+    <span class="d-flex align-items-center gap-1">
+        <span class="material-icons-outlined" style="font-size: 1rem;">people</span>
+        <span id="stat-players">0</span> online
+    </span>
+    <span class="d-flex align-items-center gap-1">
+        <span class="material-icons-outlined" style="font-size: 1rem;">schedule</span>
+        <span id="stat-uptime">--</span>
+    </span>
+    <span class="d-flex align-items-center gap-1">
+        <span class="material-icons-outlined" style="font-size: 1rem;">memory</span>
+        <span id="stat-memory">--</span>
+    </span>
+    <span class="d-flex align-items-center gap-1">
+        <span class="material-icons-outlined" style="font-size: 1rem;">storage</span>
+        <span id="stat-disk">--</span>
+    </span>
+</div>
+
 <!-- Console -->
 <div data-server-id="<%= server.id %>" data-server-state="<%= server.state %>" id="console-wrapper">
     <%- include('../partials/console', { server }) %>

@@ -10,6 +10,7 @@ const { getProvider } = require('../mc/serverTypes');
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
+const { deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 
 // GET /servers/create — Server creation form
@@ -142,6 +143,7 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
             eula: true,
             autoRestart: false,
             autoStart: false,
+            statusPagePublic: false,
             createdAt: new Date().toISOString(),
             lastStarted: null,
             lastStopped: null,
@@ -275,6 +277,9 @@ router.post('/servers/:id/delete', ensureAuth, async (req, res) => {
         if (backupScheduler) backupScheduler.stopSchedule(id);
         const { deleteAllBackups } = require('../mc/BackupManager');
         await deleteAllBackups(id);
+
+        // Delete server events
+        await deleteServerEvents(id);
 
         // Delete server directory
         const serverDir = path.join(SERVERS_DIR, id);

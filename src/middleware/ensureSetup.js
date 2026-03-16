@@ -1,6 +1,6 @@
 const { configDb } = require('../db');
 
-const SKIP_PREFIXES = ['/vendor', '/css', '/js', '/setup'];
+const SKIP_PREFIXES = ['/vendor', '/css', '/js', '/setup', '/status'];
 
 module.exports = async function ensureSetup(req, res, next) {
     // Skip for static assets and the setup route itself

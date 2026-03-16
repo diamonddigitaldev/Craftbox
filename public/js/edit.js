@@ -22,6 +22,16 @@
     });
 })();
 
+// ── Status Page Visibility label ──
+(function () {
+    var toggle = document.getElementById('statusPagePublic');
+    var label = document.getElementById('statusPageLabel');
+    if (!toggle || !label) return;
+    toggle.addEventListener('change', function () {
+        label.textContent = toggle.checked ? 'Public' : 'Unlisted';
+    });
+})();
+
 // ── Update Checker ──
 (function () {
     const checkBtn = document.getElementById('check-update-btn');

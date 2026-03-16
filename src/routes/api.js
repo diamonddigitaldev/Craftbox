@@ -6,6 +6,8 @@ const { serversDb, SERVERS_DIR } = require('../db');
 const { getProvider, listProviders } = require('../mc/serverTypes');
 const { downloadServerJar } = require('../mc/downloader');
 const { log } = require('../utils/log');
+const { getEvents } = require('../utils/eventLogger');
+const { getProcessMemory, getDirectorySize, getUptime, formatSize, formatUptime } = require('../utils/resourceStats');
 
 // GET /api/servers — JSON list of all servers
 router.get('/api/servers', ensureAuth, async (req, res) => {
@@ -291,6 +293,82 @@ router.post('/api/servers/:id/backup-retention', ensureAuth, async (req, res) =>
     } catch (err) {
         log('error', `Failed to update backup retention: ${err.message}`);
         res.status(500).json({ error: 'Failed to update retention policy.' });
+    }
+});
+
+// GET /api/servers/:id/events — Get event history for a server
+router.get('/api/servers/:id/events', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+        const types = req.query.types ? req.query.types.split(',') : null;
+        const events = await getEvents(server.id, { limit, types });
+
+        res.json({ events });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch events.' });
+    }
+});
+
+// GET /api/servers/:id/stats — Get resource stats for a server
+router.get('/api/servers/:id/stats', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const serverManager = req.app.get('serverManager');
+        const proc = serverManager?.getProcess(server.id);
+
+        const stats = {
+            state: proc?.state || server.state,
+            uptime: 0,
+            uptimeFormatted: 'Offline',
+            memoryBytes: null,
+            memoryFormatted: null,
+            diskBytes: null,
+            diskFormatted: null,
+            playerCount: 0,
+            players: []
+        };
+
+        if (proc && proc.state === 'running') {
+            stats.uptime = getUptime(server.lastStarted);
+            stats.uptimeFormatted = formatUptime(stats.uptime);
+            stats.playerCount = proc.players.size;
+            stats.players = Array.from(proc.players);
+
+            if (proc.child?.pid) {
+                stats.memoryBytes = getProcessMemory(proc.child.pid);
+                if (stats.memoryBytes) {
+                    stats.memoryFormatted = formatSize(stats.memoryBytes);
+                }
+            }
+        }
+
+        const serverDir = path.resolve(server.directory);
+        stats.diskBytes = getDirectorySize(serverDir);
+        stats.diskFormatted = formatSize(stats.diskBytes);
+
+        res.json({ stats });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch stats.' });
+    }
+});
+
+// POST /api/servers/:id/statuspublic — Toggle status page visibility
+router.post('/api/servers/:id/statuspublic', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        server.statusPagePublic = !!req.body.enabled;
+        await serversDb.set(`server_${server.id}`, server);
+
+        res.json({ statusPagePublic: server.statusPagePublic });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update setting.' });
     }
 });
 

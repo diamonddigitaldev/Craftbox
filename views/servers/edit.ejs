@@ -124,9 +124,23 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
                         <%= server.autoStart ? 'checked' : '' %>>
                     <label class="form-check-label" for="autoStart">Start with Craftbox</label>
                 </div>
+                <hr class="my-3">
+                <h6 class="mb-2">Status Page</h6>
+                <div class="form-check form-switch mb-1">
+                    <input class="form-check-input toggle-switch" type="checkbox" id="statusPagePublic"
+                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                        data-endpoint="statuspublic"
+                        <%= server.statusPagePublic ? 'checked' : '' %>>
+                    <label class="form-check-label" for="statusPagePublic">
+                        Status Page Visibility: <strong id="statusPageLabel"><%= server.statusPagePublic ? 'Public' : 'Unlisted' %></strong>
+                    </label>
+                </div>
+                <small class="text-body-secondary d-block">
+                    <strong>Public</strong>: Server appears on the <a href="/status" target="_blank">/status</a> page for anyone to see.<br>
+                    <strong>Unlisted</strong> (default): Only accessible via its <a href="/status/<%= server.id %>" target="_blank">direct link</a>.
+                </small>
             </div>
         </div>
-    </div>
 
         <!-- Update Checker -->
         <% if ((server.serverType || 'vanilla') !== 'custom') { %>

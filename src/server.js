@@ -89,6 +89,10 @@ const PORT = process.env.PORT || 6464;
         // Static assets — app
         app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1d' }));
 
+        // Public status routes (mounted before auth/CSRF — GET-only, no mutations)
+        const statusRoutes = require('./routes/status');
+        app.use(statusRoutes);
+
         // Setup check (global — before auth-protected routes)
         const ensureSetup = require('./middleware/ensureSetup');
         app.use(ensureSetup);

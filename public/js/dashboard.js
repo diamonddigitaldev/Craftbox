@@ -50,6 +50,12 @@
             if (msg.type === 'state' && msg.serverId) {
                 updateCard(msg.serverId, msg.state);
             }
+            if (msg.type === 'players' && msg.serverId) {
+                updateCardStat(msg.serverId, 'players', msg.count);
+            }
+            if (msg.type === 'subscribed' && msg.serverId && typeof msg.playerCount === 'number') {
+                updateCardStat(msg.serverId, 'players', msg.playerCount);
+            }
         };
 
         ws.onclose = () => {
@@ -83,22 +89,34 @@
         card.dataset.state = state;
     }
 
-    // Periodic state refresh as a fallback
-    async function refreshStates() {
-        try {
-            const res = await fetch('/api/servers');
-            if (!res.ok) return;
-            const data = await res.json();
-            if (data.servers) {
-                data.servers.forEach(s => updateCard(s.id, s.state));
+    function updateCardStat(serverId, stat, value) {
+        var card = grid.querySelector('.server-card[data-server-id="' + serverId + '"]');
+        if (!card) return;
+        var el = card.querySelector('.card-stat-' + stat);
+        if (el) el.textContent = value;
+    }
+
+    // Fetch stats for all servers
+    async function fetchAllStats() {
+        var ids = getServerIds();
+        for (var i = 0; i < ids.length; i++) {
+            try {
+                var res = await fetch('/api/servers/' + ids[i] + '/stats');
+                if (!res.ok) continue;
+                var data = await res.json();
+                var s = data.stats;
+                updateCard(ids[i], s.state);
+                updateCardStat(ids[i], 'players', s.playerCount);
+                updateCardStat(ids[i], 'uptime', s.uptimeFormatted || '--');
+            } catch {
+                // ignore
             }
-        } catch {
-            // ignore
         }
     }
 
-    // Refresh every 30 seconds as fallback
-    setInterval(refreshStates, 30000);
+    // Fetch stats on load and every 10 seconds
+    fetchAllStats();
+    setInterval(fetchAllStats, 10000);
 
     connect();
 })();

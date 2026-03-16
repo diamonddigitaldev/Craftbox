@@ -16,6 +16,7 @@ const usersDb = db.table('users');
 const serversDb = db.table('servers');
 const configDb = db.table('config');
 const backupsDb = db.table('backups');
+const eventsDb = db.table('events');
 
 async function initDb() {
     await db.init();
@@ -23,6 +24,7 @@ async function initDb() {
     await serversDb.init();
     await configDb.init();
     await backupsDb.init();
+    await eventsDb.init();
 }
 
-module.exports = { db, usersDb, serversDb, configDb, backupsDb, initDb, DATA_DIR, SERVERS_DIR, BACKUPS_DIR };
+module.exports = { db, usersDb, serversDb, configDb, backupsDb, eventsDb, initDb, DATA_DIR, SERVERS_DIR, BACKUPS_DIR };

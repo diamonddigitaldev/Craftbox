@@ -62,6 +62,7 @@
                         msg.history.forEach(line => appendLine(line));
                     }
                     if (msg.state) updateState(msg.state);
+                    if (typeof msg.playerCount === 'number') updatePlayerCount(msg.playerCount);
                     scrollToBottom();
                     break;
 
@@ -69,6 +70,12 @@
                     if (msg.serverId === serverId) {
                         appendLine(msg.line);
                         if (autoScroll) scrollToBottom();
+                    }
+                    break;
+
+                case 'players':
+                    if (msg.serverId === serverId) {
+                        updatePlayerCount(msg.count);
                     }
                     break;
 
@@ -249,6 +256,35 @@
     }
     bindToggle('autoRestart', 'autorestart');
     bindToggle('autoStart', 'autostart');
+
+    // ── Resource Stats ──
+    const statPlayers = document.getElementById('stat-players');
+    const statUptime = document.getElementById('stat-uptime');
+    const statMemory = document.getElementById('stat-memory');
+    const statDisk = document.getElementById('stat-disk');
+
+    function updatePlayerCount(count) {
+        if (statPlayers) statPlayers.textContent = count;
+    }
+
+    async function fetchStats() {
+        try {
+            const res = await fetch('/api/servers/' + serverId + '/stats');
+            if (!res.ok) return;
+            const data = await res.json();
+            const s = data.stats;
+            if (statUptime) statUptime.textContent = s.uptimeFormatted || '--';
+            if (statMemory) statMemory.textContent = s.memoryFormatted || '--';
+            if (statDisk) statDisk.textContent = s.diskFormatted || '--';
+            updatePlayerCount(s.playerCount);
+        } catch {
+            // ignore
+        }
+    }
+
+    // Fetch stats immediately and every 10 seconds
+    fetchStats();
+    setInterval(fetchStats, 10000);
 
     // Start connection
     connect();

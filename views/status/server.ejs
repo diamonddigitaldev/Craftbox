@@ -1,0 +1,137 @@
+<%- include('../partials/head', { title: server.name + ' \u2014 Status', navbar: false, fluid: false }) %>
+
+<div class="text-center mb-2 mt-3">
+    <a href="/status" class="text-decoration-none text-body-secondary d-inline-flex align-items-center gap-1 small">
+        <span class="material-icons-outlined" style="font-size: 1rem;">arrow_back</span>
+        All Servers
+    </a>
+</div>
+
+<%
+const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger' };
+const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error' };
+const color = stateColors[server.state] || 'secondary';
+const icon = stateIcons[server.state] || 'help';
+%>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+
+        <!-- Server Header -->
+        <div class="card mb-3 border-<%= color %>">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h4 class="mb-1"><%= server.name %></h4>
+                        <small class="text-body-secondary d-flex align-items-center gap-1">
+                            <img src="/img/server-types/<%= server.serverType %>.svg" alt="" class="server-type-logo">
+                            <%= server.serverType.charAt(0).toUpperCase() + server.serverType.slice(1) %>
+                            <%= server.version || '' %>
+                        </small>
+                    </div>
+                    <span class="badge bg-<%= color %> d-flex align-items-center gap-1 fs-6">
+                        <span class="material-icons-outlined" style="font-size: 1rem;"><%= icon %></span>
+                        <%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %>
+                    </span>
+                </div>
+                <div class="row g-3 text-center">
+                    <div class="col-4">
+                        <div class="text-body-secondary small">Server IP</div>
+                        <strong class="server-ip" data-port="<%= server.port %>">:<%= server.port %></strong>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-body-secondary small">Players</div>
+                        <strong><%= server.playerCount %></strong>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-body-secondary small">Uptime</div>
+                        <strong><%= server.uptimeFormatted %></strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Players Online -->
+        <% if (server.players.length > 0) { %>
+        <div class="card mb-3">
+            <div class="card-body p-4">
+                <h6 class="mb-3 d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined" style="font-size: 1.2rem;">people</span>
+                    Players Online (<%= server.playerCount %>)
+                </h6>
+                <div class="d-flex flex-wrap gap-2">
+                    <% server.players.forEach(function(name) { %>
+                    <span class="badge bg-body-secondary text-body d-flex align-items-center gap-1">
+                        <span class="material-icons-outlined" style="font-size: 0.9rem;">person</span>
+                        <%= name %>
+                    </span>
+                    <% }) %>
+                </div>
+            </div>
+        </div>
+        <% } %>
+
+        <!-- Mods Download -->
+        <% if (hasMods && modsCount > 0) { %>
+        <div class="card mb-3">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <h6 class="mb-1 d-flex align-items-center gap-2">
+                            <span class="material-icons-outlined" style="font-size: 1.2rem;">extension</span>
+                            Mod Pack
+                        </h6>
+                        <small class="text-body-secondary"><%= modsCount %> mod<%= modsCount !== 1 ? 's' : '' %> installed</small>
+                    </div>
+                    <a href="/status/<%= server.id %>/mods" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1">
+                        <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
+                        Download Mods
+                    </a>
+                </div>
+            </div>
+        </div>
+        <% } %>
+
+        <!-- Recent Events -->
+        <div class="card mb-3">
+            <div class="card-body p-4">
+                <h6 class="mb-3 d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined" style="font-size: 1.2rem;">history</span>
+                    Recent Events
+                </h6>
+                <% if (events.length === 0) { %>
+                <p class="text-body-secondary mb-0">No recent events.</p>
+                <% } else { %>
+                <div class="list-group list-group-flush">
+                    <% events.forEach(function(event) { %>
+                    <%
+                    const eventIcons = { started: 'play_circle', stopped: 'stop_circle', crashed: 'error', restarted: 'restart_alt' };
+                    const eventColors = { started: 'text-success', stopped: 'text-secondary', crashed: 'text-danger', restarted: 'text-info' };
+                    %>
+                    <div class="list-group-item bg-transparent border-0 px-0 py-2 d-flex align-items-center gap-2">
+                        <span class="material-icons-outlined <%= eventColors[event.type] || 'text-body-secondary' %>" style="font-size: 1.1rem;">
+                            <%= eventIcons[event.type] || 'info' %>
+                        </span>
+                        <div class="flex-grow-1">
+                            <span><%= event.message %></span>
+                        </div>
+                        <small class="text-body-secondary text-nowrap event-time" data-time="<%= event.createdAt %>"></small>
+                    </div>
+                    <% }) %>
+                </div>
+                <% } %>
+            </div>
+        </div>
+
+        <div class="text-center mb-4">
+            <small class="text-body-secondary d-flex align-items-center justify-content-center gap-1">
+                Powered by
+                <span class="material-icons-outlined" style="font-size: 0.9rem; color: var(--craftbox-green);">inventory_2</span>
+                <strong>Craftbox</strong>
+            </small>
+        </div>
+
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/status.js'] }) %>
