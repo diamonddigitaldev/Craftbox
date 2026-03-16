@@ -58,7 +58,7 @@
 <div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
     <span class="material-icons-outlined">error</span>
     <div>
-        Server crashed<%= server.crashReason === 'oom' ? ' due to <strong>Out of Memory</strong>' : '' %>.
+        Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.
         Exit code: <strong><%= server.exitCode %></strong>.
         <% if (server.autoRestart) { %>Auto-restart is enabled.<% } %>
     </div>
