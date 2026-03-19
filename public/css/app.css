@@ -13,10 +13,33 @@
 body {
     min-height: 100vh;
     background-color: #0e0e10;
+    display: flex;
+    flex-direction: column;
 }
 
 .card {
     border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ---- Secondary Buttons ---- */
+.btn-outline-secondary {
+    --bs-btn-color: rgba(255, 255, 255, 0.7);
+    --bs-btn-border-color: rgba(255, 255, 255, 0.3);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: rgba(255, 255, 255, 0.12);
+    --bs-btn-hover-border-color: rgba(255, 255, 255, 0.5);
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: rgba(255, 255, 255, 0.18);
+    --bs-btn-active-border-color: rgba(255, 255, 255, 0.6);
+}
+
+.btn-secondary {
+    --bs-btn-bg: rgba(255, 255, 255, 0.15);
+    --bs-btn-border-color: rgba(255, 255, 255, 0.2);
+    --bs-btn-color: rgba(255, 255, 255, 0.85);
+    --bs-btn-hover-bg: rgba(255, 255, 255, 0.22);
+    --bs-btn-hover-border-color: rgba(255, 255, 255, 0.35);
+    --bs-btn-hover-color: #fff;
 }
 
 /* ---- Server Cards ---- */
@@ -214,6 +237,16 @@ body {
 .status-card:hover {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
     transform: translateY(-2px);
+}
+
+/* ---- Footer ---- */
+.footer a {
+    color: var(--craftbox-green);
+    text-decoration: none;
+}
+
+.footer a:hover {
+    text-decoration: underline;
 }
 
 /* ---- Responsive ---- */

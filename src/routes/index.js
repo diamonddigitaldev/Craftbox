@@ -3,6 +3,7 @@ const dashboardRoutes = require('./dashboard');
 const serverRoutes = require('./servers');
 const backupRoutes = require('./backups');
 const pluginRoutes = require('./plugins');
+const templateRoutes = require('./templates');
 const apiRoutes = require('./api');
 
 module.exports = function mountRoutes(app) {
@@ -11,5 +12,6 @@ module.exports = function mountRoutes(app) {
     app.use(serverRoutes);
     app.use(backupRoutes);
     app.use(pluginRoutes);
+    app.use(templateRoutes);
     app.use(apiRoutes);
 };

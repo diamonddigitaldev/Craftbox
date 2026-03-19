@@ -1,1 +1,157 @@
-# Craftbox
+<div align="center">
+  <img alt="Craftbox Logo" src="./public/img/craftbox.png" style="width:100px;height:auto;margin-bottom:1rem;" />
+
+  # Craftbox
+
+  <p style="margin-bottom:1rem;">A modern self-hosted platform for managing Minecraft servers with built-in mod support.</p>
+</div>
+
+<div align="center">
+
+![license](https://img.shields.io/badge/license-AGPL--3.0-lightgrey?style=flat-square)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Docker-lightgrey?style=flat-square)
+
+[![discord](https://img.shields.io/discord/667479986214666272?logo=discord&logoColor=white&style=flat-square)](https://diamonddigital.dev/discord)
+[![buy me a coffee](https://img.shields.io/badge/-Buy%20Me%20a%20Coffee-ffdd00?logo=Buy%20Me%20A%20Coffee&logoColor=000000&style=flat-square)](https://www.buymeacoffee.com/willtda)
+
+</div>
+
+## 🔎 Overview
+
+**Craftbox** is a self-hosted web panel for creating, configuring, monitoring, and managing Minecraft servers — no command-line expertise or dodgy download pages required.
+
+It ships as a single **Node.js / Express** application with a **Bootstrap 5** dark-theme UI, **WebSocket**-powered live console, and **SQLite** for zero-config persistence. Deploy it with Docker or run it standalone.
+
+Whether you're running a single Vanilla server or juggling multiple modded instances, Craftbox gives you full control from your browser.
+
+
+## ✨ Features
+
+- 🖥️ **Multi-Server Management** — Run and manage multiple Minecraft servers from a single panel, each with its own console, watchdog, and configuration.
+- 🧩 **Multi-Server-Type Support** — Vanilla, Paper, Purpur, Folia, Fabric, Forge, and custom JAR uploads.
+- 📟 **Live Console** — Real-time server log streaming and command input via WebSocket.
+- ⚙️ **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
+- 💾 **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
+- 🔌 **Plugin & Mod Management** — Upload and manage JAR files for plugins (Paper/Purpur/Folia) and mods (Fabric/Forge).
+- 📋 **Server Duplication & Templates** — Clone a server with or without world data, or save configurations as reusable templates.
+- 📊 **Status & Monitoring** — Public status pages, live player tracking, resource monitoring, and event history.
+- 🛡️ **Crash Detection & Auto-Restart** — Watchdog detects crashes/runtime errors and optionally auto-restarts.
+- 📱 **PWA Support** — Installable as a Progressive Web App on desktop and mobile.
+
+
+## 🧰 Getting Started
+
+### Docker (Recommended)
+
+Pull the image from Docker Hub and run it:
+
+```bash
+docker run -d \
+  --name craftbox \
+  --restart unless-stopped \
+  -p 6464:6464 \
+  -p 25565:25565 \
+  -v /path/to/craftbox/data:/app/data \
+  willtda/craftbox
+```
+
+> ⚠️ **Important:** The `-v` volume mount is **essential**. It stores your database, server files, and backups. If you do not bind a host path, all data will be lost when the container is removed. Make sure the path you choose is backed up and persistent.
+
+To expose additional Minecraft server ports, add more `-p` flags:
+
+```bash
+-p 25566:25566
+-p 25567:25567
+```
+
+Alternatively, use `docker-compose.yml`:
+
+```yaml
+services:
+  craftbox:
+    image: willtda/craftbox
+    container_name: craftbox
+    restart: unless-stopped
+    ports:
+      - "6464:6464"     # Web panel
+      - "25565:25565"   # Default Minecraft server port
+      # - "25566:25566" # Additional server ports as needed
+    volumes:
+      - /path/to/craftbox/data:/app/data
+    stop_grace_period: 45s
+```
+
+> ⚠️ **Double-check your volume mapping** before starting. The `/app/data` directory inside the container holds everything — your SQLite database, server directories, and backup archives. If this is not correctly mapped to a host path, you **will** lose your configuration and servers when the container is recreated.
+
+Craftbox will be available at `http://localhost:6464`. On first launch, you'll be prompted to create an admin account.
+
+
+### Standalone
+
+> **Requirements:** Node.js 20+ and Java (8, 17, 21, or 25 depending on Minecraft version).
+
+```bash
+git clone https://github.com/WillTDA/Craftbox.git
+cd Craftbox
+npm install
+npm start
+```
+
+For development with auto-reload:
+
+```bash
+npm run dev
+```
+
+
+## 🧩 Project Structure
+
+```
+Craftbox/
+├── src/
+│   ├── server.js              # Express app bootstrap
+│   ├── db.js                  # SQLite database (quick.db)
+│   ├── auth.js                # Passport authentication
+│   ├── security.js            # CSRF, rate limiting, security headers
+│   ├── websocket.js           # WebSocket server for live console
+│   ├── mc/
+│   │   ├── ServerProcess.js   # Child process wrapper & state machine
+│   │   ├── ServerManager.js   # Singleton server registry
+│   │   ├── BackupManager.js   # Backup creation, restore, retention
+│   │   ├── BackupScheduler.js # Scheduled backup timers
+│   │   └── serverTypes/       # Pluggable server type providers
+│   ├── routes/                # Express route handlers
+│   └── utils/                 # Event logger, resource stats, etc.
+├── views/                     # EJS templates
+├── public/                    # Static assets (CSS, JS, images)
+├── data/                      # Runtime data (SQLite DB, server files, backups)
+├── Dockerfile
+├── docker-compose.yml
+└── package.json
+```
+
+
+## 📜 License
+
+This project is licensed under the [GNU Affero General Public License v3.0](./LICENSE).
+
+
+## 📖 Acknowledgements
+
+* Built with [Node.js](https://nodejs.org/), [Express](https://expressjs.com/), and [Bootstrap](https://getbootstrap.com/)
+* Icons by [Material Icons](https://fonts.google.com/icons)
+* Java runtimes by [Eclipse Temurin](https://adoptium.net/)
+
+
+## 🙂 Contact Us
+
+* 💬 **Need help or want to chat?** [Join our Discord Server](https://diamonddigital.dev/discord)
+* 🐛 **Found a bug?** [Open an issue](https://github.com/WillTDA/Craftbox/issues)
+* 💡 **Have a suggestion?** [Submit a feature request](https://github.com/WillTDA/Craftbox/issues/new?labels=enhancement)
+
+
+<div align="center">
+  <a href="https://diamonddigital.dev/">
+  <strong>Created and maintained by</strong>
+  <img align="center" alt="Diamond Digital Development Logo" src="https://diamonddigital.dev/img/png/ddd_logo_text_transparent.png" style="width:25%;height:auto" /></a>
+</div>

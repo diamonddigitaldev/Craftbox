@@ -95,7 +95,7 @@ async function selectType(typeId) {
     }
 }
 
-async function loadVersions(typeId) {
+async function loadVersions(typeId, preselect) {
     versionSelect.innerHTML = '<option value="" disabled selected>Loading versions...</option>';
     try {
         const res = await fetch(`/api/versions?type=${encodeURIComponent(typeId)}`);
@@ -107,7 +107,7 @@ async function loadVersions(typeId) {
                 const opt = document.createElement('option');
                 opt.value = v.id;
                 opt.textContent = v.id;
-                if (i === 0) opt.selected = true;
+                if (preselect ? v.id === preselect : i === 0) opt.selected = true;
                 versionSelect.appendChild(opt);
             });
         } else {
@@ -117,3 +117,108 @@ async function loadVersions(typeId) {
         versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
     }
 }
+
+// ── Template loading ──
+const templateSelect = document.getElementById('template-select');
+const templateGroup = document.getElementById('template-group');
+
+(async () => {
+    try {
+        const res = await fetch('/api/templates');
+        const data = await res.json();
+        if (data.templates && data.templates.length > 0) {
+            templateGroup.classList.remove('d-none');
+            for (const t of data.templates) {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                const typeName = (t.serverType || 'vanilla').charAt(0).toUpperCase() + (t.serverType || 'vanilla').slice(1);
+                opt.textContent = `${t.name} (${typeName} ${t.serverType === 'custom' ? '' : t.version || ''})`.trim();
+                templateSelect.appendChild(opt);
+            }
+        }
+    } catch { /* ignore — templates are optional */ }
+})();
+
+function setTypeAndVersionLocked(locked) {
+    // Disable/enable type cards
+    typeSelector.querySelectorAll('.type-card').forEach(c => {
+        if (locked) {
+            c.style.pointerEvents = 'none';
+            c.style.opacity = '0.5';
+        } else {
+            c.style.pointerEvents = '';
+            c.style.opacity = '';
+        }
+    });
+
+    // Disable/enable version select
+    versionSelect.disabled = locked;
+
+    // Disable/enable custom URL input
+    const customUrlInput = document.getElementById('customJarUrl');
+    if (customUrlInput) customUrlInput.disabled = locked;
+}
+
+templateSelect.addEventListener('change', async () => {
+    const id = templateSelect.value;
+
+    // "None" selected — unlock type/version and reset
+    if (!id) {
+        setTypeAndVersionLocked(false);
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/templates/${id}`);
+        const data = await res.json();
+        const t = data.template;
+        if (!t) return;
+
+        // Set server type
+        if (t.serverType && t.serverType !== selectedType) {
+            // Update card selection visually
+            selectedType = t.serverType;
+            typeInput.value = t.serverType;
+            typeSelector.querySelectorAll('.type-card').forEach(c => {
+                c.classList.toggle('selected', c.dataset.type === t.serverType);
+            });
+
+            if (t.serverType === 'custom') {
+                versionGroup.classList.add('d-none');
+                customUrlGroup.classList.remove('d-none');
+                versionSelect.removeAttribute('required');
+            } else {
+                versionGroup.classList.remove('d-none');
+                customUrlGroup.classList.add('d-none');
+                versionSelect.setAttribute('required', '');
+                await loadVersions(t.serverType, t.version);
+            }
+        } else if (t.serverType !== 'custom' && t.version) {
+            await loadVersions(t.serverType, t.version);
+        }
+
+        // Lock type and version selection
+        setTypeAndVersionLocked(true);
+
+        // Fill form fields
+        if (t.port) document.getElementById('port').value = t.port;
+        if (t.gamemode) document.getElementById('gamemode').value = t.gamemode;
+        if (t.difficulty) document.getElementById('difficulty').value = t.difficulty;
+
+        // Advanced options
+        if (t.memory && t.memory !== 2048) {
+            document.getElementById('memory').value = t.memory;
+            const collapse = document.getElementById('advancedOptions');
+            if (!collapse.classList.contains('show')) {
+                new bootstrap.Collapse(collapse, { toggle: true });
+            }
+        }
+        if (t.javaArgs) {
+            document.getElementById('javaArgs').value = t.javaArgs;
+            const collapse = document.getElementById('advancedOptions');
+            if (!collapse.classList.contains('show')) {
+                new bootstrap.Collapse(collapse, { toggle: true });
+            }
+        }
+    } catch { /* ignore */ }
+});

@@ -76,6 +76,12 @@ const PORT = process.env.PORT || 6464;
         app.use(passport.initialize());
         app.use(passport.session());
 
+        // Make app version available to all views
+        app.use((req, res, next) => {
+            res.locals.version = version;
+            next();
+        });
+
         // Static assets — vendor (from node_modules)
         app.use('/vendor/bootstrap', express.static(
             path.join(__dirname, '..', 'node_modules', 'bootstrap', 'dist'),

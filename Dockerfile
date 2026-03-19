@@ -17,8 +17,8 @@ RUN apt-get update && \
     apt-get install -y temurin-21-jre && \
     # Java 25 — latest, default fallback
     apt-get install -y temurin-25-jre && \
-    # Node.js 22.x LTS
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    # Node.js 24.x LTS
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 

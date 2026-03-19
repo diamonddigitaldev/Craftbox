@@ -258,6 +258,129 @@ router.post('/servers/:id/kill', ensureAuth, async (req, res) => {
     res.redirect(`/servers/${req.params.id}`);
 });
 
+// POST /servers/:id/duplicate
+router.post('/servers/:id/duplicate', ensureAuth, async (req, res) => {
+    const id = req.params.id;
+    const server = await serversDb.get(`server_${id}`);
+    if (!server) {
+        req.session.flash = { error: 'Server not found.' };
+        return res.redirect('/dashboard');
+    }
+
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager?.getProcess(id);
+    const stopFirst = req.body.stopFirst === 'true' || req.body.stopFirst === true;
+    const startAfter = req.body.startAfter === 'true' || req.body.startAfter === true;
+
+    // Server must be stopped (or user chose to stop it)
+    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+        if (!stopFirst) {
+            req.session.flash = { error: 'Stop the server before duplicating it.' };
+            return res.redirect(`/servers/${id}/edit`);
+        }
+        try {
+            if (proc.state === 'running' || proc.state === 'starting') {
+                await serverManager.stopServer(id);
+                await proc.waitForState('stopped', 60000);
+            }
+        } catch (err) {
+            log('error', `Failed to stop server before duplicate: ${err.message}`);
+            req.session.flash = { error: `Failed to stop server: ${err.message}` };
+            return res.redirect(`/servers/${id}/edit`);
+        }
+    }
+
+    const { name, port, includeWorld } = req.body;
+
+    // Validate name
+    const trimmedName = String(name || '').trim();
+    if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
+        req.session.flash = { error: 'Invalid server name.' };
+        return res.redirect(`/servers/${id}/edit`);
+    }
+
+    // Validate port
+    const portNum = parseInt(port, 10);
+    if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+        req.session.flash = { error: 'Port must be between 1024 and 65535.' };
+        return res.redirect(`/servers/${id}/edit`);
+    }
+
+    try {
+        const newId = uuidv4();
+        const sourceDir = path.join(SERVERS_DIR, id);
+        const newDir = path.join(SERVERS_DIR, newId);
+
+        // Copy the entire server directory
+        fs.cpSync(sourceDir, newDir, { recursive: true });
+
+        // Remove world data if not requested
+        if (includeWorld !== 'true' && includeWorld !== true) {
+            const worldDirs = ['world', 'world_nether', 'world_the_end'];
+            for (const dir of worldDirs) {
+                const worldPath = path.join(newDir, dir);
+                if (fs.existsSync(worldPath)) {
+                    fs.rmSync(worldPath, { recursive: true, force: true });
+                }
+            }
+        }
+
+        // Clear log files in the new server
+        const logsDir = path.join(newDir, 'logs');
+        if (fs.existsSync(logsDir)) {
+            fs.rmSync(logsDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(logsDir, { recursive: true });
+
+        // Update server.properties with new port
+        const { updateServerProperties } = require('../mc/serverProperties');
+        updateServerProperties(newDir, { 'server-port': String(portNum) });
+
+        // Create new DB entry
+        const newServer = {
+            ...server,
+            id: newId,
+            name: trimmedName,
+            port: portNum,
+            state: 'stopped',
+            createdAt: new Date().toISOString(),
+            lastStarted: null,
+            lastStopped: null,
+            exitCode: null,
+            crashReason: null,
+            directory: path.join('data', 'servers', newId),
+            backupSchedule: {
+                enabled: false,
+                intervalHours: server.backupSchedule?.intervalHours || 24,
+                countdownMinutes: server.backupSchedule?.countdownMinutes || 5,
+                retentionCount: server.backupSchedule?.retentionCount || 5,
+                retentionDays: server.backupSchedule?.retentionDays || 0
+            }
+        };
+
+        await serversDb.set(`server_${newId}`, newServer);
+        log('info', `Server "${trimmedName}" (${newId}) duplicated from "${server.name}" (${id}).`);
+
+        // Restart original server if requested
+        if (startAfter && stopFirst) {
+            try {
+                await serverManager.startServer(id);
+            } catch (err) {
+                log('error', `Failed to restart server after duplicate: ${err.message}`);
+                req.session.flash = { warning: `Server duplicated as "${trimmedName}", but the original server failed to restart: ${err.message}` };
+                return res.redirect(`/servers/${newId}`);
+            }
+        }
+
+        req.session.flash = { success: `Server duplicated as "${trimmedName}".` };
+        res.redirect(`/servers/${newId}`);
+    } catch (err) {
+        log('error', `Failed to duplicate server ${id}: ${err.message}`);
+        req.session.flash = { error: `Failed to duplicate server: ${err.message}` };
+        res.redirect(`/servers/${id}/edit`);
+    }
+});
+
 // POST /servers/:id/delete
 router.post('/servers/:id/delete', ensureAuth, async (req, res) => {
     const id = req.params.id;

@@ -32,6 +32,88 @@
     });
 })();
 
+// ── Overlay helper ──
+function showEditOverlay(title, desc) {
+    var overlay = document.getElementById('edit-overlay');
+    if (!overlay) return;
+    document.getElementById('edit-overlay-title').textContent = title;
+    document.getElementById('edit-overlay-desc').textContent = desc;
+    overlay.classList.remove('d-none');
+}
+
+// ── Duplicate form (direct submit when server is stopped) ──
+(function () {
+    var form = document.getElementById('duplicate-form');
+    // Only wire direct submit if there's no "running" button (server is stopped)
+    if (!form || document.getElementById('duplicate-running-btn')) return;
+    form.addEventListener('submit', function () {
+        showEditOverlay('Duplicating server...', 'Copying server files. This may take a moment.');
+    });
+})();
+
+// ── Template form (direct submit when server is stopped) ──
+(function () {
+    var form = document.getElementById('template-form');
+    if (!form || document.getElementById('template-running-btn')) return;
+    form.addEventListener('submit', function () {
+        showEditOverlay('Saving template...', 'This may take a moment.');
+    });
+})();
+
+// ── Stop & Duplicate Modal ──
+(function () {
+    var btn = document.getElementById('duplicate-running-btn');
+    if (!btn) return;
+
+    var modal = new bootstrap.Modal(document.getElementById('stopDuplicateModal'));
+    var confirmBtn = document.getElementById('confirm-stop-duplicate-btn');
+    var startAfterCheckbox = document.getElementById('dupStartAfter');
+    var form = document.getElementById('duplicate-form');
+
+    btn.addEventListener('click', function () { modal.show(); });
+
+    startAfterCheckbox.addEventListener('change', function () {
+        document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+    });
+
+    confirmBtn.addEventListener('click', function () {
+        document.getElementById('dup-stop-first').value = 'true';
+        document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Stopping...';
+        modal.hide();
+        showEditOverlay('Stopping server & duplicating...', 'Copying server files. This may take a moment.');
+        form.submit();
+    });
+})();
+
+// ── Stop & Save Template Modal ──
+(function () {
+    var btn = document.getElementById('template-running-btn');
+    if (!btn) return;
+
+    var modal = new bootstrap.Modal(document.getElementById('stopTemplateModal'));
+    var confirmBtn = document.getElementById('confirm-stop-template-btn');
+    var startAfterCheckbox = document.getElementById('tmplStartAfter');
+    var form = document.getElementById('template-form');
+
+    btn.addEventListener('click', function () { modal.show(); });
+
+    startAfterCheckbox.addEventListener('change', function () {
+        document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+    });
+
+    confirmBtn.addEventListener('click', function () {
+        document.getElementById('tmpl-stop-first').value = 'true';
+        document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Stopping...';
+        modal.hide();
+        showEditOverlay('Stopping server & saving template...', 'This may take a moment.');
+        form.submit();
+    });
+})();
+
 // ── Update Checker ──
 (function () {
     const checkBtn = document.getElementById('check-update-btn');

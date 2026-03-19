@@ -1,0 +1,17 @@
+{
+    "name": "Craftbox",
+    "short_name": "Craftbox",
+    "description": "A modern self-hosted platform for managing Minecraft servers.",
+    "start_url": "/dashboard",
+    "display": "standalone",
+    "theme_color": "#4caf50",
+    "background_color": "#0e0e10",
+    "icons": [
+        {
+            "src": "/img/craftbox.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

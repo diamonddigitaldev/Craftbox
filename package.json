@@ -1,7 +1,7 @@
 {
     "name": "craftbox",
     "version": "1.0.0",
-    "description": "Configure and manage multiple Minecraft servers from a single user-friendly web interface.",
+    "description": "A modern self-hosted platform for managing Minecraft servers with built-in mod support.",
     "main": "src/server.js",
     "funding": {
         "type": "buymeacoffee",

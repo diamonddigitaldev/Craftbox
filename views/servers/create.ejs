@@ -15,6 +15,14 @@
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="serverType" id="serverType" value="vanilla">
 
+                    <!-- Load from Template -->
+                    <div class="mb-4 d-none" id="template-group">
+                        <label for="template-select" class="form-label">Load from Template</label>
+                        <select class="form-select" id="template-select">
+                            <option value="">None — start from scratch</option>
+                        </select>
+                    </div>
+
                     <!-- Server Type Selection -->
                     <div class="mb-4">
                         <label class="form-label">Server Type</label>
