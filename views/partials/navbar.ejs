@@ -26,12 +26,12 @@
                 </li>
             </ul>
             <% if (user) { %>
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary btn-sm dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
+            <div class="dropdown mt-2 mt-lg-0">
+                <button class="btn btn-outline-secondary btn-sm dropdown-toggle d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
                     <span class="material-icons-outlined" style="font-size: 1.2rem;">account_circle</span>
                     <%= user.username %>
                 </button>
-                <ul class="dropdown-menu dropdown-menu-end">
+                <ul class="dropdown-menu dropdown-menu-lg-end">
                     <li>
                         <a class="dropdown-item d-flex align-items-center gap-2" href="/account">
                             <span class="material-icons-outlined" style="font-size: 1.2rem;">settings</span>

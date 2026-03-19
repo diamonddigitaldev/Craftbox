@@ -31,7 +31,7 @@ function chatCommand(version, prefix, message, color) {
 class BackupScheduler {
     constructor(serverManager) {
         this.serverManager = serverManager;
-        // serverId -> { intervalTimer, countdownTimers[], nextBackupAt }
+        // serverId -> { backupTimer, countdownTimers[], nextBackupAt }
         this.timers = new Map();
     }
 
@@ -103,9 +103,14 @@ class BackupScheduler {
     /**
      * Start the backup schedule for a server.
      *
-     * The countdown phase runs BEFORE the scheduled time so the actual backup
-     * lands exactly on the interval boundary. For a 1h interval with a 5m
-     * countdown: countdown starts at T+55m, backup executes at T+60m.
+     * Uses setTimeout chains so backups always fire exactly on the interval
+     * boundary. The countdown is a pre-phase that ends when the backup starts.
+     *
+     * Timeline for 1h interval, 5m countdown:
+     *   T+55m — countdown starts: "backup in 5 min", "4 min", ...
+     *   T+60m — backup executes (stop, zip, restart)
+     *   T+115m — next countdown starts
+     *   T+120m — next backup executes
      */
     async startSchedule(serverId) {
         this.stopSchedule(serverId);
@@ -113,21 +118,59 @@ class BackupScheduler {
         const server = await serversDb.get(`server_${serverId}`);
         if (!server?.backupSchedule?.enabled) return;
 
-        const intervalMs = (server.backupSchedule.intervalHours || 24) * 60 * 60 * 1000;
-        const nextBackupAt = new Date(Date.now() + intervalMs);
-
-        const intervalTimer = setInterval(() => {
-            this._startCountdownOrBackup(serverId);
-        }, intervalMs);
-        intervalTimer.unref();
+        const schedule = server.backupSchedule;
+        const intervalMs = (schedule.intervalHours || 24) * 60 * 60 * 1000;
+        const countdownMs = (schedule.countdownMinutes || 5) * 60 * 1000;
 
         this.timers.set(serverId, {
-            intervalTimer,
+            backupTimer: null,
             countdownTimers: [],
-            nextBackupAt
+            nextBackupAt: null
         });
 
-        log('info', `Backup schedule started for server ${serverId}: every ${server.backupSchedule.intervalHours}h, next at ${nextBackupAt.toISOString()}`);
+        this._scheduleCycle(serverId, intervalMs, countdownMs);
+
+        log('info', `Backup schedule started for server ${serverId}: every ${schedule.intervalHours}h, next at ${this.timers.get(serverId).nextBackupAt.toISOString()}`);
+    }
+
+    /**
+     * Schedule one backup cycle: countdown timer + backup timer.
+     * Called on start and after each backup completes to chain the next cycle.
+     */
+    _scheduleCycle(serverId, intervalMs, countdownMs) {
+        const entry = this.timers.get(serverId);
+        if (!entry) return;
+
+        const nextBackupAt = new Date(Date.now() + intervalMs);
+        entry.nextBackupAt = nextBackupAt;
+
+        // Schedule countdown to start at (interval - countdown) before backup
+        const countdownDelay = Math.max(intervalMs - countdownMs, 0);
+        const countdownTimer = setTimeout(() => {
+            this._startCountdown(serverId);
+        }, countdownDelay);
+        countdownTimer.unref();
+        entry.countdownTimers.push(countdownTimer);
+
+        // Schedule backup at exactly the interval boundary
+        const backupTimer = setTimeout(async () => {
+            // Cancel any remaining countdown chat timers
+            for (const t of entry.countdownTimers) clearTimeout(t);
+            entry.countdownTimers = [];
+
+            try {
+                await this._executeBackup(serverId);
+            } catch (err) {
+                log('error', `Scheduled backup failed for ${serverId}: ${err.message}`);
+            }
+
+            // Chain the next cycle
+            if (this.timers.has(serverId)) {
+                this._scheduleCycle(serverId, intervalMs, countdownMs);
+            }
+        }, intervalMs);
+        backupTimer.unref();
+        entry.backupTimer = backupTimer;
     }
 
     /**
@@ -137,11 +180,12 @@ class BackupScheduler {
         const entry = this.timers.get(serverId);
         if (!entry) return;
 
-        clearInterval(entry.intervalTimer);
+        if (entry.backupTimer) clearTimeout(entry.backupTimer);
         for (const t of entry.countdownTimers) {
             clearTimeout(t);
         }
         this.timers.delete(serverId);
+        log('info', `Backup schedule stopped for server ${serverId}`);
     }
 
     /**
@@ -150,6 +194,7 @@ class BackupScheduler {
     async restartSchedule(serverId) {
         this.stopSchedule(serverId);
         await this.startSchedule(serverId);
+        log('info', `Backup schedule restarted for server ${serverId}`);
     }
 
     /**
@@ -161,22 +206,10 @@ class BackupScheduler {
     }
 
     /**
-     * Called by setInterval at the START of each cycle.
-     *
-     * If the server is running, the countdown begins immediately and the actual
-     * backup fires countdownMinutes later — i.e. the countdown is a pre-phase
-     * that finishes exactly when the next interval tick would land.
-     *
-     * Timeline for 1 h interval, 5 min countdown:
-     *   T+0m   — setInterval fires → countdown starts, chat: "backup in 5 min"
-     *   T+1m–4m — chat warnings
-     *   T+5m   — server stops, backup created, server restarts
-     *   T+60m  — next setInterval fires → countdown starts again
-     *
-     * Because the countdown (5 min) is much shorter than the interval (≥1 h),
-     * the overlap is negligible and backups stay on cadence.
+     * Send countdown chat messages to the server. Only sends if the server is
+     * running — the backup itself fires on its own timer regardless.
      */
-    async _startCountdownOrBackup(serverId) {
+    async _startCountdown(serverId) {
         try {
             const server = await serversDb.get(`server_${serverId}`);
             if (!server) return;
@@ -184,64 +217,17 @@ class BackupScheduler {
             const proc = this.serverManager.getProcess(serverId);
             const schedule = server.backupSchedule || {};
             const countdownMinutes = schedule.countdownMinutes || 5;
-
-            // Update next backup time
             const entry = this.timers.get(serverId);
-            if (entry) {
-                const intervalMs = (schedule.intervalHours || 24) * 60 * 60 * 1000;
-                entry.nextBackupAt = new Date(Date.now() + intervalMs);
-            }
 
-            // If server is not running, just backup directly (no stop/restart needed)
-            if (!proc || [STATES.STOPPED, STATES.CRASHED].includes(proc.state)) {
-                log('info', `[${server.name}] Scheduled backup: server already stopped, creating backup...`);
-                await createBackup(serverId, 'Scheduled Backup', 'scheduled');
-                await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
-                return;
-            }
+            // Only send chat messages if server is running
+            if (!proc || proc.state !== STATES.RUNNING) return;
 
-            // Server is running — start countdown before backup
             log('info', `[${server.name}] Scheduled backup: starting ${countdownMinutes}m countdown...`);
 
-            // Clear any existing countdown timers
-            if (entry) {
-                for (const t of entry.countdownTimers) clearTimeout(t);
-                entry.countdownTimers = [];
-            }
-
-            // Track whether the backup has already been triggered (e.g. by early server stop)
-            let backupDone = false;
-
-            // Listen for the server stopping during countdown so we can backup immediately
-            const onStateChange = async (newState) => {
-                if (backupDone) return;
-                if (![STATES.STOPPED, STATES.CRASHED].includes(newState)) return;
-
-                backupDone = true;
-                proc.removeListener('stateChange', onStateChange);
-
-                // Cancel remaining countdown timers
-                if (entry) {
-                    for (const t of entry.countdownTimers) clearTimeout(t);
-                    entry.countdownTimers = [];
-                }
-
-                log('info', `[${server.name}] Server stopped during backup countdown, creating backup now...`);
-                try {
-                    await createBackup(serverId, 'Scheduled Backup', 'scheduled');
-                    await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
-                } catch (err) {
-                    log('error', `[${server.name}] Scheduled backup failed after early stop: ${err.message}`);
-                }
-            };
-            proc.on('stateChange', onStateChange);
-
-            // Schedule countdown messages (5, 4, 3, 2, 1 minutes before backup)
             for (let m = countdownMinutes; m >= 1; m--) {
                 const delayMs = (countdownMinutes - m) * 60 * 1000;
                 const label = m === 1 ? '1 minute' : `${m} minutes`;
                 const timer = setTimeout(() => {
-                    if (backupDone) return;
                     const p = this.serverManager.getProcess(serverId);
                     if (p && p.state === STATES.RUNNING) {
                         p.sendCommand(chatCommand(server.version, '[Craftbox] ', `Server backup in ${label}...`, 'yellow'));
@@ -250,26 +236,8 @@ class BackupScheduler {
                 timer.unref();
                 if (entry) entry.countdownTimers.push(timer);
             }
-
-            // After countdown completes: stop, backup, conditionally restart
-            const countdownMs = countdownMinutes * 60 * 1000;
-            const stopTimer = setTimeout(async () => {
-                // If server stopped during countdown, backup already happened
-                if (backupDone) return;
-                backupDone = true;
-                proc.removeListener('stateChange', onStateChange);
-
-                try {
-                    await this._executeBackup(serverId, server, schedule);
-                } catch (err) {
-                    log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
-                }
-            }, countdownMs);
-            stopTimer.unref();
-            if (entry) entry.countdownTimers.push(stopTimer);
-
         } catch (err) {
-            log('error', `Scheduled backup trigger failed for ${serverId}: ${err.message}`);
+            log('error', `Backup countdown failed for ${serverId}: ${err.message}`);
         }
     }
 
@@ -277,10 +245,16 @@ class BackupScheduler {
      * Execute the actual backup: stop the server if running, create backup,
      * apply retention, and restart if the server was running before.
      */
-    async _executeBackup(serverId, server, schedule) {
+    async _executeBackup(serverId) {
+        const server = await serversDb.get(`server_${serverId}`);
+        if (!server) return;
+
+        const schedule = server.backupSchedule || {};
         const p = this.serverManager.getProcess(serverId);
-        if (!p) {
-            // Process gone, just backup
+
+        if (!p || [STATES.STOPPED, STATES.CRASHED].includes(p.state)) {
+            // Server not running — just backup directly
+            log('info', `[${server.name}] Scheduled backup: server already stopped, creating backup...`);
             await createBackup(serverId, 'Scheduled Backup', 'scheduled');
             await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
             return;
