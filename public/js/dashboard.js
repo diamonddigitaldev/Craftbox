@@ -87,6 +87,18 @@
         // Update card border
         card.className = card.className.replace(/border-\w+/g, '') + ` border-${color}`;
         card.dataset.state = state;
+
+        // Toggle action buttons
+        var startBtn = card.querySelector('.server-action-start');
+        var stopBtn = card.querySelector('.server-action-stop');
+        var restartBtn = card.querySelector('.server-action-restart');
+        if (startBtn) startBtn.classList.toggle('d-none', state !== 'stopped' && state !== 'crashed');
+        if (stopBtn) stopBtn.classList.toggle('d-none', state !== 'running' && state !== 'starting');
+        if (restartBtn) restartBtn.classList.toggle('d-none', state !== 'running');
+
+        // Toggle crash footer
+        var crashFooter = card.querySelector('.server-crash-footer');
+        if (crashFooter) crashFooter.classList.toggle('d-none', state !== 'crashed');
     }
 
     function updateCardStat(serverId, stat, value) {
