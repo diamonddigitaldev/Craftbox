@@ -104,12 +104,12 @@ const allTypes = [...new Set(events.map(e => e.type))].sort();
                     <td><%= event.message %></td>
                     <td>
                         <% if (event.initiatedBy) { %>
-                        <span class="d-flex align-items-center gap-1">
+                        <span class="d-flex align-items-center gap-1" style="font-size: 0.85rem;">
                             <span class="material-icons-outlined" style="font-size: 0.9rem;">person</span>
                             <%= event.initiatedBy %>
                         </span>
                         <% } else if (event.playerName) { %>
-                        <span class="d-flex align-items-center gap-1">
+                        <span class="d-flex align-items-center gap-1" style="font-size: 0.85rem;">
                             <span class="material-icons-outlined" style="font-size: 0.9rem;">sports_esports</span>
                             <%= event.playerName %>
                         </span>
