@@ -138,6 +138,7 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 
 ## 📖 Acknowledgements
 
+* Logo designed by [TheFuturisticIdiot](https://youtube.com/TheFuturisticIdiot)
 * Built with [Node.js](https://nodejs.org/), [Express](https://expressjs.com/), and [Bootstrap](https://getbootstrap.com/)
 * Icons by [Material Icons](https://fonts.google.com/icons)
 * Java runtimes by [Eclipse Temurin](https://adoptium.net/)
