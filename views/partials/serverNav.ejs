@@ -71,4 +71,9 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
             <span class="material-icons-outlined" style="font-size: 1rem;">backup</span> Backups
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link d-flex align-items-center gap-1<%= active === 'events' ? ' active' : '' %>" href="/servers/<%= server.id %>/events">
+            <span class="material-icons-outlined" style="font-size: 1rem;">history</span> Events
+        </a>
+    </li>
 </ul>

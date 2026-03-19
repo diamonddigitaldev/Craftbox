@@ -10,7 +10,7 @@ const { getProvider } = require('../mc/serverTypes');
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
-const { deleteServerEvents } = require('../utils/eventLogger');
+const { logEvent, deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 const { getContentType } = require('../utils/contentType');
 
@@ -215,6 +215,7 @@ router.post('/servers/:id/start', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
         await serverManager.startServer(req.params.id);
+        logEvent(req.params.id, 'action', 'Server start requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is starting...' };
     } catch (err) {
         req.session.flash = { error: err.message };
@@ -227,6 +228,7 @@ router.post('/servers/:id/stop', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
         await serverManager.stopServer(req.params.id);
+        logEvent(req.params.id, 'action', 'Server stop requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is stopping...' };
     } catch (err) {
         req.session.flash = { error: err.message };
@@ -239,6 +241,7 @@ router.post('/servers/:id/restart', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
         await serverManager.restartServer(req.params.id);
+        logEvent(req.params.id, 'action', 'Server restart requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is restarting...' };
     } catch (err) {
         req.session.flash = { error: err.message };
@@ -251,6 +254,7 @@ router.post('/servers/:id/kill', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
         await serverManager.killServer(req.params.id);
+        logEvent(req.params.id, 'action', 'Server force-killed', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { warning: 'Server force-killed.' };
     } catch (err) {
         req.session.flash = { error: err.message };

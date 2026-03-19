@@ -97,6 +97,9 @@ async function selectType(typeId) {
 
 async function loadVersions(typeId, preselect) {
     versionSelect.innerHTML = '<option value="" disabled selected>Loading versions...</option>';
+    // Disable submit while versions are loading to prevent empty version submission
+    const wasEnabled = !createBtn.disabled;
+    createBtn.disabled = true;
     try {
         const res = await fetch(`/api/versions?type=${encodeURIComponent(typeId)}`);
         const data = await res.json();
@@ -115,6 +118,9 @@ async function loadVersions(typeId, preselect) {
         }
     } catch {
         versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
+    } finally {
+        // Re-enable submit only if EULA is still checked
+        createBtn.disabled = !eulaCheck.checked;
     }
 }
 
@@ -151,8 +157,15 @@ function setTypeAndVersionLocked(locked) {
         }
     });
 
-    // Disable/enable version select
-    versionSelect.disabled = locked;
+    // Lock version select visually but keep it submittable
+    // (disabled fields are excluded from form submission)
+    if (locked) {
+        versionSelect.style.pointerEvents = 'none';
+        versionSelect.style.opacity = '0.5';
+    } else {
+        versionSelect.style.pointerEvents = '';
+        versionSelect.style.opacity = '';
+    }
 
     // Disable/enable custom URL input
     const customUrlInput = document.getElementById('customJarUrl');

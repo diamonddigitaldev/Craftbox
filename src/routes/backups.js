@@ -4,6 +4,7 @@ const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, backupsDb } = require('../db');
 const { log } = require('../utils/log');
+const { logEvent } = require('../utils/eventLogger');
 const {
     createBackup,
     restoreBackup,
@@ -111,6 +112,7 @@ router.post('/servers/:id/backups/create', ensureAuth, async (req, res) => {
         const schedule = server.backupSchedule || {};
         await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
 
+        logEvent(server.id, 'backup_create', `Manual backup created (${formatSize(backup.size)})`, { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: `Backup created: ${formatSize(backup.size)}` };
 
         // Start server after backup if requested
@@ -160,6 +162,7 @@ router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, re
         // Sync DB fields from the restored server.properties
         await syncServerConfig(server.id);
 
+        logEvent(server.id, 'backup_restore', 'Backup restored', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Backup restored successfully.' };
 
         // Start server after restore if requested
@@ -240,6 +243,7 @@ router.post('/servers/:id/backups/:backupId/delete', ensureAuth, async (req, res
 
     try {
         await deleteBackup(server.id, req.params.backupId);
+        logEvent(server.id, 'backup_delete', 'Backup deleted', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Backup deleted.' };
     } catch (err) {
         log('error', `Backup delete failed: ${err.message}`);
