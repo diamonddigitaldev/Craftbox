@@ -120,33 +120,6 @@ npm run dev
 > **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist.
 
 
-## 🧩 Project Structure
-
-```
-Craftbox/
-├── src/
-│   ├── server.js              # Express app bootstrap
-│   ├── db.js                  # SQLite database (quick.db)
-│   ├── auth.js                # Passport authentication
-│   ├── security.js            # CSRF, rate limiting, security headers
-│   ├── websocket.js           # WebSocket server for live console
-│   ├── mc/
-│   │   ├── ServerProcess.js   # Child process wrapper & state machine
-│   │   ├── ServerManager.js   # Singleton server registry
-│   │   ├── BackupManager.js   # Backup creation, restore, retention
-│   │   ├── BackupScheduler.js # Scheduled backup timers
-│   │   └── serverTypes/       # Pluggable server type providers
-│   ├── routes/                # Express route handlers
-│   └── utils/                 # Event logger, resource stats, etc.
-├── views/                     # EJS templates
-├── public/                    # Static assets (CSS, JS, images)
-├── data/                      # Runtime data (SQLite DB, server files, backups)
-├── Dockerfile
-├── docker-compose.yml
-└── package.json
-```
-
-
 ## 📜 License
 
 This project is licensed under the [GNU Affero General Public License v3.0](./LICENSE).
