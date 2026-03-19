@@ -159,8 +159,8 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 ## 🙂 Contact Us
 
 * 💬 **Need help or want to chat?** [Join our Discord Server](https://diamonddigital.dev/discord)
-* 🐛 **Found a bug?** [Open an issue](https://github.com/WillTDA/Craftbox/issues)
-* 💡 **Have a suggestion?** [Submit a feature request](https://github.com/WillTDA/Craftbox/issues/new?labels=enhancement)
+* 🐛 **Found a bug?** [Open an issue](https://github.com/WillTDA/Craftbox/issues/new?template=bug_report.yml)
+* 💡 **Have a suggestion?** [Submit a feature request](https://github.com/WillTDA/Craftbox/issues/new?template=feature_request.yml)
 
 
 <div align="center">
