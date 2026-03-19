@@ -192,6 +192,7 @@ class BackupScheduler {
      * Restart the schedule (e.g. after settings change).
      */
     async restartSchedule(serverId) {
+        log('info', `Restarting backup schedule for server ${serverId}...`);
         this.stopSchedule(serverId);
         await this.startSchedule(serverId);
         log('info', `Backup schedule restarted for server ${serverId}`);
