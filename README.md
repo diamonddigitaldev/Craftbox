@@ -40,6 +40,23 @@ Whether you're running a single Vanilla server or juggling multiple modded insta
 - 📱 **PWA Support** — Installable as a Progressive Web App on desktop and mobile.
 
 
+## 📸 Screenshots
+
+| Feature | Screenshot |
+|---------|-----------|
+| **Dashboard** — Overview of all your servers, their status, and quick actions. | ![Dashboard](./docs/img/screenshots/dashboard.png) |
+| **Create Server** — Set up a new server with type, version, and settings. | ![Create](./docs/img/screenshots/create.png) |
+| **Console** — Real-time server logs and command input with live updates. | ![Console](./docs/img/screenshots/console.png) |
+| **Settings** — Configure basic world settings, auto-restart, auto-start, and other server behaviors. | ![Settings](./docs/img/screenshots/settings.png) |
+| **Server Properties** — Edit server.properties and JVM flags from the browser. | ![Properties](./docs/img/screenshots/properties.png) |
+| **Plugin & Mod Manager** — Upload and manage plugins for Paper/Purpur or mods for Fabric/Forge. | ![Mods](./docs/img/screenshots/mods.png) |
+| **File Manager** — Browse and edit server files directly from the web panel. | ![Files](./docs/img/screenshots/files.png) |
+| **Backups** — Create, schedule, and restore backups with retention policies. | ![Backups](./docs/img/screenshots/backups.png) |
+| **Event History** — Track player joins, crashes, restarts, and other events. | ![Events](./docs/img/screenshots/events.png) |
+| **Public Status Page** — Share a read-only status page with your community. | ![Status](./docs/img/screenshots/status.png) |
+| **Server Templates** — Quickly create new servers based on existing configurations. | ![Templates](./docs/img/screenshots/templates.png) |
+
+
 ## 🧰 Getting Started
 
 ### Docker (Recommended)
