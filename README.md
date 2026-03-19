@@ -44,6 +44,10 @@ Whether you're running a single Vanilla server or juggling multiple modded insta
 
 ### Docker (Recommended)
 
+A common problem with Minecraft server setups is that they require a specific version of the Java runtime depending on your Minecraft version.
+
+The Docker image contains all Java runtime versions required for each version of Minecraft. Craftbox will intelligently pick the correct one for you!
+
 Pull the image from Docker Hub and run it:
 
 ```bash
@@ -89,7 +93,7 @@ Craftbox will be available at `http://localhost:6464`. On first launch, you'll b
 
 ### Standalone
 
-> **Requirements:** Node.js 20+ and Java (8, 17, 21, or 25 depending on Minecraft version).
+> **Requirements:** Node.js 24+ and Java (8, 17, 21, or 25 depending on Minecraft version).
 
 ```bash
 git clone https://github.com/WillTDA/Craftbox.git
