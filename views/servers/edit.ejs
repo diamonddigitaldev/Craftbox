@@ -21,7 +21,7 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
                     <div class="mb-3">
-                        <label for="name" class="form-label">Server Name</label>
+                        <label for="name" class="form-label required-star">Server Name</label>
                         <input type="text" class="form-control" id="name" name="name" required
                             minlength="1" maxlength="50" pattern="[a-zA-Z0-9 _\-]+"
                             value="<%= server.name %>">
@@ -38,7 +38,7 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
                             <div class="form-text">Type and version cannot be changed.</div>
                         </div>
                         <div class="col-md-4 mt-3 mt-md-0">
-                            <label for="port" class="form-label">Server Port</label>
+                            <label for="port" class="form-label required-star">Server Port</label>
                             <input type="number" class="form-control" id="port" name="port"
                                 value="<%= server.port %>" min="1024" max="65535" required>
                         </div>
@@ -81,7 +81,7 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
                         <div class="collapse mt-3" id="advancedOptions">
                             <div class="row">
                                 <div class="col-md-6">
-                                    <label for="memory" class="form-label">Memory (MB)</label>
+                                    <label for="memory" class="form-label required-star">Memory (MB)</label>
                                     <input type="number" class="form-control" id="memory" name="memory"
                                         value="<%= server.memory %>" min="512" max="65536" step="256" required>
                                     <div class="form-text">RAM allocated to the server (-Xmx).</div>
@@ -98,7 +98,7 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
 
                     <hr class="my-4">
 
-                    <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2">
+                    <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2" data-validate-required>
                         <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
                         Save Changes
                     </button>
@@ -184,13 +184,13 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
                     <input type="hidden" name="startAfter" id="dup-start-after" value="true">
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="dup-name" class="form-label">New Server Name</label>
+                            <label for="dup-name" class="form-label required-star">New Server Name</label>
                             <input type="text" class="form-control" id="dup-name" name="name"
                                 value="<%= server.name %> - Copy" minlength="1" maxlength="50"
                                 pattern="[a-zA-Z0-9 _\-]+" required>
                         </div>
                         <div class="col-md-6 mt-3 mt-md-0">
-                            <label for="dup-port" class="form-label">New Port</label>
+                            <label for="dup-port" class="form-label required-star">New Port</label>
                             <input type="number" class="form-control" id="dup-port" name="port"
                                 value="<%= server.port + 1 %>" min="1024" max="65535" required>
                         </div>
@@ -243,7 +243,7 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
                     <input type="hidden" name="stopFirst" id="tmpl-stop-first" value="false">
                     <input type="hidden" name="startAfter" id="tmpl-start-after" value="true">
                     <div class="mb-3">
-                        <label for="template-name" class="form-label">Template Name</label>
+                        <label for="template-name" class="form-label required-star">Template Name</label>
                         <input type="text" class="form-control" id="template-name" name="name"
                             value="<%= server.name %>" minlength="1" maxlength="50"
                             pattern="[a-zA-Z0-9 _\-]+" required>

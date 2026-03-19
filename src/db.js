@@ -19,6 +19,7 @@ const configDb = db.table('config');
 const backupsDb = db.table('backups');
 const eventsDb = db.table('events');
 const templatesDb = db.table('templates');
+const sessionsDb = db.table('sessions');
 
 async function markAllServersStoppedInDb({ reason } = {}) {
     const safeReason = reason ? String(reason) : null;
@@ -57,10 +58,11 @@ async function initDb() {
     await backupsDb.init();
     await eventsDb.init();
     await templatesDb.init();
+    await sessionsDb.init();
 
     // Any persisted "running/starting/stopping" state becomes invalid across app restarts.
     // Ensure the DB doesn't keep servers locked in RUNNING forever after a crash.
     await markAllServersStoppedInDb({ reason: 'startup' });
 }
 
-module.exports = { db, usersDb, serversDb, configDb, backupsDb, eventsDb, templatesDb, initDb, markAllServersStoppedInDb, DATA_DIR, SERVERS_DIR, BACKUPS_DIR };
+module.exports = { db, usersDb, serversDb, configDb, backupsDb, eventsDb, templatesDb, sessionsDb, initDb, markAllServersStoppedInDb, DATA_DIR, SERVERS_DIR, BACKUPS_DIR };

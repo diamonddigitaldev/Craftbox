@@ -33,6 +33,13 @@
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="/account">
+                            <span class="material-icons-outlined" style="font-size: 1.2rem;">settings</span>
+                            Account Settings
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
                         <form method="POST" action="/logout">
                             <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
                             <button type="submit" class="dropdown-item d-flex align-items-center gap-2">

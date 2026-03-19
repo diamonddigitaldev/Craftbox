@@ -1,5 +1,6 @@
 const express = require('express');
 const fs = require('fs');
+const contentDisposition = require('content-disposition');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, backupsDb } = require('../db');
@@ -101,7 +102,7 @@ router.post('/servers/:id/backups/create', ensureAuth, async (req, res) => {
 
             // Stop the server and wait
             if (proc.state === STATES.RUNNING || proc.state === STATES.STARTING) {
-                await serverManager.stopServer(server.id);
+                await serverManager.stopServer(server.id, { initiatedBy: req.user.username });
                 await proc.waitForState(STATES.STOPPED, 60000);
             }
         }
@@ -118,7 +119,7 @@ router.post('/servers/:id/backups/create', ensureAuth, async (req, res) => {
         // Start server after backup if requested
         if (startAfter) {
             try {
-                await serverManager.startServer(server.id);
+                await serverManager.startServer(server.id, { initiatedBy: req.user.username });
             } catch (err) {
                 log('error', `Failed to start server after backup: ${err.message}`);
                 req.session.flash = { warning: 'Backup created, but server failed to start: ' + err.message };
@@ -152,7 +153,7 @@ router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, re
         // Stop server if running
         if (proc && ![STATES.STOPPED, STATES.CRASHED].includes(proc.state)) {
             if (proc.state === STATES.RUNNING || proc.state === STATES.STARTING) {
-                await serverManager.stopServer(server.id);
+                await serverManager.stopServer(server.id, { initiatedBy: req.user.username });
                 await proc.waitForState(STATES.STOPPED, 60000);
             }
         }
@@ -168,7 +169,7 @@ router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, re
         // Start server after restore if requested
         if (startAfter) {
             try {
-                await serverManager.startServer(server.id);
+                await serverManager.startServer(server.id, { initiatedBy: req.user.username });
             } catch (err) {
                 log('error', `Failed to start server after restore: ${err.message}`);
                 req.session.flash = { warning: 'Backup restored, but server failed to start: ' + err.message };
@@ -216,7 +217,7 @@ router.get('/servers/:id/backups/:backupId/download', ensureAuth, async (req, re
     const downloadName = `${safeName}_backup_${safeFilename}`;
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+    res.setHeader('Content-Disposition', contentDisposition(downloadName));
     res.setHeader('Content-Length', backup.size);
 
     const stream = fs.createReadStream(zipPath);

@@ -31,7 +31,9 @@ router.get('/servers/:id/events', ensureAuth, async (req, res) => {
     }
 
     const typeFilter = req.query.type || null;
-    const events = await getEvents(server.id, { limit: 500, types: typeFilter ? [typeFilter] : null });
+    const allEvents = await getEvents(server.id, { limit: 500 });
+    const allTypes = [...new Set(allEvents.map(e => e.type))].sort();
+    const events = typeFilter ? allEvents.filter(e => e.type === typeFilter) : allEvents;
 
     res.render('servers/events', {
         title: server.name + ' — Events',
@@ -39,6 +41,7 @@ router.get('/servers/:id/events', ensureAuth, async (req, res) => {
         user: req.user,
         server,
         events,
+        allTypes,
         typeFilter,
         csrfToken: res.locals.csrfToken
     });

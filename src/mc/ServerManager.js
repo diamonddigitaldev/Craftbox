@@ -34,21 +34,26 @@ class ServerManager {
 
     /**
      * Start a Minecraft server.
+     * @param {string} serverId
+     * @param {{ initiatedBy?: string }} [opts]
      */
-    async startServer(serverId) {
+    async startServer(serverId, opts = {}) {
         const proc = await this._ensureProcess(serverId);
 
         if (!canPerformAction(proc.state, 'start')) {
             throw new Error(`Cannot start server in state: ${proc.state}`);
         }
 
+        if (opts.initiatedBy) proc._initiatedBy = opts.initiatedBy;
         await proc.start();
     }
 
     /**
      * Stop a Minecraft server gracefully.
+     * @param {string} serverId
+     * @param {{ initiatedBy?: string }} [opts]
      */
-    async stopServer(serverId) {
+    async stopServer(serverId, opts = {}) {
         const proc = this.getProcess(serverId);
         if (!proc) throw new Error('Server is not running.');
 
@@ -56,13 +61,16 @@ class ServerManager {
             throw new Error(`Cannot stop server in state: ${proc.state}`);
         }
 
+        if (opts.initiatedBy) proc._initiatedBy = opts.initiatedBy;
         await proc.stop();
     }
 
     /**
      * Restart a Minecraft server.
+     * @param {string} serverId
+     * @param {{ initiatedBy?: string }} [opts]
      */
-    async restartServer(serverId) {
+    async restartServer(serverId, opts = {}) {
         const proc = this.getProcess(serverId);
         if (!proc) throw new Error('Server is not running.');
 
@@ -70,13 +78,16 @@ class ServerManager {
             throw new Error(`Cannot restart server in state: ${proc.state}`);
         }
 
+        if (opts.initiatedBy) proc._initiatedBy = opts.initiatedBy;
         await proc.restart();
     }
 
     /**
      * Force kill a Minecraft server.
+     * @param {string} serverId
+     * @param {{ initiatedBy?: string }} [opts]
      */
-    async killServer(serverId) {
+    async killServer(serverId, opts = {}) {
         const proc = this.getProcess(serverId);
         if (!proc) throw new Error('Server is not running.');
 
@@ -84,6 +95,7 @@ class ServerManager {
             throw new Error(`Cannot kill server in state: ${proc.state}`);
         }
 
+        if (opts.initiatedBy) proc._initiatedBy = opts.initiatedBy;
         await proc.kill();
     }
 
@@ -161,7 +173,7 @@ class ServerManager {
                 const server = row.value;
                 log('info', `Auto-starting server "${server.name}" (${server.id})...`);
                 try {
-                    await this.startServer(server.id);
+                    await this.startServer(server.id, { initiatedBy: 'Auto Start' });
                 } catch (err) {
                     log('error', `Failed to auto-start "${server.name}": ${err.message}`);
                 }

@@ -143,8 +143,8 @@
                     <tbody>
                         <% backups.forEach(function(backup) { %>
                         <tr>
-                            <td>
-                                <span class="material-icons-outlined text-body-secondary" style="font-size: 1.2rem;">
+                            <td class="text-center">
+                                <span class="material-icons-outlined text-body-secondary align-middle" style="font-size: 1.2rem;">
                                     <%= backup.type === 'scheduled' ? 'schedule' : 'backup' %>
                                 </span>
                             </td>

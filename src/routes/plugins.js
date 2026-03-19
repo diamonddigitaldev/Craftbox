@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const multer = require('multer');
+const contentDisposition = require('content-disposition');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, SERVERS_DIR } = require('../db');
@@ -294,7 +295,7 @@ router.get('/servers/:id/plugins/download', ensureAuth, async (req, res) => {
         return res.status(404).json({ error: 'File not found.' });
     }
 
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+    res.setHeader('Content-Disposition', contentDisposition(safeName));
     res.setHeader('Content-Type', 'application/octet-stream');
 
     const stream = fs.createReadStream(targetPath);
@@ -330,7 +331,7 @@ router.get('/servers/:id/plugins/download-all', ensureAuth, async (req, res) => 
     const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}_${contentType.folder}.zip"`);
+    res.setHeader('Content-Disposition', contentDisposition(`${safeName}_${contentType.folder}.zip`));
 
     const archive = archiver('zip', { zlib: { level: 5 } });
     archive.on('error', (err) => {

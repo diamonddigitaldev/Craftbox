@@ -35,7 +35,7 @@
                     </div>
 
                     <div class="mb-3">
-                        <label for="name" class="form-label">Server Name</label>
+                        <label for="name" class="form-label required-star">Server Name</label>
                         <input type="text" class="form-control" id="name" name="name" required
                             minlength="1" maxlength="50" pattern="[a-zA-Z0-9 _\-]+"
                             placeholder="My Minecraft Server" autofocus>
@@ -44,20 +44,20 @@
 
                     <div class="row mb-3">
                         <div class="col-md-6" id="version-group">
-                            <label for="version" class="form-label">Version</label>
+                            <label for="version" class="form-label required-star">Version</label>
                             <select class="form-select" id="version" name="version" required>
                                 <option value="" disabled selected>Loading versions...</option>
                             </select>
                         </div>
                         <!-- Custom JAR URL input (hidden by default) -->
                         <div class="col-md-6 d-none" id="custom-url-group">
-                            <label for="customJarUrl" class="form-label">Jar Download URL</label>
+                            <label for="customJarUrl" class="form-label required-star">Jar Download URL</label>
                             <input type="url" class="form-control" id="customJarUrl" name="customJarUrl"
                                 placeholder="https://example.com/server.jar">
                             <div class="form-text">Direct download link to a .jar file.</div>
                         </div>
                         <div class="col-md-6 mt-3 mt-md-0">
-                            <label for="port" class="form-label">Server Port</label>
+                            <label for="port" class="form-label required-star">Server Port</label>
                             <input type="number" class="form-control" id="port" name="port"
                                 value="25565" min="1024" max="65535" required>
                         </div>
@@ -100,7 +100,7 @@
                         <div class="collapse mt-3" id="advancedOptions">
                             <div class="row">
                                 <div class="col-md-6">
-                                    <label for="memory" class="form-label">Memory (MB)</label>
+                                    <label for="memory" class="form-label required-star">Memory (MB)</label>
                                     <input type="number" class="form-control" id="memory" name="memory"
                                         value="2048" min="512" max="65536" step="256" required>
                                     <div class="form-text">RAM allocated to the server (-Xmx).</div>
@@ -119,7 +119,7 @@
 
                     <div class="form-check mb-4">
                         <input class="form-check-input" type="checkbox" id="eula" name="eula" required>
-                        <label class="form-check-label" for="eula">
+                        <label class="form-check-label required-star" for="eula">
                             I agree to the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener noreferrer">Minecraft End User License Agreement</a>
                         </label>
                         <div class="form-text">You must accept the EULA before creating a server.</div>

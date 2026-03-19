@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const contentDisposition = require('content-disposition');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const ensureAuth = require('../middleware/ensureAuth');
@@ -215,7 +216,7 @@ router.get('/servers/:id', ensureAuth, async (req, res) => {
 router.post('/servers/:id/start', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
-        await serverManager.startServer(req.params.id);
+        await serverManager.startServer(req.params.id, { initiatedBy: req.user.username });
         logEvent(req.params.id, 'action', 'Server start requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is starting...' };
     } catch (err) {
@@ -228,7 +229,7 @@ router.post('/servers/:id/start', ensureAuth, async (req, res) => {
 router.post('/servers/:id/stop', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
-        await serverManager.stopServer(req.params.id);
+        await serverManager.stopServer(req.params.id, { initiatedBy: req.user.username });
         logEvent(req.params.id, 'action', 'Server stop requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is stopping...' };
     } catch (err) {
@@ -241,7 +242,7 @@ router.post('/servers/:id/stop', ensureAuth, async (req, res) => {
 router.post('/servers/:id/restart', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
-        await serverManager.restartServer(req.params.id);
+        await serverManager.restartServer(req.params.id, { initiatedBy: req.user.username });
         logEvent(req.params.id, 'action', 'Server restart requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is restarting...' };
     } catch (err) {
@@ -254,7 +255,7 @@ router.post('/servers/:id/restart', ensureAuth, async (req, res) => {
 router.post('/servers/:id/kill', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
-        await serverManager.killServer(req.params.id);
+        await serverManager.killServer(req.params.id, { initiatedBy: req.user.username });
         logEvent(req.params.id, 'action', 'Server force-killed', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { warning: 'Server force-killed.' };
     } catch (err) {
@@ -706,7 +707,7 @@ router.get('/servers/:id/download', ensureAuth, async (req, res) => {
     }
 
     const fileName = path.basename(targetPath);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Disposition', contentDisposition(fileName));
     res.setHeader('Content-Type', 'application/octet-stream');
 
     const stream = fs.createReadStream(targetPath);
@@ -742,7 +743,7 @@ router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
     const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.zip"`);
+    res.setHeader('Content-Disposition', contentDisposition(`${safeName}.zip`));
 
     const archive = archiver('zip', { zlib: { level: 5 } });
     archive.on('error', (err) => {

@@ -39,8 +39,6 @@ const eventLabels = {
     backup_delete: 'Backup Deleted'
 };
 
-// Collect unique event types for filter dropdown
-const allTypes = [...new Set(events.map(e => e.type))].sort();
 %>
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -51,7 +49,7 @@ const allTypes = [...new Set(events.map(e => e.type))].sort();
     </h5>
     <div class="d-flex align-items-center gap-2">
         <label class="text-body-secondary" style="font-size: 0.85rem;" for="event-type-filter">Filter:</label>
-        <select class="form-select form-select-sm" id="event-type-filter" style="width: auto;" onchange="window.location.href = this.value ? '/servers/<%= server.id %>/events?type=' + this.value : '/servers/<%= server.id %>/events'">
+        <select class="form-select form-select-sm" id="event-type-filter" style="width: auto;" data-server-id="<%= server.id %>">
             <option value="">All Events</option>
             <% allTypes.forEach(function(t) { %>
             <option value="<%= t %>" <%= typeFilter === t ? 'selected' : '' %>><%= eventLabels[t] || t %></option>
@@ -105,7 +103,7 @@ const allTypes = [...new Set(events.map(e => e.type))].sort();
                     <td>
                         <% if (event.initiatedBy) { %>
                         <span class="d-flex align-items-center gap-1" style="font-size: 0.85rem;">
-                            <span class="material-icons-outlined" style="font-size: 0.9rem;">person</span>
+                            <span class="material-icons-outlined" style="font-size: 0.9rem;"><%= event.initiatedBy === 'Backup Scheduler' ? 'schedule' : event.initiatedBy === 'Auto Start' ? 'play_circle' : 'person' %></span>
                             <%= event.initiatedBy %>
                         </span>
                         <% } else if (event.playerName) { %>
@@ -140,7 +138,7 @@ const allTypes = [...new Set(events.map(e => e.type))].sort();
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                This will permanently delete all <strong><%= events.length %></strong> logged events for <strong><%= server.name %></strong>. This cannot be undone.
+                This will permanently delete all logged events for <strong><%= server.name %></strong>. This cannot be undone.
             </div>
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>

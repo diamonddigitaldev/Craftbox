@@ -1,4 +1,15 @@
 (function () {
+    // Event type filter navigation
+    var filterSelect = document.getElementById('event-type-filter');
+    if (filterSelect) {
+        var serverId = filterSelect.dataset.serverId;
+        filterSelect.addEventListener('change', function () {
+            window.location.href = this.value
+                ? '/servers/' + serverId + '/events?type=' + this.value
+                : '/servers/' + serverId + '/events';
+        });
+    }
+
     // Format event timestamps as relative time
     document.querySelectorAll('.event-time').forEach(function (el) {
         var time = new Date(el.dataset.time);

@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 
 // Security headers middleware (OWASP compliant)
 function securityHeaders(req, res, next) {
@@ -14,13 +15,16 @@ function securityHeaders(req, res, next) {
             "style-src 'self' 'unsafe-inline'",
             "font-src 'self'",
             "script-src 'self'",
-            "connect-src 'self' ws: wss:",
+            "connect-src 'self'",
             "img-src 'self' data:",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'"
         ].join('; ')
     );
+    if (process.env.NODE_ENV === 'production') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
     next();
 }
 
@@ -39,7 +43,7 @@ function csrfValidate(req, res, next) {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
 
     const token = req.body?._csrf || req.headers['x-csrf-token'];
-    if (!token || !req.session?.csrfToken || token !== req.session.csrfToken) {
+    if (!token || !req.session?.csrfToken) {
         return res.status(403).render('errors/403', {
             title: 'Forbidden',
             message: 'Invalid or missing CSRF token. Please try again.',
@@ -47,44 +51,36 @@ function csrfValidate(req, res, next) {
             user: null
         });
     }
+
+    // Constant-time comparison to prevent timing side-channel attacks
+    const tokenBuf = Buffer.from(String(token));
+    const expectedBuf = Buffer.from(req.session.csrfToken);
+    if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
+        return res.status(403).render('errors/403', {
+            title: 'Forbidden',
+            message: 'Invalid or missing CSRF token. Please try again.',
+            navbar: false,
+            user: null
+        });
+    }
+
     next();
 }
 
-// Rate limiter for login endpoint
-function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 5 } = {}) {
-    const attempts = new Map();
+// Rate limiter for login endpoint (using express-rate-limit)
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) => {
+        res.status(429).render('errors/429', {
+            title: 'Too Many Requests',
+            message: 'Too many login attempts. Please try again later.',
+            navbar: false,
+            user: null
+        });
+    }
+});
 
-    // Periodic cleanup of expired entries
-    setInterval(() => {
-        const now = Date.now();
-        for (const [key, timestamps] of attempts) {
-            const valid = timestamps.filter(t => now - t < windowMs);
-            if (valid.length === 0) {
-                attempts.delete(key);
-            } else {
-                attempts.set(key, valid);
-            }
-        }
-    }, windowMs).unref();
-
-    return (req, res, next) => {
-        const key = req.ip || req.socket.remoteAddress;
-        const now = Date.now();
-        const timestamps = (attempts.get(key) || []).filter(t => now - t < windowMs);
-
-        if (timestamps.length >= max) {
-            return res.status(429).render('errors/429', {
-                title: 'Too Many Requests',
-                message: 'Too many login attempts. Please try again later.',
-                navbar: false,
-                user: null
-            });
-        }
-
-        timestamps.push(now);
-        attempts.set(key, timestamps);
-        next();
-    };
-}
-
-module.exports = { securityHeaders, csrfToken, csrfValidate, createRateLimiter };
+module.exports = { securityHeaders, csrfToken, csrfValidate, loginLimiter };

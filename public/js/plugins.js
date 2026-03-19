@@ -38,14 +38,32 @@
         var toastEl = document.createElement('div');
         toastEl.className = 'toast align-items-center text-bg-' + type + ' border-0';
         toastEl.setAttribute('role', 'alert');
-        toastEl.innerHTML =
-            '<div class="d-flex">' +
-                '<div class="toast-body d-flex align-items-center gap-2">' +
-                    '<span class="material-icons-outlined" style="font-size: 1.2rem;">' + icon + '</span>' +
-                    message +
-                '</div>' +
-                '<button type="button" class="' + btnClass + ' me-2 m-auto" data-bs-dismiss="toast"></button>' +
-            '</div>';
+
+        var wrapper = document.createElement('div');
+        wrapper.className = 'd-flex';
+
+        var body = document.createElement('div');
+        body.className = 'toast-body d-flex align-items-center gap-2';
+
+        var iconEl = document.createElement('span');
+        iconEl.className = 'material-icons-outlined';
+        iconEl.style.fontSize = '1.2rem';
+        iconEl.textContent = icon;
+
+        var msgEl = document.createElement('span');
+        msgEl.textContent = message;
+
+        body.appendChild(iconEl);
+        body.appendChild(msgEl);
+
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = btnClass + ' me-2 m-auto';
+        closeBtn.setAttribute('data-bs-dismiss', 'toast');
+
+        wrapper.appendChild(body);
+        wrapper.appendChild(closeBtn);
+        toastEl.appendChild(wrapper);
 
         container.appendChild(toastEl);
         var toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 });

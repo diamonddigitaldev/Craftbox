@@ -31,6 +31,7 @@ class ServerProcess extends EventEmitter {
         this._restartPending = false;
         this._crashDetected = false; // Set when crash report is detected in logs
         this._oomKillInProgress = false; // Guards against multiple OOM kill attempts
+        this._initiatedBy = null; // Who triggered the current action (username or system label)
     }
 
     get serverDir() {
@@ -79,7 +80,8 @@ class ServerProcess extends EventEmitter {
             [STATES.CRASHED]: 'crashed'
         };
         if (eventTypes[newState]) {
-            logEvent(this.id, eventTypes[newState], `Server ${eventTypes[newState]}`).catch(() => {});
+            const extra = this._initiatedBy ? { initiatedBy: this._initiatedBy } : {};
+            logEvent(this.id, eventTypes[newState], `Server ${eventTypes[newState]}`, extra).catch(() => {});
             pruneEvents(this.id, 500).catch(() => {});
         }
 
@@ -536,6 +538,7 @@ class ServerProcess extends EventEmitter {
         this._stopRequested = false;
         this._crashDetected = false;
         this._oomKillInProgress = false;
+        this._initiatedBy = null;
     }
 
     /**
@@ -578,7 +581,8 @@ class ServerProcess extends EventEmitter {
                 [STATES.CRASHED]: 'crashed'
             };
             if (eventTypes[targetState]) {
-                logEvent(this.id, eventTypes[targetState], `Server ${eventTypes[targetState]} (forced from ${oldState})`).catch(() => {});
+                const extra = this._initiatedBy ? { initiatedBy: this._initiatedBy } : {};
+                logEvent(this.id, eventTypes[targetState], `Server ${eventTypes[targetState]} (forced from ${oldState})`, extra).catch(() => {});
             }
 
             // Broadcast state change

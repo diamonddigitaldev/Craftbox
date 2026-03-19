@@ -9,6 +9,12 @@
     --console-input-bg: #161b22;
 }
 
+/* ---- Required Field Indicator ---- */
+.required-star::after {
+    content: ' *';
+    color: #dc3545;
+}
+
 /* ---- General ---- */
 body {
     min-height: 100vh;

@@ -12,11 +12,27 @@ const versionGroup = document.getElementById('version-group');
 const versionSelect = document.getElementById('version');
 const customUrlGroup = document.getElementById('custom-url-group');
 
-// ── EULA gating ──
-createBtn.disabled = !eulaCheck.checked;
-eulaCheck.addEventListener('change', () => {
-    createBtn.disabled = !eulaCheck.checked;
-});
+// ── Required field validation + EULA gating ──
+function validateCreateForm() {
+    if (!eulaCheck.checked) { createBtn.disabled = true; return; }
+    var fields = form.querySelectorAll('[required]');
+    var allFilled = true;
+    fields.forEach(function (f) {
+        if (f.type === 'checkbox') {
+            if (!f.checked) allFilled = false;
+        } else if (f.classList.contains('d-none') || f.closest('.d-none')) {
+            // Skip hidden fields (e.g. version when custom type selected)
+        } else if (!f.value.trim()) {
+            allFilled = false;
+        }
+    });
+    createBtn.disabled = !allFilled;
+}
+
+validateCreateForm();
+eulaCheck.addEventListener('change', validateCreateForm);
+form.addEventListener('input', validateCreateForm);
+form.addEventListener('change', validateCreateForm);
 
 // ── Form submit overlay ──
 form.addEventListener('submit', () => {
@@ -116,8 +132,7 @@ async function loadVersions(typeId, preselect) {
     } catch {
         versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
     } finally {
-        // Re-enable submit only if EULA is still checked
-        createBtn.disabled = !eulaCheck.checked;
+        validateCreateForm();
     }
 }
 

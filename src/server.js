@@ -8,7 +8,8 @@ const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const { version } = require('../package.json');
-const { initDb, configDb, markAllServersStoppedInDb } = require('./db');
+const { initDb, configDb, sessionsDb, markAllServersStoppedInDb } = require('./db');
+const QuickDBStore = require('./sessionStore');
 const { passport } = require('./auth');
 const { securityHeaders, csrfToken, csrfValidate } = require('./security');
 const { initWebSocket } = require('./websocket');
@@ -36,7 +37,8 @@ const PORT = process.env.PORT || 6464;
         const app = express();
 
         // Trust proxy when behind reverse proxy / Docker
-        app.set('trust proxy', 1);
+        // Set TRUST_PROXY=true if running behind a reverse proxy (e.g. Nginx, Caddy)
+        app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 
         // View engine
         app.set('view engine', 'ejs');
@@ -58,8 +60,10 @@ const PORT = process.env.PORT || 6464;
         app.use(express.json());
         app.use(express.urlencoded({ extended: false }));
 
-        // Session
+        // Session (backed by quick.db with 1-hour expiry)
+        const sessionStore = new QuickDBStore({ db: sessionsDb, ttl: 60 * 60 * 1000 });
         const sessionMiddleware = session({
+            store: sessionStore,
             secret: sessionSecret,
             resave: false,
             saveUninitialized: false,
@@ -67,7 +71,7 @@ const PORT = process.env.PORT || 6464;
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'strict',
-                maxAge: 24 * 60 * 60 * 1000 // 24 hours
+                maxAge: 60 * 60 * 1000 // 1 hour
             }
         });
         app.use(sessionMiddleware);

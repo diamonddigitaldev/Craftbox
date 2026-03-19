@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
+const contentDisposition = require('content-disposition');
 const router = express.Router();
 const { serversDb } = require('../db');
 const { getEvents } = require('../utils/eventLogger');
@@ -147,7 +148,7 @@ router.get('/status/:id/mods', async (req, res) => {
         const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
         res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', `attachment; filename="${safeName}_mods.zip"`);
+        res.setHeader('Content-Disposition', contentDisposition(`${safeName}_mods.zip`));
 
         const archive = archiver('zip', { zlib: { level: 5 } });
         archive.on('error', (err) => {

@@ -5,6 +5,37 @@ document.querySelectorAll('.toast').forEach(function (el) {
     new bootstrap.Toast(el).show();
 });
 
+// ── Required field validation — disable submit until all required fields are filled ──
+// Applies to any <form> with a [data-validate-required] submit button inside it.
+// The button stays disabled/muted until every [required] input in the form has a value.
+(function () {
+    var buttons = document.querySelectorAll('[data-validate-required]');
+    buttons.forEach(function (btn) {
+        var form = btn.closest('form') || btn.closest('[data-form-scope]');
+        if (!form) return;
+
+        function check() {
+            var fields = form.querySelectorAll('[required]');
+            var allFilled = true;
+            fields.forEach(function (f) {
+                if (f.type === 'checkbox') {
+                    if (!f.checked) allFilled = false;
+                } else if (!f.value.trim()) {
+                    allFilled = false;
+                }
+            });
+            btn.disabled = !allFilled;
+        }
+
+        // Listen on all current and future required inputs
+        form.addEventListener('input', check);
+        form.addEventListener('change', check);
+
+        // Initial state
+        check();
+    });
+})();
+
 // ── Shared overlay spinner ──
 var _overlayEl = null;
 function _getOverlay() {

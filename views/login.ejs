@@ -12,20 +12,20 @@
                 <form method="POST" action="/login" novalidate>
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
+                        <label for="username" class="form-label required-star">Username</label>
                         <div class="input-group">
                             <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1.2rem;">person</span></span>
                             <input type="text" class="form-control" id="username" name="username" required autofocus placeholder="Username">
                         </div>
                     </div>
                     <div class="mb-4">
-                        <label for="password" class="form-label">Password</label>
+                        <label for="password" class="form-label required-star">Password</label>
                         <div class="input-group">
                             <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1.2rem;">lock</span></span>
                             <input type="password" class="form-control" id="password" name="password" required placeholder="Password">
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2">
+                    <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2" data-validate-required disabled>
                         <span class="material-icons-outlined" style="font-size: 1.2rem;">login</span>
                         Sign In
                     </button>

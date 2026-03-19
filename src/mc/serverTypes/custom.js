@@ -1,6 +1,33 @@
 const fs = require('fs');
 const path = require('path');
+const dns = require('dns').promises;
 const { log } = require('../../utils/log');
+
+/**
+ * Check if an IP address is private/loopback/link-local.
+ * Covers IPv4 private ranges, IPv4-mapped IPv6, and IPv6 loopback.
+ */
+function isPrivateIP(ip) {
+    // Normalize IPv4-mapped IPv6 (e.g., ::ffff:127.0.0.1 → 127.0.0.1)
+    const normalized = ip.replace(/^::ffff:/, '');
+
+    // IPv6 loopback
+    if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
+
+    // IPv4 checks
+    const parts = normalized.split('.').map(Number);
+    if (parts.length === 4 && parts.every(p => !isNaN(p))) {
+        const [a, b] = parts;
+        if (a === 0) return true;                              // 0.0.0.0/8
+        if (a === 10) return true;                             // 10.0.0.0/8
+        if (a === 127) return true;                            // 127.0.0.0/8
+        if (a === 169 && b === 254) return true;               // 169.254.0.0/16 (link-local / cloud metadata)
+        if (a === 172 && b >= 16 && b <= 31) return true;      // 172.16.0.0/12
+        if (a === 192 && b === 168) return true;               // 192.168.0.0/16
+    }
+
+    return false;
+}
 
 module.exports = {
     id: 'custom',
@@ -40,9 +67,15 @@ module.exports = {
             throw new Error('URL must use HTTP or HTTPS.');
         }
 
-        // Block private/loopback addresses (SSRF protection)
-        const hostname = parsed.hostname.toLowerCase();
-        if (/^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|\[::1\])/.test(hostname)) {
+        // SSRF protection — resolve hostname and validate the actual IP address
+        // This prevents bypasses via DNS rebinding, IPv6 alternate forms, decimal/octal IPs, etc.
+        let resolved;
+        try {
+            resolved = await dns.lookup(parsed.hostname);
+        } catch {
+            throw new Error('Could not resolve hostname.');
+        }
+        if (isPrivateIP(resolved.address)) {
             throw new Error('URL must point to a public host.');
         }
 
