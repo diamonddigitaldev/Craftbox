@@ -25,8 +25,8 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy package files and install production dependencies
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY package*.json ./
+RUN npm install
 
 # Copy application source
 COPY src/ ./src/
