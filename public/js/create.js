@@ -20,16 +20,13 @@ eulaCheck.addEventListener('change', () => {
 
 // ── Form submit overlay ──
 form.addEventListener('submit', () => {
-    const overlay = document.getElementById('create-overlay');
-    overlay.classList.remove('d-none');
     createBtn.disabled = true;
     createBtn.innerHTML =
         '<span class="spinner-border spinner-border-sm" role="status"></span> Creating...';
 
-    const title = document.getElementById('create-overlay-title');
     const typeName = typesData.find(t => t.id === selectedType)?.name || selectedType;
     const ver = selectedType === 'custom' ? '' : ' ' + (versionSelect.value || '');
-    title.textContent = `Setting up your ${typeName}${ver} server...`;
+    showOverlay(`Setting up your ${typeName}${ver} server...`, 'Getting everything ready. This may take a minute.');
 });
 
 // ── Load server types ──
@@ -138,7 +135,7 @@ const templateGroup = document.getElementById('template-group');
                 const opt = document.createElement('option');
                 opt.value = t.id;
                 const typeName = (t.serverType || 'vanilla').charAt(0).toUpperCase() + (t.serverType || 'vanilla').slice(1);
-                opt.textContent = `${t.name} (${typeName} ${t.serverType === 'custom' ? '' : t.version || ''})`.trim();
+                opt.textContent = `${t.name} (${typeName}${t.serverType === 'custom' ? '' : ` ${t.version}` || ''})`.trim();
                 templateSelect.appendChild(opt);
             }
         }
@@ -167,9 +164,17 @@ function setTypeAndVersionLocked(locked) {
         versionSelect.style.opacity = '';
     }
 
-    // Disable/enable custom URL input
+    // Lock custom URL input visually but keep it submittable
     const customUrlInput = document.getElementById('customJarUrl');
-    if (customUrlInput) customUrlInput.disabled = locked;
+    if (customUrlInput) {
+        if (locked) {
+            customUrlInput.style.pointerEvents = 'none';
+            customUrlInput.style.opacity = '0.5';
+        } else {
+            customUrlInput.style.pointerEvents = '';
+            customUrlInput.style.opacity = '';
+        }
+    }
 }
 
 templateSelect.addEventListener('change', async () => {
@@ -200,12 +205,17 @@ templateSelect.addEventListener('change', async () => {
                 versionGroup.classList.add('d-none');
                 customUrlGroup.classList.remove('d-none');
                 versionSelect.removeAttribute('required');
+                if (t.customJarUrl) {
+                    document.getElementById('customJarUrl').value = t.customJarUrl;
+                }
             } else {
                 versionGroup.classList.remove('d-none');
                 customUrlGroup.classList.add('d-none');
                 versionSelect.setAttribute('required', '');
                 await loadVersions(t.serverType, t.version);
             }
+        } else if (t.serverType === 'custom' && t.customJarUrl) {
+            document.getElementById('customJarUrl').value = t.customJarUrl;
         } else if (t.serverType !== 'custom' && t.version) {
             await loadVersions(t.serverType, t.version);
         }

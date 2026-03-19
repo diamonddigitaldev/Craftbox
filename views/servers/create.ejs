@@ -135,15 +135,5 @@
     </div>
 </div>
 
-<!-- Progress overlay (shown during server creation) -->
-<div id="create-overlay" class="d-none position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 1050; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);">
-    <div class="text-center">
-        <div class="spinner-border text-success mb-3" style="width: 3rem; height: 3rem;" role="status">
-            <span class="visually-hidden">Creating server...</span>
-        </div>
-        <h5 class="mb-1" id="create-overlay-title">Setting up your server...</h5>
-        <p class="text-body-secondary mb-0">Getting everything ready. This may take a minute.</p>
-    </div>
-</div>
 
 <%- include('../partials/foot', { scripts: ['/js/create.js'] }) %>

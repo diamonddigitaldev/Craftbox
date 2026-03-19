@@ -57,7 +57,7 @@
 
     var fileInput = document.getElementById('file-input');
     var uploadBtn = document.getElementById('upload-btn');
-    var uploadOverlay = document.getElementById('upload-overlay');
+    var uploadLabel = uploadBtn ? (uploadBtn.dataset.label || 'files') : 'files';
 
     if (fileInput && uploadBtn) {
         fileInput.addEventListener('change', function () {
@@ -69,7 +69,7 @@
 
             uploadBtn.disabled = true;
             fileInput.disabled = true;
-            if (uploadOverlay) uploadOverlay.classList.remove('d-none');
+            showOverlay('Uploading ' + uploadLabel + '...', 'This may take a moment for large files.');
 
             var formData = new FormData();
             for (var i = 0; i < fileInput.files.length; i++) {
@@ -90,13 +90,13 @@
                     showToast(data.error || 'Upload failed.', 'danger');
                     uploadBtn.disabled = false;
                     fileInput.disabled = false;
-                    if (uploadOverlay) uploadOverlay.classList.add('d-none');
+                    hideOverlay();
                 }
             } catch {
                 showToast('Upload failed. Please try again.', 'danger');
                 uploadBtn.disabled = false;
                 fileInput.disabled = false;
-                if (uploadOverlay) uploadOverlay.classList.add('d-none');
+                hideOverlay();
             }
         });
     }

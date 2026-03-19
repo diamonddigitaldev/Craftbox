@@ -146,6 +146,7 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
             gamemode: gamemodeStr,
             difficulty: difficultyStr,
             seed: seedStr,
+            customJarUrl: type === 'custom' ? customJarUrl.trim() : null,
             jarFile: 'server.jar',
             eula: true,
             autoRestart: false,

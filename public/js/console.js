@@ -229,8 +229,7 @@
         });
         document.getElementById('confirm-delete').addEventListener('click', () => {
             deleteModal.hide();
-            var overlay = document.getElementById('delete-overlay');
-            if (overlay) overlay.classList.remove('d-none');
+            showOverlay('Deleting server...', 'Removing all files. This may take a moment.');
             deleteForm.submit();
         });
     }

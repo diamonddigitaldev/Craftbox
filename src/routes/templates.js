@@ -80,6 +80,7 @@ router.post('/templates/create', ensureAuth, async (req, res) => {
             name: trimmedName,
             serverType: server.serverType || 'vanilla',
             version: server.version || '',
+            customJarUrl: server.customJarUrl || null,
             build: server.build || null,
             memory: server.memory || 2048,
             javaArgs: server.javaArgs || '',

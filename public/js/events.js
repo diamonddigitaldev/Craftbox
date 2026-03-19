@@ -28,8 +28,7 @@
         });
         document.getElementById('confirm-clear').addEventListener('click', function () {
             clearModal.hide();
-            var overlay = document.getElementById('clear-overlay');
-            if (overlay) overlay.classList.remove('d-none');
+            showOverlay('Clearing events...', 'Deleting all logged events for this server.');
             clearForm.submit();
         });
     }

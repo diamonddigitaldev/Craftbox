@@ -25,8 +25,7 @@
     var backupForm = document.getElementById('backup-form');
     if (backupForm) {
         backupForm.addEventListener('submit', function () {
-            var overlay = document.getElementById('backup-overlay');
-            if (overlay) overlay.classList.remove('d-none');
+            showOverlay('Creating backup...', 'Compressing server files. This may take a moment.');
         });
     }
 
@@ -37,11 +36,7 @@
             stopBackupBtn.disabled = true;
             stopBackupBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Stopping...';
             if (stopBackupModal) stopBackupModal.hide();
-            var overlay = document.getElementById('backup-overlay');
-            if (overlay) {
-                document.getElementById('backup-overlay-title').textContent = 'Stopping server & creating backup...';
-                overlay.classList.remove('d-none');
-            }
+            showOverlay('Stopping server & creating backup...', 'Compressing server files. This may take a moment.');
         });
     }
 
@@ -73,12 +68,7 @@
             confirmRestoreBtn.disabled = true;
             confirmRestoreBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restoring...';
             restoreModal.hide();
-            var overlay = document.getElementById('backup-overlay');
-            if (overlay) {
-                document.getElementById('backup-overlay-title').textContent = 'Restoring backup...';
-                document.querySelector('#backup-overlay p').textContent = 'Extracting backup files. This may take a moment.';
-                overlay.classList.remove('d-none');
-            }
+            showOverlay('Restoring backup...', 'Extracting backup files. This may take a moment.');
         });
     }
 

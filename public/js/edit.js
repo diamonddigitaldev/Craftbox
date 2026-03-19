@@ -34,11 +34,7 @@
 
 // ── Overlay helper ──
 function showEditOverlay(title, desc) {
-    var overlay = document.getElementById('edit-overlay');
-    if (!overlay) return;
-    document.getElementById('edit-overlay-title').textContent = title;
-    document.getElementById('edit-overlay-desc').textContent = desc;
-    overlay.classList.remove('d-none');
+    showOverlay(title, desc);
 }
 
 // ── Duplicate form (direct submit when server is stopped) ──
