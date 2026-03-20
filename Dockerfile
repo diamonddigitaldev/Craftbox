@@ -33,9 +33,6 @@ COPY src/ ./src/
 COPY views/ ./views/
 COPY public/ ./public/
 
-# Create data directory
-RUN mkdir -p /app/data/servers
-
 # Expose panel port and Minecraft server port range
 EXPOSE 6464
 EXPOSE 25500-25600
@@ -44,9 +41,13 @@ EXPOSE 25500-25600
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:6464/login || exit 1
 
-# Run as non-root user
+# Create non-root user and set app ownership
 RUN groupadd -r craftbox && useradd -r -g craftbox craftbox && \
     chown -R craftbox:craftbox /app
-USER craftbox
 
+# Entrypoint creates data dirs at runtime (after volume mount) then drops to craftbox
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "src/server.js"]
