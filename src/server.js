@@ -1,6 +1,7 @@
-const { log } = require('./utils/log');
+const { log, LOG_LEVEL } = require('./utils/log');
 
 log('info', 'Craftbox is starting...');
+log('info', `LOG_LEVEL: ${LOG_LEVEL}`);
 
 const crypto = require('crypto');
 const path = require('path');
@@ -17,7 +18,19 @@ const ServerManager = require('./mc/ServerManager');
 const BackupScheduler = require('./mc/BackupScheduler');
 const mountRoutes = require('./routes');
 
-const PORT = process.env.PORT || 6464;
+const rawPort = process.env.PORT;
+const PORT = rawPort !== undefined ? Number(rawPort) : 6464;
+if (isNaN(PORT) || PORT < 0 || PORT > 65535 || !Number.isInteger(PORT)) {
+    log('error', 'Invalid PORT environment variable. Must be an integer between 0 and 65535.');
+    process.exit(1);
+}
+
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const validNodeEnvs = ['development', 'production', 'test'];
+if (!validNodeEnvs.includes(NODE_ENV)) {
+    log('warn', `Unrecognised NODE_ENV "${NODE_ENV}". Expected one of: ${validNodeEnvs.join(', ')}. Proceeding anyway.`);
+}
+log('info', `NODE_ENV: ${NODE_ENV}`);
 
 (async () => {
     try {
@@ -69,7 +82,7 @@ const PORT = process.env.PORT || 6464;
             saveUninitialized: false,
             cookie: {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
+                secure: NODE_ENV === 'production',
                 sameSite: 'strict',
                 maxAge: 60 * 60 * 1000 // 1 hour
             }
@@ -129,14 +142,14 @@ const PORT = process.env.PORT || 6464;
         // Global error handler
         app.use((err, req, res, next) => {
             log('error', `Unhandled error: ${err.message}`);
-            if (process.env.NODE_ENV !== 'production') {
+            if (NODE_ENV !== 'production') {
                 log('error', err.stack);
             }
             res.status(500).render('errors/500', {
                 title: 'Error',
                 navbar: !!req.user,
                 user: req.user || null,
-                message: process.env.NODE_ENV === 'production' ? null : err.message
+                message: NODE_ENV === 'production' ? null : err.message
             });
         });
 
