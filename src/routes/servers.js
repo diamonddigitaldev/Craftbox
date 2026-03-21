@@ -13,6 +13,7 @@ const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
 const { logEvent, deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
+const { clearStatsHistory } = require('../utils/statsHistory');
 const { getContentType } = require('../utils/contentType');
 
 // GET /servers/create — Server creation form
@@ -216,6 +217,7 @@ router.get('/servers/:id', ensureAuth, async (req, res) => {
 router.post('/servers/:id/start', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
+        await clearStatsHistory(req.params.id);
         await serverManager.startServer(req.params.id, { initiatedBy: req.user.username });
         logEvent(req.params.id, 'action', 'Server start requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is starting...' };
@@ -229,6 +231,7 @@ router.post('/servers/:id/start', ensureAuth, async (req, res) => {
 router.post('/servers/:id/stop', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
+        await clearStatsHistory(req.params.id);
         await serverManager.stopServer(req.params.id, { initiatedBy: req.user.username });
         logEvent(req.params.id, 'action', 'Server stop requested', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { success: 'Server is stopping...' };
@@ -241,20 +244,49 @@ router.post('/servers/:id/stop', ensureAuth, async (req, res) => {
 // POST /servers/:id/restart
 router.post('/servers/:id/restart', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
+    const id = req.params.id;
+    const createBackupFirst = req.body.backup === 'true' || req.body.backup === true;
+
     try {
-        await serverManager.restartServer(req.params.id, { initiatedBy: req.user.username });
-        logEvent(req.params.id, 'action', 'Server restart requested', { initiatedBy: req.user.username }).catch(() => {});
-        req.session.flash = { success: 'Server is restarting...' };
+        // Create backup before restart if requested
+        if (createBackupFirst) {
+            const { createBackup } = require('../mc/BackupManager');
+
+            // Stop the server first so the backup captures a consistent state
+            const proc = serverManager?.getProcess(id);
+            if (proc && ['running', 'starting'].includes(proc.state)) {
+                await serverManager.stopServer(id, { initiatedBy: req.user.username });
+                await proc.waitForState('stopped', 60000);
+            }
+
+            // Sync server metadata before backup so the backup includes current DB state
+            await syncServerConfig(id);
+
+            await createBackup(id, 'Pre-restart backup', 'manual');
+            logEvent(id, 'action', 'Pre-restart backup created', { initiatedBy: req.user.username }).catch(() => {});
+
+            // Now start the server (since we stopped it for backup)
+            await clearStatsHistory(id);
+            await serverManager.startServer(id, { initiatedBy: req.user.username });
+            logEvent(id, 'action', 'Server restarted with backup', { initiatedBy: req.user.username }).catch(() => {});
+            req.session.flash = { success: 'Backup created and server is restarting...' };
+        } else {
+            await clearStatsHistory(id);
+            await serverManager.restartServer(id, { initiatedBy: req.user.username });
+            logEvent(id, 'action', 'Server restart requested', { initiatedBy: req.user.username }).catch(() => {});
+            req.session.flash = { success: 'Server is restarting...' };
+        }
     } catch (err) {
         req.session.flash = { error: err.message };
     }
-    res.redirect(`/servers/${req.params.id}`);
+    res.redirect(`/servers/${id}`);
 });
 
 // POST /servers/:id/kill
 router.post('/servers/:id/kill', ensureAuth, async (req, res) => {
     const serverManager = req.app.get('serverManager');
     try {
+        await clearStatsHistory(req.params.id);
         await serverManager.killServer(req.params.id, { initiatedBy: req.user.username });
         logEvent(req.params.id, 'action', 'Server force-killed', { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { warning: 'Server force-killed.' };
@@ -414,8 +446,9 @@ router.post('/servers/:id/delete', ensureAuth, async (req, res) => {
         const { deleteAllBackups } = require('../mc/BackupManager');
         await deleteAllBackups(id);
 
-        // Delete server events
+        // Delete server events and stats history
         await deleteServerEvents(id);
+        await clearStatsHistory(id);
 
         // Delete server directory
         const serverDir = path.join(SERVERS_DIR, id);
@@ -486,7 +519,7 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
         return res.redirect('/dashboard');
     }
 
-    const { name, port, memory, javaArgs, gamemode, difficulty, seed } = req.body;
+    const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl } = req.body;
 
     const trimmedName = String(name).trim();
     if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
@@ -513,6 +546,112 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
     const seedStr = String(seed || '').trim();
     const safeJavaArgs = String(javaArgs || '').trim();
 
+    // Handle version upgrade (non-custom types only)
+    const type = server.serverType || 'vanilla';
+    const newVersion = String(version || '').trim();
+    let versionChanged = false;
+
+    if (type !== 'custom' && newVersion && newVersion !== server.version) {
+        // Validate version format
+        if (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(newVersion)) {
+            req.session.flash = { error: 'Invalid version format.' };
+            return res.redirect(`/servers/${id}/edit`);
+        }
+
+        // Prevent downgrades: compare version parts numerically
+        const curParts = server.version.split('.').map(Number);
+        const newParts = newVersion.split('.').map(Number);
+        let isDowngrade = false;
+        for (let i = 0; i < Math.max(curParts.length, newParts.length); i++) {
+            const diff = (newParts[i] || 0) - (curParts[i] || 0);
+            if (diff < 0) { isDowngrade = true; break; }
+            if (diff > 0) break;
+        }
+        if (isDowngrade) {
+            req.session.flash = { error: 'Version downgrades are not permitted.' };
+            return res.redirect(`/servers/${id}/edit`);
+        }
+
+        // Server must be stopped to change version
+        const serverManager = req.app.get('serverManager');
+        const proc = serverManager?.getProcess(id);
+        if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+            req.session.flash = { error: 'Stop the server before changing the version.' };
+            return res.redirect(`/servers/${id}/edit`);
+        }
+
+        // Download the new server jar
+        let libBackupPath = null;
+        try {
+            // For Forge/NeoForge, rename old version library directories before installing new version
+            if (type === 'forge' || type === 'neoforge') {
+                const libSubdir = type === 'neoforge'
+                    ? path.join(SERVERS_DIR, id, 'libraries', 'net', 'neoforged', 'neoforge')
+                    : path.join(SERVERS_DIR, id, 'libraries', 'net', 'minecraftforge', 'forge');
+                if (fs.existsSync(libSubdir)) {
+                    libBackupPath = libSubdir + '.tmp';
+                    fs.renameSync(libSubdir, libBackupPath);
+                    log('info', `[${server.name}] Moved old ${type} libraries to .tmp before upgrade.`);
+                }
+            }
+
+            const jarPath = path.join(SERVERS_DIR, id, server.jarFile || 'server.jar');
+            const result = await downloadServerJar(type, newVersion, null, jarPath);
+            const oldVersion = server.version;
+            server.version = newVersion;
+            if (result?.build) server.build = result.build;
+            versionChanged = true;
+            log('info', `Server "${server.name}" upgraded from ${oldVersion} to ${newVersion}.`);
+
+            // Download succeeded — clean up the old libraries backup
+            if (libBackupPath && fs.existsSync(libBackupPath)) {
+                fs.rmSync(libBackupPath, { recursive: true, force: true });
+            }
+        } catch (err) {
+            // Download failed — restore the old libraries if we moved them
+            if (libBackupPath && fs.existsSync(libBackupPath)) {
+                const libSubdir = libBackupPath.replace(/\.tmp$/, '');
+                fs.renameSync(libBackupPath, libSubdir);
+                log('info', `[${server.name}] Restored old ${type} libraries after failed upgrade.`);
+            }
+            log('error', `Version upgrade failed for ${id}: ${err.message}`);
+            req.session.flash = { error: `Failed to upgrade version: ${err.message}` };
+            return res.redirect(`/servers/${id}/edit`);
+        }
+    }
+
+    // Handle custom jar URL change
+    let jarChanged = false;
+    if (type === 'custom' && customJarUrl) {
+        const newUrl = String(customJarUrl).trim();
+        if (newUrl && newUrl !== (server.customJarUrl || '')) {
+            // Server must be stopped to change jar
+            const serverManager = req.app.get('serverManager');
+            const proc = serverManager?.getProcess(id);
+            if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+                req.session.flash = { error: 'Stop the server before changing the jar URL.' };
+                return res.redirect(`/servers/${id}/edit`);
+            }
+
+            // Download new jar to a temp file first, then replace the old one
+            try {
+                const jarPath = path.join(SERVERS_DIR, id, server.jarFile || 'server.jar');
+                const tmpPath = jarPath + '.tmp';
+                await downloadServerJar('custom', newUrl, null, tmpPath);
+                // Download succeeded — safe to replace the old jar
+                if (fs.existsSync(jarPath)) fs.unlinkSync(jarPath);
+                fs.renameSync(tmpPath, jarPath);
+                server.customJarUrl = newUrl;
+                jarChanged = true;
+                log('info', `Server "${server.name}" jar replaced from new URL.`);
+            } catch (err) {
+                log('error', `Custom jar download failed for ${id}: ${err.message}`);
+                req.session.flash = { error: `Failed to download jar: ${err.message}` };
+                return res.redirect(`/servers/${id}/edit`);
+            }
+        }
+    }
+
     // Update DB
     server.name = trimmedName;
     server.port = portNum;
@@ -535,11 +674,16 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
     }
 
     // Update live process config
-    const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(id);
-    if (proc) Object.assign(proc.config, server);
+    const serverManager2 = req.app.get('serverManager');
+    const proc2 = serverManager2?.getProcess(id);
+    if (proc2) Object.assign(proc2.config, server);
 
-    req.session.flash = { success: 'Server settings saved.' };
+    const successMsg = versionChanged
+        ? `Server settings saved. Version upgraded to ${server.version}.`
+        : jarChanged
+            ? 'Server settings saved. Server jar replaced.'
+            : 'Server settings saved.';
+    req.session.flash = { success: successMsg };
     res.redirect(`/servers/${id}/edit?saved=1`);
 });
 
@@ -843,8 +987,9 @@ router.post('/servers/:id/edit-file', ensureAuth, async (req, res) => {
         fs.writeFileSync(targetPath, content, 'utf8');
         log('info', `File edited: ${filePath} on server ${server.name} (${id})`);
 
-        // If server.properties was edited, sync mirrored fields back to DB
-        if (path.basename(targetPath) === 'server.properties') {
+        // If server.properties or eula.txt was edited, sync mirrored fields back to DB
+        const editedFile = path.basename(targetPath);
+        if (editedFile === 'server.properties' || editedFile === 'eula.txt') {
             await syncServerConfig(id);
         }
 

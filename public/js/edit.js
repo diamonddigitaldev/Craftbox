@@ -1,3 +1,12 @@
+// Show overlay on save
+(function () {
+    var form = document.querySelector('form[action$="/edit"]');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+        showOverlay('Saving settings...', 'Please wait while changes are applied.');
+    });
+})();
+
 // Toggle handlers for auto-restart and auto-start switches
 (function () {
     document.querySelectorAll('.toggle-switch').forEach(function (el) {
@@ -19,6 +28,129 @@
                 el.checked = !el.checked;
             }
         });
+    });
+})();
+
+// ── Version Upgrade ──
+(function () {
+    var versionSelect = document.getElementById('version');
+    if (!versionSelect) return;
+
+    var serverType = versionSelect.dataset.serverType;
+    var currentVersion = versionSelect.dataset.currentVersion;
+    var upgradeAccepted = false;
+
+    // Compare two version strings numerically (returns -1, 0, or 1)
+    function compareVersions(a, b) {
+        var aParts = a.split('.').map(Number);
+        var bParts = b.split('.').map(Number);
+        for (var i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+            var diff = (aParts[i] || 0) - (bParts[i] || 0);
+            if (diff !== 0) return diff > 0 ? 1 : -1;
+        }
+        return 0;
+    }
+
+    // Load versions from API and populate dropdown (only >= current)
+    async function loadUpgradeVersions() {
+        try {
+            var res = await fetch('/api/versions?type=' + encodeURIComponent(serverType));
+            var data = await res.json();
+            if (!data.versions || data.versions.length === 0) return;
+
+            versionSelect.innerHTML = '';
+            data.versions.forEach(function (v) {
+                if (compareVersions(v.id, currentVersion) >= 0) {
+                    var opt = document.createElement('option');
+                    opt.value = v.id;
+                    opt.textContent = v.id;
+                    if (v.id === currentVersion) opt.selected = true;
+                    versionSelect.appendChild(opt);
+                }
+            });
+        } catch {
+            // Keep the current version if loading fails
+        }
+    }
+
+    loadUpgradeVersions();
+
+    // Show warning modal when version changes
+    var modalEl = document.getElementById('versionUpgradeModal');
+    if (!modalEl) return;
+    var modal = new bootstrap.Modal(modalEl);
+    var revertBtn = document.getElementById('revert-version-btn');
+    var acceptBtn = document.getElementById('accept-version-btn');
+
+    versionSelect.addEventListener('change', function () {
+        if (versionSelect.value === currentVersion) {
+            upgradeAccepted = false;
+            return;
+        }
+        // Show the warning modal
+        document.getElementById('upgrade-from').textContent = currentVersion;
+        document.getElementById('upgrade-to').textContent = versionSelect.value;
+        modal.show();
+    });
+
+    revertBtn.addEventListener('click', function () {
+        versionSelect.value = currentVersion;
+        upgradeAccepted = false;
+        modal.hide();
+    });
+
+    acceptBtn.addEventListener('click', function () {
+        upgradeAccepted = true;
+        modal.hide();
+    });
+
+    // If modal is dismissed (backdrop click, escape), revert
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        if (!upgradeAccepted && versionSelect.value !== currentVersion) {
+            versionSelect.value = currentVersion;
+        }
+    });
+})();
+
+// ── Custom JAR URL Change ──
+(function () {
+    var jarUrlInput = document.getElementById('customJarUrl');
+    if (!jarUrlInput) return;
+
+    var currentUrl = jarUrlInput.dataset.currentUrl || '';
+    var jarAccepted = false;
+
+    var modalEl = document.getElementById('jarUrlChangeModal');
+    if (!modalEl) return;
+    var modal = new bootstrap.Modal(modalEl);
+    var revertBtn = document.getElementById('revert-jar-url-btn');
+    var acceptBtn = document.getElementById('accept-jar-url-btn');
+
+    jarUrlInput.addEventListener('change', function () {
+        var newUrl = jarUrlInput.value.trim();
+        if (newUrl === currentUrl || newUrl === '') {
+            jarAccepted = false;
+            return;
+        }
+        modal.show();
+    });
+
+    revertBtn.addEventListener('click', function () {
+        jarUrlInput.value = currentUrl;
+        jarAccepted = false;
+        modal.hide();
+    });
+
+    acceptBtn.addEventListener('click', function () {
+        jarAccepted = true;
+        modal.hide();
+    });
+
+    // If modal is dismissed (backdrop click, escape), revert
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        if (!jarAccepted && jarUrlInput.value.trim() !== currentUrl) {
+            jarUrlInput.value = currentUrl;
+        }
     });
 })();
 

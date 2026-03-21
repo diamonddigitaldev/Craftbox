@@ -21,7 +21,7 @@ const PROPERTY_META = {
             { value: 'hard', label: 'Hard' }
         ], default: 'easy'
     },
-    'hardcore': { type: 'boolean', label: 'Hardcore', group: 'gameplay', default: 'false', description: 'One life only — world deletes on death' },
+    'hardcore': { type: 'boolean', label: 'Hardcore', group: 'gameplay', default: 'false', description: 'One life only — players cannot respawn' },
     'pvp': { type: 'boolean', label: 'PvP', group: 'gameplay', default: 'true' },
     'max-players': { type: 'number', label: 'Max Players', group: 'gameplay', min: 0, max: 999, default: '20' },
     'force-gamemode': { type: 'boolean', label: 'Force Game Mode', group: 'gameplay', default: 'false', description: 'Force players to join in the default game mode' },

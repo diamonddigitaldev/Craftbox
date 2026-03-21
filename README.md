@@ -17,6 +17,9 @@
 
 </div>
 
+> [!WARNING]
+> **Craftbox is not stable yet and is under active development.** Do not migrate to Craftbox as your primary server management solution just yet! Beta updates may contain breaking changes or bugs that could cause corruption or data loss. If you find a bug, please submit a bug report in the [issues tab](https://github.com/WillTDA/Craftbox/issues).
+
 ## 🔎 Overview
 
 **Craftbox** is a self-hosted web panel for creating, configuring, monitoring, and managing Minecraft servers — no command-line expertise or dodgy download pages required.
@@ -29,11 +32,11 @@ Whether you're running a single Vanilla server or juggling multiple modded insta
 ## ✨ Features
 
 - 🖥️ **Multi-Server Management** — Run and manage multiple Minecraft servers from a single panel, each with its own console, watchdog, and configuration.
-- 🧩 **Multi-Server-Type Support** — Vanilla, Paper, Purpur, Folia, Fabric, Forge, and custom JAR uploads.
+- 🧩 **Multi-Server-Type Support** — Vanilla, Paper, Purpur, Folia, Fabric, Forge, NeoForge, and custom JAR uploads.
 - 📟 **Live Console** — Real-time server log streaming and command input via WebSocket.
 - ⚙️ **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
 - 💾 **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
-- 🔌 **Plugin & Mod Management** — Upload and manage JAR files for plugins (Paper/Purpur/Folia) and mods (Fabric/Forge).
+- 🔌 **Plugin & Mod Management** — Upload and manage JAR files for plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge).
 - 📋 **Server Duplication & Templates** — Clone a server with or without world data, or save configurations as reusable templates.
 - 📊 **Status & Monitoring** — Public status pages, live player tracking, resource monitoring, and event history.
 - 🛡️ **Crash Detection & Auto-Restart** — Watchdog detects crashes/runtime errors and optionally auto-restarts.
@@ -49,7 +52,7 @@ Whether you're running a single Vanilla server or juggling multiple modded insta
 | **Console** — Real-time server logs and command input with live updates. | ![Console](./docs/img/screenshots/console.png) |
 | **Settings** — Configure basic world settings, auto-restart, auto-start, and other server behaviors. | ![Settings](./docs/img/screenshots/settings.png) |
 | **Server Properties** — Edit server.properties and JVM flags from the browser. | ![Properties](./docs/img/screenshots/properties.png) |
-| **Plugin & Mod Manager** — Upload and manage plugins for Paper/Purpur or mods for Fabric/Forge. | ![Mods](./docs/img/screenshots/mods.png) |
+| **Plugin & Mod Manager** — Upload and manage plugins for Paper/Purpur or mods for Fabric/Forge/NeoForge. | ![Mods](./docs/img/screenshots/mods.png) |
 | **File Manager** — Browse and edit server files directly from the web panel. | ![Files](./docs/img/screenshots/files.png) |
 | **Backups** — Create, schedule, and restore backups with retention policies. | ![Backups](./docs/img/screenshots/backups.png) |
 | **Event History** — Track player joins, crashes, restarts, and other events. | ![Events](./docs/img/screenshots/events.png) |

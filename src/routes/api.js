@@ -7,7 +7,8 @@ const { getProvider, listProviders } = require('../mc/serverTypes');
 const { downloadServerJar } = require('../mc/downloader');
 const { log } = require('../utils/log');
 const { getEvents } = require('../utils/eventLogger');
-const { getProcessMemory, getDirectorySize, getUptime, formatSize, formatUptime } = require('../utils/resourceStats');
+const { getProcessMemory, getProcessCpu, getDirectorySize, getUptime, formatSize, formatUptime } = require('../utils/resourceStats');
+const { saveStats, getStatsHistory, clearStatsHistory } = require('../utils/statsHistory');
 
 // GET /api/servers — JSON list of all servers
 router.get('/api/servers', ensureAuth, async (req, res) => {
@@ -72,7 +73,19 @@ router.get('/api/versions', ensureAuth, async (req, res) => {
         if (!result) {
             return res.json({ versions: [], latest: null });
         }
-        res.json({ versions: result.versions, latest: result.latest });
+
+        // Ensure versions are sorted in reverse chronological order (newest first)
+        const sorted = [...result.versions].sort((a, b) => {
+            const aParts = a.id.split('.').map(Number);
+            const bParts = b.id.split('.').map(Number);
+            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+                const diff = (bParts[i] || 0) - (aParts[i] || 0);
+                if (diff !== 0) return diff;
+            }
+            return 0;
+        });
+
+        res.json({ versions: sorted, latest: result.latest });
     } catch (err) {
         log('error', `Failed to fetch versions for ${type}: ${err.message}`);
         res.status(500).json({ error: `Failed to fetch versions for ${type}.` });
@@ -325,8 +338,10 @@ router.get('/api/servers/:id/stats', ensureAuth, async (req, res) => {
             state: proc?.state || server.state,
             uptime: 0,
             uptimeFormatted: 'Offline',
+            cpuPercent: null,
             memoryBytes: null,
             memoryFormatted: null,
+            memoryAllocatedMb: server.memory || 2048,
             diskBytes: null,
             diskFormatted: null,
             playerCount: 0,
@@ -344,6 +359,10 @@ router.get('/api/servers/:id/stats', ensureAuth, async (req, res) => {
                 if (stats.memoryBytes) {
                     stats.memoryFormatted = formatSize(stats.memoryBytes);
                 }
+                stats.cpuPercent = getProcessCpu(proc.child.pid);
+                if (stats.cpuPercent !== null) {
+                    stats.cpuPercent = Math.round(stats.cpuPercent * 10) / 10;
+                }
             }
         }
 
@@ -351,7 +370,21 @@ router.get('/api/servers/:id/stats', ensureAuth, async (req, res) => {
         stats.diskBytes = getDirectorySize(serverDir);
         stats.diskFormatted = formatSize(stats.diskBytes);
 
-        res.json({ stats });
+        // Persist stats history when running
+        if (proc && proc.state === 'running') {
+            const memAllocBytes = (server.memory || 2048) * 1024 * 1024;
+            await saveStats(server.id, {
+                timestamp: Date.now(),
+                cpuPercent: stats.cpuPercent,
+                memoryPercent: stats.memoryBytes && memAllocBytes > 0
+                    ? Math.round((stats.memoryBytes / memAllocBytes) * 1000) / 10
+                    : 0,
+                memoryBytes: stats.memoryBytes || 0
+            });
+        }
+
+        const history = await getStatsHistory(server.id);
+        res.json({ stats, history });
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch stats.' });
     }

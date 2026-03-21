@@ -18,22 +18,37 @@
     modal.show();
 
     const restartBtn = document.getElementById('restart-now-btn');
+    const backupCheckbox = document.getElementById('restartBackup');
+
     if (restartBtn) {
         restartBtn.addEventListener('click', async function () {
+            const wantBackup = backupCheckbox && backupCheckbox.checked;
+
             restartBtn.disabled = true;
-            restartBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restarting...';
+            restartBtn.innerHTML = wantBackup
+                ? '<span class="spinner-border spinner-border-sm"></span> Backing up & restarting...'
+                : '<span class="spinner-border spinner-border-sm"></span> Restarting...';
+
+            modal.hide();
+            showOverlay(
+                wantBackup ? 'Backing up & restarting...' : 'Restarting server...',
+                wantBackup ? 'Creating a backup before restarting. This may take a moment.' : 'Please wait while the server restarts.'
+            );
 
             const serverId = restartBtn.dataset.serverId;
             const csrf = restartBtn.dataset.csrf;
 
             try {
+                const bodyParts = ['_csrf=' + encodeURIComponent(csrf)];
+                if (wantBackup) bodyParts.push('backup=true');
+
                 const res = await fetch('/servers/' + serverId + '/restart', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                         'X-CSRF-Token': csrf
                     },
-                    body: '_csrf=' + encodeURIComponent(csrf)
+                    body: bodyParts.join('&')
                 });
 
                 if (res.redirected) {

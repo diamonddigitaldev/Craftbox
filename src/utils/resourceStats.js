@@ -53,27 +53,24 @@ function getProcessMemory(pid) {
 
 /**
  * Get all PIDs in a process tree on Windows (parent + children).
- * Uses wmic to find child processes recursively.
+ * Uses PowerShell Get-CimInstance (wmic was removed in Windows 11 22H2+).
  */
 function _getProcessTreePids(rootPid) {
     const pids = [rootPid];
     try {
         const output = execSync(
-            `wmic process where (ParentProcessId=${rootPid}) get ProcessId /FORMAT:CSV`,
+            `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"ParentProcessId=${rootPid}\\" | Select-Object -ExpandProperty ProcessId"`,
             { windowsHide: true, encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
         );
-        // CSV output has header line, then lines like: Node,ProcessId
         const lines = output.trim().split(/\r?\n/).filter(l => l.trim());
         for (const line of lines) {
-            const parts = line.split(',');
-            const childPid = parseInt(parts[parts.length - 1], 10);
+            const childPid = parseInt(line.trim(), 10);
             if (!isNaN(childPid) && childPid !== rootPid) {
-                // Recursively get children of children
                 pids.push(..._getProcessTreePids(childPid));
             }
         }
     } catch {
-        // wmic may fail if process has already exited
+        // PowerShell may fail if process has already exited
     }
     return pids;
 }
@@ -99,6 +96,84 @@ function _getProcessTreePidsLinux(rootPid) {
         // Process may have exited
     }
     return pids;
+}
+
+/**
+ * Get CPU usage percentage for a process tree.
+ * Uses a two-sample measurement over a short interval.
+ * Returns a percentage value (can exceed 100 on multi-core).
+ */
+const _cpuPrev = new Map();
+
+function getProcessCpu(pid) {
+    if (!pid) return null;
+    try {
+        if (process.platform === 'win32') {
+            const pids = _getProcessTreePids(pid);
+            let totalTime = 0;
+            for (const p of pids) {
+                try {
+                    const output = execSync(
+                        `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"ProcessId=${p}\\").KernelModeTime, (Get-CimInstance Win32_Process -Filter \\"ProcessId=${p}\\").UserModeTime"`,
+                        { windowsHide: true, encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+                    );
+                    const lines = output.trim().split(/\r?\n/).filter(l => l.trim());
+                    for (const line of lines) {
+                        const val = parseInt(line.trim(), 10);
+                        if (!isNaN(val)) totalTime += val;
+                    }
+                } catch {}
+            }
+            // Convert from 100-nanosecond units to milliseconds
+            const cpuTimeMs = totalTime / 10000;
+            const now = Date.now();
+            const prev = _cpuPrev.get(pid);
+            _cpuPrev.set(pid, { time: now, cpu: cpuTimeMs });
+            if (prev) {
+                const elapsed = now - prev.time;
+                if (elapsed > 0) {
+                    return Math.round(((cpuTimeMs - prev.cpu) / elapsed) * 1000) / 10;
+                }
+            }
+            return null; // First sample — no delta yet
+        } else {
+            // Linux: read /proc/<pid>/stat for each process in tree
+            const pids = _getProcessTreePidsLinux(pid);
+            let totalTicks = 0;
+            const clockTick = 100; // sysconf(_SC_CLK_TCK) is typically 100 on Linux
+            for (const p of pids) {
+                try {
+                    const stat = fs.readFileSync(`/proc/${p}/stat`, 'utf8');
+                    const fields = stat.match(/\) .*/)?.[0].split(' ') || [];
+                    // After splitting ") ...", fields[0]=")", fields[1]=state, ...
+                    // utime is at index 12, stime at index 13
+                    const utime = parseInt(fields[12], 10) || 0;
+                    const stime = parseInt(fields[13], 10) || 0;
+                    totalTicks += utime + stime;
+                } catch {}
+            }
+            const cpuTimeMs = (totalTicks / clockTick) * 1000;
+            const now = Date.now();
+            const prev = _cpuPrev.get(pid);
+            _cpuPrev.set(pid, { time: now, cpu: cpuTimeMs });
+            if (prev) {
+                const elapsed = now - prev.time;
+                if (elapsed > 0) {
+                    return Math.round(((cpuTimeMs - prev.cpu) / elapsed) * 1000) / 10;
+                }
+            }
+            return null;
+        }
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Clean up CPU tracking for a process that has exited.
+ */
+function clearCpuTracking(pid) {
+    _cpuPrev.delete(pid);
 }
 
 /**
@@ -161,4 +236,4 @@ function formatUptime(seconds) {
     return parts.join(' ');
 }
 
-module.exports = { getProcessMemory, getDirectorySize, getUptime, formatSize, formatUptime };
+module.exports = { getProcessMemory, getProcessCpu, clearCpuTracking, getDirectorySize, getUptime, formatSize, formatUptime };

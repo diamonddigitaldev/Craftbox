@@ -38,11 +38,13 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
                 return 0;
             });
 
-            // Flatten into a single newest-first array
+            // Flatten into a single newest-first array, excluding pre-release/RC builds
             const allVersions = [];
             for (const major of majorKeys) {
                 // Sub-versions within each group: reverse for newest-first
-                const subVersions = [...grouped[major]].reverse();
+                const subVersions = [...grouped[major]]
+                    .filter(v => !/pre|rc/i.test(v))
+                    .reverse();
                 allVersions.push(...subVersions);
             }
 

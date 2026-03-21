@@ -1,6 +1,6 @@
 {
     "name": "craftbox",
-    "version": "1.0.0-beta.1",
+    "version": "1.0.0-beta.2",
     "description": "A modern self-hosted platform for managing Minecraft servers with built-in mod support.",
     "main": "src/server.js",
     "funding": {
@@ -34,6 +34,7 @@
         "bcrypt": "^6.0.0",
         "better-sqlite3": "^12.8.0",
         "bootstrap": "^5.3.8",
+        "chart.js": "^4.5.1",
         "content-disposition": "^1.0.1",
         "ejs": "^5.0.1",
         "express": "^5.2.1",

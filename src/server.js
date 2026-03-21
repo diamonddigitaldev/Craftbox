@@ -9,7 +9,7 @@ const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const { version } = require('../package.json');
-const { initDb, configDb, sessionsDb, markAllServersStoppedInDb } = require('./db');
+const { initDb, configDb, sessionsDb, statsDb, markAllServersStopped } = require('./db');
 const QuickDBStore = require('./sessionStore');
 const { passport } = require('./auth');
 const { securityHeaders, csrfToken, csrfValidate } = require('./security');
@@ -108,6 +108,10 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
             path.join(__dirname, '..', 'node_modules', 'material-icons', 'iconfont'),
             { maxAge: '7d', immutable: true }
         ));
+        app.use('/vendor/chart.js', express.static(
+            path.join(__dirname, '..', 'node_modules', 'chart.js', 'dist'),
+            { maxAge: '7d', immutable: true }
+        ));
 
         // Static assets — app
         app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1d' }));
@@ -186,7 +190,10 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
             }
 
             // Ensure stale RUNNING/STARTING/STOPPING states never persist across restarts
-            await markAllServersStoppedInDb({ reason: 'shutdown' });
+            await markAllServersStopped({ reason: 'shutdown' });
+
+            // Clear resource stats so they don't persist across restarts
+            await statsDb.deleteAll();
 
             // Close WebSocket server and all connections
             log('info', 'Closing WebSocket connections...');
