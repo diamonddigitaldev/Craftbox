@@ -18,9 +18,32 @@ class ServerManager {
 
     /**
      * Ensure a ServerProcess instance exists for a server (lazy init).
+     * If the cached process is stopped/crashed, rebuild it from current DB
+     * state so that restored or edited config values (memory, javaArgs,
+     * version, serverType, etc.) take effect on the next start.
      */
     async _ensureProcess(serverId) {
         let proc = this.processes.get(serverId);
+
+        if (proc && ['stopped', 'crashed'].includes(proc.state)) {
+            // Refresh config from DB + server.properties
+            const config = await syncServerConfig(serverId);
+            if (!config) throw new Error('Server not found.');
+
+            const oldProc = proc;
+            proc = new ServerProcess(config);
+
+            // Migrate WebSocket subscribers so dashboard clients stay connected
+            for (const ws of oldProc.subscribers) {
+                proc.subscribers.add(ws);
+            }
+            oldProc.subscribers.clear();
+            oldProc.removeAllListeners();
+
+            this.processes.set(serverId, proc);
+            return proc;
+        }
+
         if (proc) return proc;
 
         // Sync DB from server.properties before creating the process
