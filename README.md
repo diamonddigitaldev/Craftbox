@@ -17,6 +17,9 @@
 
 </div>
 
+> [!WARNING]
+> **Craftbox is not stable yet and is under active development.** Do not migrate to Craftbox as your primary server management solution just yet! Beta updates may contain breaking changes or bugs that could cause corruption or data loss. If you find a bug, please submit a bug report in the [issues tab](https://github.com/WillTDA/Craftbox/issues).
+
 ## 🔎 Overview
 
 **Craftbox** is a self-hosted web panel for creating, configuring, monitoring, and managing Minecraft servers — no command-line expertise or dodgy download pages required.

@@ -209,7 +209,15 @@ class ServerProcess extends EventEmitter {
         if (!fs.existsSync(libDir)) return null;
 
         try {
-            const versions = fs.readdirSync(libDir);
+            const versions = fs.readdirSync(libDir).sort((a, b) => {
+                const aParts = a.split(/[.\-]/).map(s => parseInt(s, 10) || 0);
+                const bParts = b.split(/[.\-]/).map(s => parseInt(s, 10) || 0);
+                for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+                    const diff = (bParts[i] || 0) - (aParts[i] || 0);
+                    if (diff !== 0) return diff;
+                }
+                return 0;
+            });
             for (const ver of versions) {
                 const argsName = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
                 const argsPath = path.join(libDir, ver, argsName);

@@ -582,6 +582,17 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
 
         // Download the new server jar
         try {
+            // For Forge/NeoForge, remove old version library directories before installing new version
+            if (type === 'forge' || type === 'neoforge') {
+                const libSubdir = type === 'neoforge'
+                    ? path.join(SERVERS_DIR, id, 'libraries', 'net', 'neoforged', 'neoforge')
+                    : path.join(SERVERS_DIR, id, 'libraries', 'net', 'minecraftforge', 'forge');
+                if (fs.existsSync(libSubdir)) {
+                    fs.rmSync(libSubdir, { recursive: true, force: true });
+                    log('info', `[${server.name}] Cleaned old ${type} libraries before upgrade.`);
+                }
+            }
+
             const jarPath = path.join(SERVERS_DIR, id, server.jarFile || 'server.jar');
             const result = await downloadServerJar(type, newVersion, null, jarPath);
             const oldVersion = server.version;
@@ -609,12 +620,14 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
                 return res.redirect(`/servers/${id}/edit`);
             }
 
-            // Download the new jar (replaces the old one)
+            // Download new jar to a temp file first, then replace the old one
             try {
                 const jarPath = path.join(SERVERS_DIR, id, server.jarFile || 'server.jar');
-                // Delete old jar before downloading new one
+                const tmpPath = jarPath + '.tmp';
+                await downloadServerJar('custom', newUrl, null, tmpPath);
+                // Download succeeded — safe to replace the old jar
                 if (fs.existsSync(jarPath)) fs.unlinkSync(jarPath);
-                await downloadServerJar('custom', newUrl, null, jarPath);
+                fs.renameSync(tmpPath, jarPath);
                 server.customJarUrl = newUrl;
                 jarChanged = true;
                 log('info', `Server "${server.name}" jar replaced from new URL.`);
