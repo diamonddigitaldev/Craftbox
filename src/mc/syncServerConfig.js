@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { serversDb, SERVERS_DIR } = require('../db');
 const { parseServerProperties } = require('./serverProperties');
@@ -46,6 +47,21 @@ async function syncServerConfig(serverId) {
         log('info', `[${server.name}] Config sync: seed updated`);
         server.seed = props['level-seed'];
         changed = true;
+    }
+
+    // Sync EULA acceptance from eula.txt
+    const eulaPath = path.join(serverDir, 'eula.txt');
+    if (fs.existsSync(eulaPath)) {
+        try {
+            const eulaContent = fs.readFileSync(eulaPath, 'utf8');
+            const eulaMatch = eulaContent.match(/^eula\s*=\s*(.+)$/m);
+            const eulaAccepted = eulaMatch ? eulaMatch[1].trim().toLowerCase() === 'true' : false;
+            if (eulaAccepted !== !!server.eula) {
+                log('info', `[${server.name}] Config sync: eula ${!!server.eula} → ${eulaAccepted}`);
+                server.eula = eulaAccepted;
+                changed = true;
+            }
+        } catch {}
     }
 
     if (changed) {

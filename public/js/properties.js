@@ -1,3 +1,12 @@
+// Show overlay on save
+(function () {
+    var form = document.querySelector('form[action$="/properties"]');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+        showOverlay('Saving properties...', 'Please wait while changes are applied.');
+    });
+})();
+
 // Update Enabled/Disabled label text when boolean toggles are changed
 (function () {
     document.querySelectorAll('.prop-toggle').forEach(function (input) {

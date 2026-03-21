@@ -87,6 +87,10 @@ async function _doCreateBackup(serverId, name, type) {
 
         archive.pipe(output);
         archive.directory(serverDir, false);
+
+        // Embed server DB config so restores are exact
+        archive.append(JSON.stringify(server, null, 2), { name: 'craftbox-config.json' });
+
         archive.finalize();
     });
 
@@ -148,6 +152,30 @@ async function restoreBackup(serverId, backupId) {
         }
     }
     zip.extractAllTo(serverDir, true);
+
+    // Restore server DB config from backup if present
+    const configEntry = zip.getEntry('craftbox-config.json');
+    if (configEntry) {
+        try {
+            const savedConfig = JSON.parse(configEntry.getData().toString('utf8'));
+            // Fields that must NOT be overwritten (runtime/identity)
+            const preserve = ['id', 'directory', 'jarFile', 'state', 'exitCode',
+                'crashReason', 'crashDetected', 'lastStarted', 'createdAt'];
+            for (const key of Object.keys(savedConfig)) {
+                if (!preserve.includes(key)) {
+                    server[key] = savedConfig[key];
+                }
+            }
+            await serversDb.set(`server_${serverId}`, server);
+            log('info', `[${server.name}] Server configuration restored from backup.`);
+        } catch (err) {
+            log('warn', `[${server.name}] Failed to restore config from backup: ${err.message}`);
+        }
+    }
+
+    // Remove craftbox-config.json from the server directory (it's metadata, not a server file)
+    const configOnDisk = path.join(serverDir, 'craftbox-config.json');
+    try { if (fs.existsSync(configOnDisk)) fs.unlinkSync(configOnDisk); } catch {}
 
     log('info', `[${server.name}] Backup restored successfully.`);
 }

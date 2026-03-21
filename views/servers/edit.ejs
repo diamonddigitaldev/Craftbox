@@ -6,6 +6,7 @@
 const _displayVersion = (server.serverType || 'vanilla') === 'custom'
     ? '(Unknown Version)'
     : (server.version || '(Unknown Version)');
+const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
 %>
 
 <div class="row justify-content-center">
@@ -32,11 +33,30 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
                             <label class="form-label">Server Type</label>
                             <input type="text" class="form-control" value="<%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %>" disabled>
                         </div>
+                        <% if ((server.serverType || 'vanilla') === 'custom') { %>
+                        <div class="col-md-8 mt-3 mt-md-0">
+                            <label for="customJarUrl" class="form-label">JAR Download URL</label>
+                            <input type="url" class="form-control" id="customJarUrl" name="customJarUrl"
+                                value="<%= server.customJarUrl || '' %>"
+                                data-current-url="<%= server.customJarUrl || '' %>"
+                                placeholder="https://example.com/server.jar"
+                                <%= _canChangeJar ? '' : 'disabled' %>
+                                title="<%= _canChangeJar ? '' : 'Stop the server to change the JAR URL' %>">
+                            <div class="form-text"><%= _canChangeJar ? 'Change the URL to replace the server jar.' : 'Stop the server to change the JAR URL.' %></div>
+                        </div>
+                        <% } else { %>
                         <div class="col-md-4 mt-3 mt-md-0">
                             <label class="form-label">Version</label>
-                            <input type="text" class="form-control" value="<%= _displayVersion %>" disabled>
-                            <div class="form-text">Type and version cannot be changed.</div>
+                            <select class="form-select" id="version" name="version"
+                                data-server-type="<%= server.serverType || 'vanilla' %>"
+                                data-current-version="<%= server.version %>"
+                                <%= _canChangeJar ? '' : 'disabled' %>
+                                title="<%= _canChangeJar ? '' : 'Stop the server to change the version' %>">
+                                <option value="<%= server.version %>" selected><%= server.version %></option>
+                            </select>
+                            <div class="form-text"><%= _canChangeJar ? 'Only upgrades are permitted — downgrades are not allowed.' : 'Stop the server to change the version.' %></div>
                         </div>
+                        <% } %>
                         <div class="col-md-4 mt-3 mt-md-0">
                             <label for="port" class="form-label required-star">Server Port</label>
                             <input type="number" class="form-control" id="port" name="port"
@@ -317,6 +337,58 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
     </div>
 </div>
 
+<!-- Version Upgrade Warning Modal -->
+<div class="modal fade" id="versionUpgradeModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-warning">warning</span>
+                    Upgrade Version?
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>You are about to upgrade from <strong id="upgrade-from"></strong> to <strong id="upgrade-to"></strong>.</p>
+                <p class="mb-0 text-warning small">
+                    This will download a new server jar. World data may not be compatible with the new version.
+                    It is strongly recommended to create a backup before upgrading. This action cannot be reversed.
+                </p>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" id="revert-version-btn">Revert</button>
+                <button type="button" class="btn btn-warning btn-sm" id="accept-version-btn">Accept Risk</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JAR URL Change Warning Modal -->
+<div class="modal fade" id="jarUrlChangeModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-warning">warning</span>
+                    Replace Server Jar?
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>You are about to replace the server jar with a new download.</p>
+                <p class="mb-0 text-warning small">
+                    The current jar will be deleted and replaced with the file from the new URL.
+                    It is strongly recommended to create a backup before proceeding. This action cannot be reversed.
+                </p>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" id="revert-jar-url-btn">Revert</button>
+                <button type="button" class="btn btn-warning btn-sm" id="accept-jar-url-btn">Accept Risk</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Restart Required Modal -->
 <div class="modal fade" id="restartModal" tabindex="-1" data-server-state="<%= server.state %>">
     <div class="modal-dialog modal-dialog-centered modal-sm">
@@ -330,6 +402,10 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
             </div>
             <div class="modal-body">
                 Settings have been saved. The server must be restarted for changes to take effect.
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" id="restartBackup">
+                    <label class="form-check-label" for="restartBackup">Create backup before restarting</label>
+                </div>
             </div>
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Later</button>

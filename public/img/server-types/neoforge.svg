@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- NeoForge - pixelated fox mascot -->
+  <!-- Ears -->
+  <polygon points="12,10 22,10 22,26 12,26" fill="#D4762C"/>
+  <polygon points="42,10 52,10 52,26 42,26" fill="#D4762C"/>
+  <!-- Inner ears -->
+  <polygon points="16,14 20,14 20,24 16,24" fill="#E8944A"/>
+  <polygon points="44,14 48,14 48,24 44,24" fill="#E8944A"/>
+  <!-- Head -->
+  <rect x="10" y="22" width="44" height="28" rx="2" fill="#D4762C"/>
+  <!-- Face center (lighter) -->
+  <rect x="18" y="28" width="28" height="22" rx="2" fill="#E8A050"/>
+  <!-- Muzzle (white) -->
+  <rect x="22" y="36" width="20" height="14" rx="2" fill="#F5F0E0"/>
+  <!-- Eyes -->
+  <rect x="18" y="30" width="8" height="8" rx="1" fill="#FFFFFF"/>
+  <rect x="38" y="30" width="8" height="8" rx="1" fill="#FFFFFF"/>
+  <rect x="21" y="32" width="4" height="5" rx="1" fill="#3E2723"/>
+  <rect x="40" y="32" width="4" height="5" rx="1" fill="#3E2723"/>
+  <!-- Eye shine -->
+  <rect x="22" y="33" width="2" height="2" fill="#FFFFFF"/>
+  <rect x="41" y="33" width="2" height="2" fill="#FFFFFF"/>
+  <!-- Nose -->
+  <rect x="28" y="38" width="8" height="5" rx="1" fill="#3E2723"/>
+  <!-- Mouth -->
+  <rect x="31" y="43" width="2" height="4" fill="#3E2723"/>
+  <rect x="27" y="47" width="4" height="2" rx="1" fill="#3E2723"/>
+  <rect x="33" y="47" width="4" height="2" rx="1" fill="#3E2723"/>
+</svg>

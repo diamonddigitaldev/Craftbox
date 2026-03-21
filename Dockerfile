@@ -41,8 +41,10 @@ EXPOSE 25500-25600
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:6464/login || exit 1
 
-# Create non-root user and set app ownership
+# Create non-root user, install gosu for privilege drop, set app ownership
 RUN groupadd -r craftbox && useradd -r -g craftbox craftbox && \
+    apt-get update && apt-get install -y --no-install-recommends gosu && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
     chown -R craftbox:craftbox /app
 
 # Entrypoint creates data dirs at runtime (after volume mount) then drops to craftbox

@@ -6,8 +6,9 @@ const CONTENT_TYPES = {
     paper:  { label: 'Plugins', folder: 'plugins', icon: 'extension' },
     purpur: { label: 'Plugins', folder: 'plugins', icon: 'extension' },
     folia:  { label: 'Plugins', folder: 'plugins', icon: 'extension' },
-    fabric: { label: 'Mods',    folder: 'mods',    icon: 'extension' },
-    forge:  { label: 'Mods',    folder: 'mods',    icon: 'extension' }
+    fabric:   { label: 'Mods',    folder: 'mods',    icon: 'extension' },
+    forge:    { label: 'Mods',    folder: 'mods',    icon: 'extension' },
+    neoforge: { label: 'Mods',    folder: 'mods',    icon: 'extension' }
 };
 
 function getContentType(serverType) {

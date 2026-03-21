@@ -8,6 +8,7 @@ const { serversDb } = require('../db');
 const { log } = require('../utils/log');
 const { getJavaForVersion, getDefaultJava } = require('../utils/javaVersion');
 const { logEvent, pruneEvents } = require('../utils/eventLogger');
+const { clearCpuTracking } = require('../utils/resourceStats');
 
 // Pattern that indicates the server is done starting
 const DONE_PATTERN = /\]: Done \(/;
@@ -80,7 +81,10 @@ class ServerProcess extends EventEmitter {
             [STATES.CRASHED]: 'crashed'
         };
         if (eventTypes[newState]) {
-            const extra = this._initiatedBy ? { initiatedBy: this._initiatedBy } : {};
+            // Crashes are system events — never attribute to the user who started the server
+            const extra = (this._initiatedBy && newState !== STATES.CRASHED)
+                ? { initiatedBy: this._initiatedBy }
+                : {};
             logEvent(this.id, eventTypes[newState], `Server ${eventTypes[newState]}`, extra).catch(() => {});
             pruneEvents(this.id, 500).catch(() => {});
         }
@@ -108,8 +112,8 @@ class ServerProcess extends EventEmitter {
         this._crashDetected = false;
         this._oomKillInProgress = false;
 
-        // Forge: remove 0-byte .jar files left by the installer
-        if (this.config.serverType === 'forge') {
+        // Forge/NeoForge: remove 0-byte .jar files left by the installer
+        if (this.config.serverType === 'forge' || this.config.serverType === 'neoforge') {
             try {
                 const files = fs.readdirSync(this.serverDir);
                 for (const file of files) {
@@ -147,15 +151,17 @@ class ServerProcess extends EventEmitter {
             args.push(...extraArgs);
         }
 
-        // Forge 1.17+ uses @args file instead of -jar
-        if (this.config.serverType === 'forge') {
-            const argsFile = this._findForgeArgsFile();
+        // Forge/NeoForge 1.17+ uses @args file instead of -jar
+        if (this.config.serverType === 'forge' || this.config.serverType === 'neoforge') {
+            const argsFile = this.config.serverType === 'neoforge'
+                ? this._findNeoForgeArgsFile()
+                : this._findForgeArgsFile();
             if (argsFile) {
                 args.push(`@${argsFile}`, 'nogui');
             } else if (fs.existsSync(jarPath)) {
                 args.push('-jar', jarPath, 'nogui');
             } else {
-                throw new Error('Forge server jar or args file not found.');
+                throw new Error(`${this.config.serverType === 'neoforge' ? 'NeoForge' : 'Forge'} server jar or args file not found.`);
             }
         } else {
             if (!fs.existsSync(jarPath)) {
@@ -204,6 +210,35 @@ class ServerProcess extends EventEmitter {
 
         try {
             const versions = fs.readdirSync(libDir);
+            for (const ver of versions) {
+                const argsName = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
+                const argsPath = path.join(libDir, ver, argsName);
+                if (fs.existsSync(argsPath)) {
+                    return path.relative(this.serverDir, argsPath);
+                }
+            }
+        } catch {}
+        return null;
+    }
+
+    /**
+     * Find NeoForge args file for modern installations.
+     * Sorts version directories descending so the newest version is picked first.
+     */
+    _findNeoForgeArgsFile() {
+        const libDir = path.join(this.serverDir, 'libraries', 'net', 'neoforged', 'neoforge');
+        if (!fs.existsSync(libDir)) return null;
+
+        try {
+            const versions = fs.readdirSync(libDir).sort((a, b) => {
+                const aParts = a.split('.').map(s => parseInt(s, 10) || 0);
+                const bParts = b.split('.').map(s => parseInt(s, 10) || 0);
+                for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+                    const diff = (bParts[i] || 0) - (aParts[i] || 0);
+                    if (diff !== 0) return diff;
+                }
+                return 0;
+            });
             for (const ver of versions) {
                 const argsName = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
                 const argsPath = path.join(libDir, ver, argsName);
@@ -447,6 +482,9 @@ class ServerProcess extends EventEmitter {
             this.logStream = null;
         }
 
+        // Clean up CPU tracking for this process
+        if (this.child?.pid) clearCpuTracking(this.child.pid);
+
         this.child = null;
 
         log('info', `[${this.config.name}] Process exited with code ${code}, signal ${signal}`);
@@ -581,7 +619,9 @@ class ServerProcess extends EventEmitter {
                 [STATES.CRASHED]: 'crashed'
             };
             if (eventTypes[targetState]) {
-                const extra = this._initiatedBy ? { initiatedBy: this._initiatedBy } : {};
+                const extra = (this._initiatedBy && targetState !== STATES.CRASHED)
+                    ? { initiatedBy: this._initiatedBy }
+                    : {};
                 logEvent(this.id, eventTypes[targetState], `Server ${eventTypes[targetState]} (forced from ${oldState})`, extra).catch(() => {});
             }
 
