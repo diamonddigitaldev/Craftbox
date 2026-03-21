@@ -581,15 +581,17 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
         }
 
         // Download the new server jar
+        let libBackupPath = null;
         try {
-            // For Forge/NeoForge, remove old version library directories before installing new version
+            // For Forge/NeoForge, rename old version library directories before installing new version
             if (type === 'forge' || type === 'neoforge') {
                 const libSubdir = type === 'neoforge'
                     ? path.join(SERVERS_DIR, id, 'libraries', 'net', 'neoforged', 'neoforge')
                     : path.join(SERVERS_DIR, id, 'libraries', 'net', 'minecraftforge', 'forge');
                 if (fs.existsSync(libSubdir)) {
-                    fs.rmSync(libSubdir, { recursive: true, force: true });
-                    log('info', `[${server.name}] Cleaned old ${type} libraries before upgrade.`);
+                    libBackupPath = libSubdir + '.tmp';
+                    fs.renameSync(libSubdir, libBackupPath);
+                    log('info', `[${server.name}] Moved old ${type} libraries to .tmp before upgrade.`);
                 }
             }
 
@@ -600,7 +602,18 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
             if (result?.build) server.build = result.build;
             versionChanged = true;
             log('info', `Server "${server.name}" upgraded from ${oldVersion} to ${newVersion}.`);
+
+            // Download succeeded — clean up the old libraries backup
+            if (libBackupPath && fs.existsSync(libBackupPath)) {
+                fs.rmSync(libBackupPath, { recursive: true, force: true });
+            }
         } catch (err) {
+            // Download failed — restore the old libraries if we moved them
+            if (libBackupPath && fs.existsSync(libBackupPath)) {
+                const libSubdir = libBackupPath.replace(/\.tmp$/, '');
+                fs.renameSync(libBackupPath, libSubdir);
+                log('info', `[${server.name}] Restored old ${type} libraries after failed upgrade.`);
+            }
             log('error', `Version upgrade failed for ${id}: ${err.message}`);
             req.session.flash = { error: `Failed to upgrade version: ${err.message}` };
             return res.redirect(`/servers/${id}/edit`);
