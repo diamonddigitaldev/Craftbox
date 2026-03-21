@@ -74,7 +74,7 @@ docker run -d \
   -p 6464:6464 \
   -p 25565:25565 \
   -v /path/to/craftbox/data:/app/data \
-  willtda/craftbox
+  willtda/craftbox:latest
 ```
 
 > ⚠️ **Important:** The `-v` volume mount is **essential**. It stores your database, server files, and backups. If you do not bind a host path, all data will be lost when the container is removed. Make sure the path you choose is backed up and persistent.
@@ -91,7 +91,7 @@ Alternatively, use `docker-compose.yml`:
 ```yaml
 services:
   craftbox:
-    image: willtda/craftbox
+    image: willtda/craftbox:latest
     container_name: craftbox
     restart: unless-stopped
     ports:
