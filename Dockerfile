@@ -47,7 +47,7 @@ RUN groupadd -r craftbox && useradd -r -g craftbox craftbox && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     chown -R craftbox:craftbox /app
 
-# Entrypoint creates data dirs at runtime (after volume mount) then drops to craftbox
+# Entrypoint creates data dirs at runtime then drops to craftbox
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
