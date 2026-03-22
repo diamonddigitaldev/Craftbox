@@ -1,5 +1,5 @@
 <div align="center">
-  <img alt="Craftbox Logo" src="./public/img/craftbox.png" style="width:100px;height:auto;margin-bottom:1rem;" />
+  <img alt="Craftbox Logo" src="./docs/img/craftbox.png" style="width:100px;height:auto;margin-bottom:1rem;" />
 
   # Craftbox
 
