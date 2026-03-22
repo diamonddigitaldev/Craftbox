@@ -224,6 +224,20 @@ body {
     to { opacity: 1; }
 }
 
+/* ---- Drop Overlay ---- */
+#drop-overlay {
+    animation: overlay-fade-in 0.2s ease-out;
+}
+
+#drop-overlay .material-icons-outlined {
+    animation: drop-breathe 1.5s ease-in-out infinite;
+}
+
+@keyframes drop-breathe {
+    0%, 100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 1; }
+}
+
 /* ---- Toasts ---- */
 .toast-container .toast {
     animation: toast-slide-in 0.35s ease-out;

@@ -3,7 +3,7 @@
     var form = document.querySelector('form[action$="/properties"]');
     if (!form) return;
     form.addEventListener('submit', function () {
-        showOverlay('Saving properties...', 'Please wait while changes are applied.');
+        showOverlay('Saving properties...', 'Please wait while your changes are applied.');
     });
 })();
 

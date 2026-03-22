@@ -21,9 +21,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Submit the form from the modal confirmation button
     confirmSaveBtn.addEventListener('click', function () {
+        bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
         form.method = 'POST';
         form.action = '/account';
+        showOverlay('Saving account...', 'Please wait while your changes are applied.');
         form.submit();
+    });
+
+    // Enter key triggers save button
+    form.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (!saveBtn.disabled) saveBtn.click();
+        }
     });
 
     // Final validation before showing the modal

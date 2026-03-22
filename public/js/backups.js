@@ -86,6 +86,11 @@
         });
     });
 
+    deleteForm.addEventListener('submit', function () {
+        deleteModal.hide();
+        showOverlay('Deleting backup...', 'Please wait while the backup is removed.');
+    });
+
     // ── Schedule Toggle ──
     var scheduleToggle = document.getElementById('scheduleEnabled');
     var scheduleSettings = document.getElementById('schedule-settings');

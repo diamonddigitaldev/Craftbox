@@ -77,44 +77,94 @@
     var uploadBtn = document.getElementById('upload-btn');
     var uploadLabel = uploadBtn ? (uploadBtn.dataset.label || 'files') : 'files';
 
+    async function uploadFiles(files) {
+        var jarFiles = Array.from(files).filter(function (f) {
+            return f.name.toLowerCase().endsWith('.jar');
+        });
+        if (jarFiles.length === 0) {
+            showToast('Only .jar files can be uploaded.', 'warning');
+            return;
+        }
+
+        if (uploadBtn) uploadBtn.disabled = true;
+        if (fileInput) fileInput.disabled = true;
+        showOverlay('Uploading ' + uploadLabel + '...', 'This may take a moment for large files.');
+
+        var formData = new FormData();
+        for (var i = 0; i < jarFiles.length; i++) {
+            formData.append('files', jarFiles[i]);
+        }
+
+        try {
+            var res = await fetch('/servers/' + serverId + '/plugins/upload', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrf },
+                body: formData
+            });
+
+            var data = await res.json();
+            if (res.ok && data.success) {
+                window.location.reload();
+            } else {
+                showToast(data.error || 'Upload failed.', 'danger');
+                if (uploadBtn) uploadBtn.disabled = false;
+                if (fileInput) fileInput.disabled = false;
+                hideOverlay();
+            }
+        } catch {
+            showToast('Upload failed. Please try again.', 'danger');
+            if (uploadBtn) uploadBtn.disabled = false;
+            if (fileInput) fileInput.disabled = false;
+            hideOverlay();
+        }
+    }
+
     if (fileInput && uploadBtn) {
         fileInput.addEventListener('change', function () {
             uploadBtn.disabled = fileInput.files.length === 0;
         });
 
-        uploadBtn.addEventListener('click', async function () {
+        uploadBtn.addEventListener('click', function () {
             if (fileInput.files.length === 0) return;
+            uploadFiles(fileInput.files);
+        });
+    }
 
-            uploadBtn.disabled = true;
-            fileInput.disabled = true;
-            showOverlay('Uploading ' + uploadLabel + '...', 'This may take a moment for large files.');
+    // ── Drag & Drop ──
 
-            var formData = new FormData();
-            for (var i = 0; i < fileInput.files.length; i++) {
-                formData.append('files', fileInput.files[i]);
+    // Always prevent default drop behavior so Chrome doesn't open files in a new tab
+    document.addEventListener('dragover', function (e) { e.preventDefault(); });
+    document.addEventListener('drop', function (e) { e.preventDefault(); });
+
+    var dropOverlay = document.getElementById('drop-overlay');
+    if (dropOverlay) {
+        var dragCounter = 0;
+
+        document.addEventListener('dragenter', function (e) {
+            e.preventDefault();
+            dragCounter++;
+            if (dragCounter === 1) {
+                dropOverlay.classList.remove('d-none');
+                dropOverlay.classList.add('d-flex');
             }
+        });
 
-            try {
-                var res = await fetch('/servers/' + serverId + '/plugins/upload', {
-                    method: 'POST',
-                    headers: { 'X-CSRF-Token': csrf },
-                    body: formData
-                });
+        document.addEventListener('dragleave', function (e) {
+            e.preventDefault();
+            dragCounter--;
+            if (dragCounter === 0) {
+                dropOverlay.classList.add('d-none');
+                dropOverlay.classList.remove('d-flex');
+            }
+        });
 
-                var data = await res.json();
-                if (res.ok && data.success) {
-                    window.location.reload();
-                } else {
-                    showToast(data.error || 'Upload failed.', 'danger');
-                    uploadBtn.disabled = false;
-                    fileInput.disabled = false;
-                    hideOverlay();
-                }
-            } catch {
-                showToast('Upload failed. Please try again.', 'danger');
-                uploadBtn.disabled = false;
-                fileInput.disabled = false;
-                hideOverlay();
+        document.addEventListener('drop', function (e) {
+            dragCounter = 0;
+            dropOverlay.classList.add('d-none');
+            dropOverlay.classList.remove('d-flex');
+
+            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+                uploadFiles(e.dataTransfer.files);
             }
         });
     }
@@ -142,7 +192,7 @@
                 if (!pendingDeleteFilename) return;
 
                 confirmDeleteBtn.disabled = true;
-                confirmDeleteBtn.textContent = 'Deleting...';
+                confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
 
                 try {
                     var res = await fetch('/servers/' + serverId + '/plugins/delete', {
@@ -188,6 +238,8 @@
             confirmDeleteAllBtn.addEventListener('click', async function () {
                 confirmDeleteAllBtn.disabled = true;
                 confirmDeleteAllBtn.textContent = 'Deleting...';
+                bsDeleteAllModal.hide();
+                showOverlay('Deleting all ' + uploadLabel + '...', 'Please wait while all files are removed.');
 
                 try {
                     var res = await fetch('/servers/' + serverId + '/plugins/delete-all', {
@@ -201,14 +253,15 @@
 
                     var data = await res.json();
                     if (res.ok && data.success) {
-                        bsDeleteAllModal.hide();
                         window.location.reload();
                     } else {
+                        hideOverlay();
                         showToast(data.error || 'Delete all failed.', 'danger');
                         confirmDeleteAllBtn.disabled = false;
                         confirmDeleteAllBtn.textContent = 'Delete All';
                     }
                 } catch {
+                    hideOverlay();
                     showToast('Delete all failed. Please try again.', 'danger');
                     confirmDeleteAllBtn.disabled = false;
                     confirmDeleteAllBtn.textContent = 'Delete All';
