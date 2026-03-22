@@ -50,8 +50,8 @@ Whether you're running a single Vanilla server or juggling multiple modded insta
 | **Dashboard** — Overview of all your servers, their status, and quick actions. | ![Dashboard](./docs/img/screenshots/dashboard.png) |
 | **Create Server** — Set up a new server with type, version, and settings. | ![Create](./docs/img/screenshots/create.png) |
 | **Console** — Real-time server logs and command input with live updates. | ![Console](./docs/img/screenshots/console.png) |
-| **Settings** — Configure basic world settings, auto-restart, auto-start, and other server behaviors. | ![Settings](./docs/img/screenshots/settings.png) |
-| **Server Properties** — Edit server.properties and JVM flags from the browser. | ![Properties](./docs/img/screenshots/properties.png) |
+| **Settings** — Configure basic world settings, JVM flags, auto-restart, auto-start, and other server behaviors. | ![Settings](./docs/img/screenshots/settings.png) |
+| **Server Properties** — Edit `server.properties` from the browser. | ![Properties](./docs/img/screenshots/properties.png) |
 | **Plugin & Mod Manager** — Upload and manage plugins for Paper/Purpur or mods for Fabric/Forge/NeoForge. | ![Mods](./docs/img/screenshots/mods.png) |
 | **File Manager** — Browse and edit server files directly from the web panel. | ![Files](./docs/img/screenshots/files.png) |
 | **Backups** — Create, schedule, and restore backups with retention policies. | ![Backups](./docs/img/screenshots/backups.png) |
