@@ -26,6 +26,7 @@
     if (form) {
         form.addEventListener('submit', function () {
             saved = true;
+            showOverlay('Saving file...', 'Please wait while your changes are applied.');
         });
     }
 

@@ -3,7 +3,7 @@
     var form = document.querySelector('form[action$="/edit"]');
     if (!form) return;
     form.addEventListener('submit', function () {
-        showOverlay('Saving settings...', 'Please wait while changes are applied.');
+        showOverlay('Saving settings...', 'Please wait while your changes are applied.');
     });
 })();
 
@@ -308,6 +308,7 @@ function showEditOverlay(title, desc) {
             btn.disabled = true;
             btn.innerHTML =
                 '<span class="spinner-border spinner-border-sm" role="status"></span> Updating...';
+            showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
 
             try {
                 const res = await fetch('/api/servers/' + serverId + '/update-jar', {
@@ -319,6 +320,7 @@ function showEditOverlay(title, desc) {
                 });
                 const data = await res.json();
 
+                hideOverlay();
                 if (res.ok && data.success) {
                     showResult('success', 'Jar updated to build #' + (data.build || 'latest') + '.');
                     if (statusEl && data.build) {
@@ -332,6 +334,7 @@ function showEditOverlay(title, desc) {
                         '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
                 }
             } catch {
+                hideOverlay();
                 showResult('danger', 'Failed to update jar.');
                 btn.disabled = false;
                 btn.innerHTML =

@@ -120,6 +120,17 @@
     </div>
 </div>
 
+<% if (_serverStopped) { %>
+<!-- Drop zone overlay (hidden until drag) -->
+<div id="drop-overlay" class="d-none position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+    style="z-index: 1050; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: none;">
+    <div class="text-center">
+        <span class="material-icons-outlined text-success" style="font-size: 4rem;">upload_file</span>
+        <h4 class="text-white mt-2">Drop .jar files to upload...</h4>
+    </div>
+</div>
+<% } %>
+
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-sm">
