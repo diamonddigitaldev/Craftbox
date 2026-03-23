@@ -134,7 +134,7 @@ npm run dev
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `6464` | Port for the web panel |
-| `NODE_ENV` | — | Set to `production` for secure session cookies (required when serving over HTTPS) |
+| `NODE_ENV` | `development` | Set to `production` for secure session cookies (required when serving over HTTPS) |
 | `TRUST_PROXY` | `false` | Set to `true` if running behind a reverse proxy (e.g. Nginx, Caddy, Cloudflare Tunnel) so that rate limiting and secure cookies work correctly |
 
 > **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist.
