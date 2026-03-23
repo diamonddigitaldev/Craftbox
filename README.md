@@ -18,7 +18,7 @@
 </div>
 
 > [!WARNING]
-> **Craftbox is not stable yet and is under active development.** Do not migrate to Craftbox as your primary server management solution just yet! Beta updates may contain breaking changes or bugs that could cause corruption or data loss. If you find a bug, please submit a bug report in the [issues tab](https://github.com/WillTDA/Craftbox/issues).
+> **Craftbox is not stable yet and is under active development.** Do not migrate to Craftbox as your primary server management solution just yet! Beta updates may contain breaking changes or bugs that could cause corruption or data loss. If you find a bug, please submit a bug report in the [issues tab](https://github.com/diamonddigitaldev/Craftbox/issues).
 
 ## 🔎 Overview
 
@@ -116,7 +116,7 @@ Craftbox will be available at `http://localhost:6464`. On first launch, you'll b
 > **Requirements:** Node.js 24+ and Java (8, 17, 21, or 25 depending on Minecraft version).
 
 ```bash
-git clone https://github.com/WillTDA/Craftbox.git
+git clone https://github.com/diamonddigitaldev/Craftbox.git
 cd Craftbox
 npm install
 npm start
@@ -156,8 +156,8 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 ## 🙂 Contact Us
 
 * 💬 **Need help or want to chat?** [Join our Discord Server](https://diamonddigital.dev/discord)
-* 🐛 **Found a bug?** [Open an issue](https://github.com/WillTDA/Craftbox/issues/new?template=bug_report.yml)
-* 💡 **Have a suggestion?** [Submit a feature request](https://github.com/WillTDA/Craftbox/issues/new?template=feature_request.yml)
+* 🐛 **Found a bug?** [Open an issue](https://github.com/diamonddigitaldev/Craftbox/issues/new?template=bug_report.yml)
+* 💡 **Have a suggestion?** [Submit a feature request](https://github.com/diamonddigitaldev/Craftbox/issues/new?template=feature_request.yml)
 
 
 <div align="center">
