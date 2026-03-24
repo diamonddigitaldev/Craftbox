@@ -38,6 +38,9 @@
             clearModal.show();
         });
         document.getElementById('confirm-clear').addEventListener('click', function () {
+            var btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Clearing...';
             clearModal.hide();
             showOverlay('Clearing events...', 'Deleting all logged events for this server.');
             clearForm.submit();

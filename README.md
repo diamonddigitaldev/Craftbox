@@ -9,7 +9,7 @@
 <div align="center">
 
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)
-![version](https://img.shields.io/badge/version-1.0.0-brightgreen?style=flat-square)
+![version](https://img.shields.io/badge/version-1.0.0--beta.4-brightgreen?style=flat-square)
 ![docker](https://img.shields.io/badge/docker-supported-blue?style=flat-square)
 
 [![discord](https://img.shields.io/discord/667479986214666272?logo=discord&logoColor=white&style=flat-square)](https://diamonddigital.dev/discord)
@@ -75,19 +75,14 @@ docker run -d \
   --name craftbox \
   --restart unless-stopped \
   -p 6464:6464 \
-  -p 25565:25565 \
+  -p 25500-25600:25500-25600 \
   -v /path/to/craftbox/data:/app/data \
   willtda/craftbox:latest
 ```
 
 > ⚠️ **Important:** The `-v` volume mount is **essential**. It stores your database, server files, and backups. If you do not bind a host path, all data will be lost when the container is removed. Make sure the path you choose is backed up and persistent.
 
-To expose additional Minecraft server ports, add more `-p` flags:
-
-```bash
--p 25566:25566
--p 25567:25567
-```
+> **Note:** The Docker image only exposes ports **25500–25600** for Minecraft servers, allowing up to 100 servers. When creating servers in Craftbox, make sure to assign ports within this range. If you only need a few servers, you can expose a smaller subset (e.g. `-p 25500-25510:25500-25510`).
 
 Alternatively, use `docker-compose.yml`:
 
@@ -98,9 +93,8 @@ services:
     container_name: craftbox
     restart: unless-stopped
     ports:
-      - "6464:6464"     # Web panel
-      - "25565:25565"   # Default Minecraft server port
-      # - "25566:25566" # Additional server ports as needed
+      - "6464:6464"           # Web panel
+      - "25500-25600:25500-25600"  # Minecraft server ports (up to 100 servers)
     volumes:
       - /path/to/craftbox/data:/app/data
     stop_grace_period: 45s

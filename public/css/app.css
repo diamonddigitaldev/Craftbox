@@ -239,6 +239,10 @@ body {
 }
 
 /* ---- Toasts ---- */
+.toast.text-bg-warning .btn-close {
+    filter: none;
+}
+
 .toast-container .toast {
     animation: toast-slide-in 0.35s ease-out;
 }

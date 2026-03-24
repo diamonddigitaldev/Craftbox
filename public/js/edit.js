@@ -3,6 +3,11 @@
     var form = document.querySelector('form[action$="/edit"]');
     if (!form) return;
     form.addEventListener('submit', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+        }
         showOverlay('Saving settings...', 'Please wait while your changes are applied.');
     });
 })();
@@ -175,6 +180,11 @@ function showEditOverlay(title, desc) {
     // Only wire direct submit if there's no "running" button (server is stopped)
     if (!form || document.getElementById('duplicate-running-btn')) return;
     form.addEventListener('submit', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Duplicating...';
+        }
         showEditOverlay('Duplicating server...', 'Copying server files. This may take a moment.');
     });
 })();
@@ -184,6 +194,11 @@ function showEditOverlay(title, desc) {
     var form = document.getElementById('template-form');
     if (!form || document.getElementById('template-running-btn')) return;
     form.addEventListener('submit', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+        }
         showEditOverlay('Saving template...', 'This may take a moment.');
     });
 })();

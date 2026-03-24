@@ -26,6 +26,11 @@
     if (form) {
         form.addEventListener('submit', function () {
             saved = true;
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+            }
             showOverlay('Saving file...', 'Please wait while your changes are applied.');
         });
     }

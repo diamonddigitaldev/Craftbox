@@ -192,14 +192,6 @@ router.get('/servers/:id/backups/:backupId/download', ensureAuth, async (req, re
     const server = await getServerWithState(req);
     if (!server) return res.status(404).json({ error: 'Server not found.' });
 
-    // Only allow download when server is stopped
-    const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(server.id);
-    if (proc && ![STATES.STOPPED, STATES.CRASHED].includes(proc.state)) {
-        req.session.flash = { error: 'Stop the server before downloading backups.' };
-        return res.redirect(`/servers/${server.id}/backups`);
-    }
-
     const backup = await backupsDb.get(`backup_${req.params.backupId}`);
     if (!backup || backup.serverId !== server.id) {
         req.session.flash = { error: 'Backup not found.' };
