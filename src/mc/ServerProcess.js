@@ -266,8 +266,18 @@ class ServerProcess extends EventEmitter {
             throw new Error('Server is not running.');
         }
 
+        const wasStarting = this.state === STATES.STARTING;
         this._stopRequested = true;
         await this.setState(STATES.STOPPING);
+
+        if (wasStarting) {
+            // Server hasn't finished loading — the "stop" command won't be processed.
+            // Kill the process tree directly for a clean shutdown.
+            log('info', `[${this.config.name}] Server was still starting, force killing.`);
+            this._appendLine('[Craftbox] Server was still starting — terminating process.');
+            this._killTree();
+            return;
+        }
 
         this.sendCommand('stop');
 

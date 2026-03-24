@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Submit the form from the modal confirmation button
     confirmSaveBtn.addEventListener('click', function () {
+        confirmSaveBtn.disabled = true;
+        confirmSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
         bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
         form.method = 'POST';
         form.action = '/account';

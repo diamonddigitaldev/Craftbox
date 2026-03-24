@@ -3,6 +3,11 @@
     var form = document.querySelector('form[action$="/properties"]');
     if (!form) return;
     form.addEventListener('submit', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+        }
         showOverlay('Saving properties...', 'Please wait while your changes are applied.');
     });
 })();

@@ -25,6 +25,11 @@
     var backupForm = document.getElementById('backup-form');
     if (backupForm) {
         backupForm.addEventListener('submit', function () {
+            var btn = document.getElementById('create-backup-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating...';
+            }
             showOverlay('Creating backup...', 'Compressing server files. This may take a moment.');
         });
     }
@@ -87,9 +92,26 @@
     });
 
     deleteForm.addEventListener('submit', function () {
+        var btn = deleteForm.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
+        }
         deleteModal.hide();
         showOverlay('Deleting backup...', 'Please wait while the backup is removed.');
     });
+
+    // ── Next Backup Display Helper ──
+    var nextBackupText = document.getElementById('next-backup-text');
+
+    function updateNextBackup(isoString) {
+        if (!nextBackupText) return;
+        if (isoString) {
+            nextBackupText.textContent = 'Next backup: ' + new Date(isoString).toLocaleString();
+        } else {
+            nextBackupText.textContent = '';
+        }
+    }
 
     // ── Schedule Toggle ──
     var scheduleToggle = document.getElementById('scheduleEnabled');
@@ -109,7 +131,12 @@
                     },
                     body: JSON.stringify({ enabled: enabled })
                 });
-                if (!res.ok) scheduleToggle.checked = !enabled;
+                if (res.ok) {
+                    var data = await res.json();
+                    updateNextBackup(data.nextBackupAt);
+                } else {
+                    scheduleToggle.checked = !enabled;
+                }
             } catch {
                 scheduleToggle.checked = !enabled;
             }
@@ -141,6 +168,8 @@
                 });
 
                 if (res.ok) {
+                    var data = await res.json();
+                    updateNextBackup(data.nextBackupAt);
                     saveScheduleBtn.textContent = 'Saved!';
                     setTimeout(function () { saveScheduleBtn.textContent = 'Save Schedule'; }, 2000);
                 } else {

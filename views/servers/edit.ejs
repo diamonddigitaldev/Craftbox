@@ -26,6 +26,7 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                         <input type="text" class="form-control" id="name" name="name" required
                             minlength="1" maxlength="50" pattern="[a-zA-Z0-9 _\-]+"
                             value="<%= server.name %>">
+                        <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
                     </div>
 
                     <div class="row mb-3">
@@ -208,6 +209,7 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                             <input type="text" class="form-control" id="dup-name" name="name"
                                 value="<%= server.name %> - Copy" minlength="1" maxlength="50"
                                 pattern="[a-zA-Z0-9 _\-]+" required>
+                            <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
                         </div>
                         <div class="col-md-6 mt-3 mt-md-0">
                             <label for="dup-port" class="form-label required-star">New Port</label>
@@ -267,6 +269,7 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                         <input type="text" class="form-control" id="template-name" name="name"
                             value="<%= server.name %>" minlength="1" maxlength="50"
                             pattern="[a-zA-Z0-9 _\-]+" required>
+                        <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
                     </div>
                     <% if (_serverStopped) { %>
                     <button type="submit" class="btn btn-outline-secondary d-flex align-items-center gap-1">

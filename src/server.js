@@ -16,6 +16,7 @@ const { securityHeaders, csrfToken, csrfValidate } = require('./security');
 const { initWebSocket } = require('./websocket');
 const ServerManager = require('./mc/ServerManager');
 const BackupScheduler = require('./mc/BackupScheduler');
+const StatsCollector = require('./utils/StatsCollector');
 const mountRoutes = require('./routes');
 
 const rawPort = process.env.PORT;
@@ -57,12 +58,15 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         app.set('view engine', 'ejs');
         app.set('views', path.join(__dirname, '..', 'views'));
 
-        // ── 4. Initialize ServerManager & BackupScheduler ──
+        // ── 4. Initialize core components ──
         const serverManager = new ServerManager();
         app.set('serverManager', serverManager);
 
         const backupScheduler = new BackupScheduler(serverManager);
         app.set('backupScheduler', backupScheduler);
+
+        const statsCollector = new StatsCollector(serverManager);
+        app.set('statsCollector', statsCollector);
 
         // ── 5. Middleware stack ──
 
@@ -172,12 +176,18 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         await backupScheduler.init();
         await serverManager.autoStartServers();
 
-        // ── 12. Graceful shutdown ──
+        // ── 12. Start background stats collection ──
+        statsCollector.start();
+
+        // ── 13. Graceful shutdown ──
         let shuttingDown = false;
         const handleShutdown = async () => {
             if (shuttingDown) return;
             shuttingDown = true;
             log('info', 'Craftbox is shutting down...');
+
+            // Stop stats collection
+            statsCollector.stop();
 
             // Stop backup schedules
             backupScheduler.stopAll();

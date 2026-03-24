@@ -54,16 +54,15 @@
     </div>
 </div>
 
-<% if (server.state === 'crashed') { %>
-<div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
+<div class="alert alert-danger align-items-center gap-2 mb-3" id="crash-banner"
+     style="display: <%= server.state === 'crashed' ? 'flex' : 'none' %>;">
     <span class="material-icons-outlined">error</span>
-    <div>
+    <div id="crash-banner-text">
         Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.
-        Exit code: <strong><%= server.exitCode %></strong>.
+        Exit code: <strong><%= server.exitCode != null ? server.exitCode : '' %></strong>.
         <% if (server.autoRestart) { %>Auto-restart is enabled.<% } %>
     </div>
 </div>
-<% } %>
 
 <!-- Resource Stats Bar -->
 <div class="d-flex flex-wrap gap-3 mb-3 text-body-secondary" style="font-size: 0.85rem;" id="stats-bar" data-server-id="<%= server.id %>">

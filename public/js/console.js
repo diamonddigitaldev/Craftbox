@@ -173,6 +173,29 @@
         if (deleteBtn) {
             deleteBtn.disabled = ['running', 'starting', 'stopping'].includes(state);
         }
+
+        // Immediately wipe stats and set charts offline when server stops/crashes
+        if (state !== 'running') {
+            if (statUptime) statUptime.textContent = '--';
+            if (statCpu) statCpu.textContent = '--';
+            if (statMemory) statMemory.textContent = '--';
+            updatePlayerCount(0);
+            setChartsOffline(true);
+        }
+
+        // Show/hide crash banner
+        const crashBanner = document.getElementById('crash-banner');
+        const crashText = document.getElementById('crash-banner-text');
+        if (crashBanner) {
+            if (state === 'crashed') {
+                var autoRestartEl = document.getElementById('autoRestart');
+                var autoRestart = autoRestartEl ? autoRestartEl.checked : false;
+                crashText.innerHTML = 'Server crashed.' + (autoRestart ? ' Auto-restart is enabled.' : '');
+                crashBanner.style.display = 'flex';
+            } else {
+                crashBanner.style.display = 'none';
+            }
+        }
     }
 
     function sendCommand() {
@@ -394,8 +417,8 @@
         if (!chart) return;
         chart.data.labels.push(label);
         chart.data.datasets[0].data.push(value);
-        // Keep max 5 minutes of data (60 points at 5s)
-        while (chart.data.labels.length > 60) {
+        // Keep max 5 minutes of data (30 points at 10s)
+        while (chart.data.labels.length > 30) {
             chart.data.labels.shift();
             chart.data.datasets[0].data.shift();
         }
@@ -411,7 +434,7 @@
         pushChartPoint(cpuChartInstance, timeLabel, cpu);
         pushChartPoint(ramChartInstance, timeLabel, memPercent);
         ramBytesHistory.push(memBytes);
-        while (ramBytesHistory.length > 60) ramBytesHistory.shift();
+        while (ramBytesHistory.length > 30) ramBytesHistory.shift();
 
         // Auto-scale CPU above 100% if needed
         if (cpuChartInstance) {
@@ -471,9 +494,9 @@
         }
     }
 
-    // Fetch stats immediately and every 5 seconds
+    // Fetch stats immediately and every 10 seconds (matches background collector interval)
     fetchStats();
-    setInterval(fetchStats, 5000);
+    setInterval(fetchStats, 10000);
 
     // Start connection
     connect();
