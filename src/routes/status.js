@@ -32,7 +32,8 @@ function sanitizeForPublic(server, proc) {
         players: proc ? Array.from(proc.players) : [],
         uptime: running ? getUptime(server.lastStarted) : 0,
         uptimeFormatted: running ? formatUptime(getUptime(server.lastStarted)) : 'Offline',
-        statusPagePublic: !!server.statusPagePublic
+        statusPagePublic: !!server.statusPagePublic,
+        advertisedIp: server.advertisedIp || null
     };
 }
 

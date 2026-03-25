@@ -1,9 +1,13 @@
 (function () {
-    // Populate server IP addresses using browser hostname + port
+    // Populate server IP addresses using advertised IP or browser hostname + port
     document.querySelectorAll('.server-ip').forEach(function (el) {
         var port = el.dataset.port;
-        var hostname = window.location.hostname;
-        el.textContent = hostname + ':' + port;
+        var advertisedIp = el.dataset.ip;
+        if (advertisedIp) {
+            el.textContent = advertisedIp;
+        } else {
+            el.textContent = window.location.hostname + ':' + port;
+        }
     });
 
     // Format event times as relative ("5m ago", "2h ago")

@@ -156,10 +156,25 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                         Status Page Visibility: <strong id="statusPageLabel"><%= server.statusPagePublic ? 'Public' : 'Unlisted' %></strong>
                     </label>
                 </div>
-                <small class="text-body-secondary d-block">
+                <small class="text-body-secondary d-block mb-3">
                     <strong>Public</strong>: Server appears on the <a href="/status" target="_blank">/status</a> page for anyone to see.<br>
                     <strong>Unlisted</strong> (default): Only accessible via its <a href="/status/<%= server.id %>" target="_blank">direct link</a>.
                 </small>
+                <div>
+                    <label for="advertisedIp" class="form-label d-flex align-items-center gap-1">
+                        Advertised IP
+                        <span class="material-icons-outlined text-body-secondary" style="font-size: 1rem; cursor: help;"
+                            data-bs-toggle="tooltip" data-bs-placement="top"
+                            title="Override the IP shown on the status page. Use this if players connect via a domain name or external IP that differs from the Craftbox host (e.g. behind a reverse proxy, port forwarding, or using an SRV record).">
+                            help_outline
+                        </span>
+                    </label>
+                    <input type="text" class="form-control" id="advertisedIp" name="advertisedIp"
+                        value="<%= server.advertisedIp || '' %>" placeholder="e.g. play.example.com or 203.0.113.5"
+                        maxlength="253"
+                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                    <div class="form-text">Leave blank to use the Craftbox hostname automatically.</div>
+                </div>
             </div>
         </div>
 

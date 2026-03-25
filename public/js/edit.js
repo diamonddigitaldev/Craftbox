@@ -1,3 +1,8 @@
+// Initialize Bootstrap tooltips
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+    new bootstrap.Tooltip(el);
+});
+
 // Show overlay on save
 (function () {
     var form = document.querySelector('form[action$="/edit"]');
