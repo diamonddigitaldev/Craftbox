@@ -523,7 +523,7 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
         return res.redirect('/dashboard');
     }
 
-    const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl, advertisedIp } = req.body;
+    const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl } = req.body;
 
     const trimmedName = String(name).trim();
     if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
@@ -664,7 +664,6 @@ router.post('/servers/:id/edit', ensureAuth, async (req, res) => {
     server.gamemode = gamemodeStr;
     server.difficulty = difficultyStr;
     server.seed = seedStr;
-    server.advertisedIp = String(advertisedIp || '').trim() || null;
     await serversDb.set(`server_${id}`, server);
 
     // Update server.properties

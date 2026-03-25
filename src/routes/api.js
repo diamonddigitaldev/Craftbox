@@ -411,4 +411,19 @@ router.post('/api/servers/:id/statuspublic', ensureAuth, async (req, res) => {
     }
 });
 
+// POST /api/servers/:id/advertisedip — Update advertised IP
+router.post('/api/servers/:id/advertisedip', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        server.advertisedIp = String(req.body.value || '').trim() || null;
+        await serversDb.set(`server_${server.id}`, server);
+
+        res.json({ advertisedIp: server.advertisedIp });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update setting.' });
+    }
+});
+
 module.exports = router;

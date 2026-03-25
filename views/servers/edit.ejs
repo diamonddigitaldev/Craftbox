@@ -165,15 +165,19 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                         Advertised IP
                         <span class="material-icons-outlined text-body-secondary" style="font-size: 1rem; cursor: help;"
                             data-bs-toggle="tooltip" data-bs-placement="top"
-                            title="Override the IP shown on the status page. Use this if players connect via a domain name or external IP that differs from the Craftbox host (e.g. behind a reverse proxy, port forwarding, or using an SRV record).">
+                            title="Use this if Craftbox is behind a reverse proxy, running in Docker with mapped ports, or if players connect via a domain name different from the Craftbox hostname.">
                             help_outline
                         </span>
                     </label>
-                    <input type="text" class="form-control" id="advertisedIp" name="advertisedIp"
-                        value="<%= server.advertisedIp || '' %>" placeholder="e.g. play.example.com or 203.0.113.5"
-                        maxlength="253"
-                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
-                    <div class="form-text">Leave blank to use the Craftbox hostname automatically.</div>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="advertisedIp" name="advertisedIp"
+                            value="<%= server.advertisedIp || '' %>" placeholder="e.g. play.example.com or 203.0.113.5"
+                            maxlength="253"
+                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                        <button type="button" class="btn btn-outline-secondary" id="save-advertised-ip"
+                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Save</button>
+                    </div>
+                    <div class="form-text">Override the IP shown on the status page. Leave blank to use the Craftbox hostname automatically.</div>
                 </div>
             </div>
         </div>
