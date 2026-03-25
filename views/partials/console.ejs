@@ -15,7 +15,7 @@
             autocomplete="off"
             <% if (typeof server !== 'undefined' && !['running'].includes(server.state)) { %>disabled<% } %>
         >
-        <button id="console-send" class="btn btn-sm btn-outline-success me-2 d-flex align-items-center" title="Send">
+        <button id="console-send" class="btn btn-sm btn-outline-success me-2 d-flex align-items-center" title="Send" disabled>
             <span class="material-icons-outlined" style="font-size: 1.1rem;">send</span>
         </button>
     </div>

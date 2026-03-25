@@ -13,6 +13,7 @@ router.get('/setup', async (req, res) => {
     if (setupComplete) return res.redirect('/dashboard');
     res.render('setup', {
         title: 'Setup',
+        ogTitle: 'Craftbox',
         navbar: false,
         user: null,
         messages: req.session.flash || {},
@@ -89,6 +90,7 @@ router.get('/login', (req, res) => {
     if (req.isAuthenticated()) return res.redirect('/dashboard');
     res.render('login', {
         title: 'Login',
+        ogTitle: 'Craftbox',
         navbar: false,
         user: null,
         messages: req.session.flash || {},
@@ -143,6 +145,7 @@ router.post('/logout', (req, res) => {
 router.get('/account', ensureAuth, async (req, res) => {
     res.render('account', {
         title: 'Account Settings',
+        ogTitle: 'Craftbox',
         navbar: true,
         user: req.user,
         messages: req.session.flash || {},

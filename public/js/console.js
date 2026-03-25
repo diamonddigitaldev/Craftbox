@@ -62,7 +62,7 @@
                     if (msg.history && msg.history.length > 0) {
                         msg.history.forEach(line => appendLine(line));
                     }
-                    if (msg.state) updateState(msg.state);
+                    if (msg.state) updateState(msg.state, msg.crashReason, msg.exitCode);
                     if (typeof msg.playerCount === 'number') updatePlayerCount(msg.playerCount);
                     scrollToBottom();
                     break;
@@ -82,7 +82,7 @@
 
                 case 'state':
                     if (msg.serverId === serverId) {
-                        updateState(msg.state);
+                        updateState(msg.state, msg.crashReason, msg.exitCode);
                     }
                     break;
 
@@ -114,7 +114,9 @@
         div.textContent = text;
 
         // Colorize based on content
-        if (type === 'command' || text.startsWith('>')) {
+        if (text.startsWith('[Craftbox]')) {
+            div.classList.add('console-line-craftbox');
+        } else if (type === 'command' || text.startsWith('>')) {
             div.classList.add('console-line-command');
         } else if (/\bWARN\b/i.test(text)) {
             div.classList.add('console-line-warn');
@@ -136,7 +138,7 @@
         output.scrollTop = output.scrollHeight;
     }
 
-    function updateState(state) {
+    function updateState(state, crashReason, exitCode) {
         currentState = state;
 
         // Update badge
@@ -165,7 +167,7 @@
             input.disabled = state !== 'running';
         }
         if (sendBtn) {
-            sendBtn.disabled = state !== 'running';
+            sendBtn.disabled = state !== 'running' || !input.value.trim();
         }
 
         // Update delete button
@@ -190,7 +192,14 @@
             if (state === 'crashed') {
                 var autoRestartEl = document.getElementById('autoRestart');
                 var autoRestart = autoRestartEl ? autoRestartEl.checked : false;
-                crashText.innerHTML = 'Server crashed.' + (autoRestart ? ' Auto-restart is enabled.' : '');
+                var reasonText = crashReason === 'oom'
+                    ? ' due to Out of Memory'
+                    : '';
+                var exitText = exitCode != null
+                    ? ' Exit code: <strong>' + exitCode + '</strong>.'
+                    : '';
+                crashText.innerHTML = 'Server crashed' + reasonText + '.' + exitText
+                    + (autoRestart ? ' Auto-restart is enabled.' : '');
                 crashBanner.style.display = 'flex';
             } else {
                 crashBanner.style.display = 'none';
@@ -207,6 +216,7 @@
 
         ws.send(JSON.stringify({ type: 'command', serverId, line }));
         input.value = '';
+        if (sendBtn) sendBtn.disabled = true;
         input.focus();
     }
 
@@ -214,6 +224,13 @@
     output.addEventListener('scroll', () => {
         const threshold = 50;
         autoScroll = (output.scrollHeight - output.scrollTop - output.clientHeight) < threshold;
+    });
+
+    // Toggle send button based on input content
+    input.addEventListener('input', () => {
+        if (sendBtn) {
+            sendBtn.disabled = currentState !== 'running' || !input.value.trim();
+        }
     });
 
     // Command input

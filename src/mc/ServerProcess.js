@@ -8,6 +8,7 @@ const { serversDb } = require('../db');
 const { log } = require('../utils/log');
 const { getJavaForVersion, getDefaultJava } = require('../utils/javaVersion');
 const { logEvent, pruneEvents } = require('../utils/eventLogger');
+const { getProvider } = require('./serverTypes');
 const { clearCpuTracking } = require('../utils/resourceStats');
 
 // Pattern that indicates the server is done starting
@@ -94,7 +95,8 @@ class ServerProcess extends EventEmitter {
             type: 'state',
             serverId: this.id,
             state: newState,
-            exitCode: this.config.exitCode || null
+            exitCode: this.config.exitCode || null,
+            crashReason: this.config.crashReason || null
         });
 
         this.emit('stateChange', newState, oldState);
@@ -183,6 +185,23 @@ class ServerProcess extends EventEmitter {
             stdio: ['pipe', 'pipe', 'pipe'],
             windowsHide: true
         });
+
+        // Display server type, version, and Java info in console
+        const provider = getProvider(this.config.serverType);
+        const typeName = provider ? provider.name : this.config.serverType || 'Unknown';
+        const version = this.config.serverType === 'custom'
+            ? '(Unknown Version)'
+            : (this.config.version || '(Unknown Version)');
+        let javaVer = 'Unknown';
+        try {
+            const javaVerOutput = execSync(`"${javaPath}" -version 2>&1`, {
+                windowsHide: true,
+                timeout: 5000
+            }).toString();
+            const match = javaVerOutput.match(/version "([^"]+)"/);
+            if (match) javaVer = match[1];
+        } catch {}
+        this._appendLine(`[Craftbox] Starting ${typeName} ${version} using Java ${javaVer} (${javaPath})`);
 
         // Process stdout line by line
         const stdoutRL = readline.createInterface({ input: this.child.stdout });
@@ -363,7 +382,9 @@ class ServerProcess extends EventEmitter {
             state: this.state,
             history: this.lastLines.slice(-200),
             players: Array.from(this.players),
-            playerCount: this.players.size
+            playerCount: this.players.size,
+            exitCode: this.config.exitCode || null,
+            crashReason: this.config.crashReason || null
         });
         if (ws.readyState === 1) ws.send(msg);
     }
@@ -648,7 +669,8 @@ class ServerProcess extends EventEmitter {
                 type: 'state',
                 serverId: this.id,
                 state: targetState,
-                exitCode: this.config.exitCode || null
+                exitCode: this.config.exitCode || null,
+                crashReason: this.config.crashReason || null
             });
 
             this.emit('stateChange', targetState, oldState);

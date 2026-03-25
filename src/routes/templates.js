@@ -18,6 +18,7 @@ router.get('/templates', ensureAuth, async (req, res) => {
 
     res.render('templates', {
         title: 'Templates',
+        description: 'View and manage server templates.',
         navbar: true,
         user: req.user,
         templates,

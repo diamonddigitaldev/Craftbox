@@ -57,6 +57,7 @@ router.get('/status', async (req, res) => {
 
         res.render('status/list', {
             title: 'Server Status',
+            description: 'View live status updates for hosted Minecraft servers.',
             navbar: false,
             user: null,
             servers
@@ -113,6 +114,7 @@ router.get('/status/:id', async (req, res) => {
 
         res.render('status/server', {
             title: sanitized.name + ' — Status',
+            description: `View live status updates for ${sanitized.name}.`,
             navbar: false,
             user: null,
             server: sanitized,

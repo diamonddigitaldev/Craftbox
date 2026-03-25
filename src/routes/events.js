@@ -37,6 +37,7 @@ router.get('/servers/:id/events', ensureAuth, async (req, res) => {
 
     res.render('servers/events', {
         title: server.name + ' — Events',
+        description: `View logs of past events for ${server.name}.`,
         navbar: true,
         user: req.user,
         server,

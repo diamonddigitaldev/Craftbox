@@ -66,6 +66,7 @@ router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
 
     res.render('servers/backups', {
         title: server.name + ' — Backups',
+        description: `Manage backups for ${server.name}.`,
         navbar: true,
         user: req.user,
         server,
