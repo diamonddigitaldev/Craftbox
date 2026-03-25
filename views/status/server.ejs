@@ -37,7 +37,7 @@ const icon = stateIcons[server.state] || 'help';
                 <div class="row g-3 text-center">
                     <div class="col-4">
                         <div class="text-body-secondary small">Server IP</div>
-                        <strong class="server-ip text-nowrap" data-port="<%= server.port %>" style="font-size: 0.85em;">:<%= server.port %></strong>
+                        <strong class="server-ip text-break" data-port="<%= server.port %>"<% if (server.advertisedIp) { %> data-ip="<%= server.advertisedIp %>"<% } %>>:<%= server.port %></strong>
                     </div>
                     <div class="col-4">
                         <div class="text-body-secondary small">Players</div>

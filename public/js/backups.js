@@ -151,7 +151,7 @@
             var countdownMinutes = parseInt(document.getElementById('countdownMinutes').value, 10);
 
             saveScheduleBtn.disabled = true;
-            saveScheduleBtn.textContent = 'Saving...';
+            saveScheduleBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
 
             try {
                 var res = await fetch('/api/servers/' + serverId + '/backup-schedule', {
@@ -171,17 +171,16 @@
                     var data = await res.json();
                     updateNextBackup(data.nextBackupAt);
                     saveScheduleBtn.textContent = 'Saved!';
-                    setTimeout(function () { saveScheduleBtn.textContent = 'Save Schedule'; }, 2000);
                 } else {
                     saveScheduleBtn.textContent = 'Error';
-                    setTimeout(function () { saveScheduleBtn.textContent = 'Save Schedule'; }, 2000);
                 }
             } catch {
                 saveScheduleBtn.textContent = 'Error';
-                setTimeout(function () { saveScheduleBtn.textContent = 'Save Schedule'; }, 2000);
-            } finally {
-                saveScheduleBtn.disabled = false;
             }
+            setTimeout(function () {
+                saveScheduleBtn.textContent = 'Save Schedule';
+                saveScheduleBtn.disabled = false;
+            }, 2000);
         });
     }
 
@@ -193,7 +192,7 @@
             var retentionDays = parseInt(document.getElementById('retentionDays').value, 10);
 
             saveRetentionBtn.disabled = true;
-            saveRetentionBtn.textContent = 'Saving...';
+            saveRetentionBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
 
             try {
                 var res = await fetch('/api/servers/' + serverId + '/backup-retention', {
@@ -210,17 +209,16 @@
 
                 if (res.ok) {
                     saveRetentionBtn.textContent = 'Saved!';
-                    setTimeout(function () { saveRetentionBtn.textContent = 'Save Retention'; }, 2000);
                 } else {
                     saveRetentionBtn.textContent = 'Error';
-                    setTimeout(function () { saveRetentionBtn.textContent = 'Save Retention'; }, 2000);
                 }
             } catch {
                 saveRetentionBtn.textContent = 'Error';
-                setTimeout(function () { saveRetentionBtn.textContent = 'Save Retention'; }, 2000);
-            } finally {
-                saveRetentionBtn.disabled = false;
             }
+            setTimeout(function () {
+                saveRetentionBtn.textContent = 'Save Retention';
+                saveRetentionBtn.disabled = false;
+            }, 2000);
         });
     }
 })();

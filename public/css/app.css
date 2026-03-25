@@ -130,6 +130,10 @@ body {
     color: var(--craftbox-green);
 }
 
+.console-line-craftbox {
+    color: var(--craftbox-green);
+}
+
 .console-input-bar {
     background: var(--console-input-bg);
     height: 48px;
@@ -144,6 +148,10 @@ body {
 
 .console-input-bar input:focus {
     box-shadow: none;
+}
+
+.console-input-bar input:disabled::placeholder {
+    opacity: 0.3;
 }
 
 .console-prompt {

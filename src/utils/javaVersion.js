@@ -31,17 +31,23 @@ const _hasTemurin = process.platform !== 'win32' &&
  *
  * MC Version Requirements:
  *   1.7.x  – 1.16.x  → Java 8
- *   1.17.x            → Java 17
- *   1.18.x – 1.20.4   → Java 17
+ *   1.17.x – 1.20.4   → Java 17
  *   1.20.5 – 1.21.x+  → Java 21
+ *   26.x+             → Java 25  (new year.drop.patch versioning from 2026)
  *
- * @param {string} mcVersion - e.g. "1.20.4", "1.21.1"
- * @returns {number} Java major version (8, 17, 21)
+ * @param {string} mcVersion - e.g. "1.20.4", "1.21.1", "26.1"
+ * @returns {number} Java major version (8, 17, 21, 25)
  */
 function getRequiredJavaVersion(mcVersion) {
     if (!mcVersion || typeof mcVersion !== 'string') return 25;
 
     const parts = mcVersion.split('.').map(Number);
+    const major = parts[0] || 0;
+
+    // New versioning: 26.x+ (year.drop.patch) requires Java 25
+    if (major >= 26) return 25;
+
+    // Legacy versioning: 1.x.y
     const minor = parts[1] || 0;
     const patch = parts[2] || 0;
 

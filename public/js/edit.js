@@ -1,3 +1,8 @@
+// Initialize Bootstrap tooltips
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+    new bootstrap.Tooltip(el);
+});
+
 // Show overlay on save
 (function () {
     var form = document.querySelector('form[action$="/edit"]');
@@ -166,6 +171,47 @@
     if (!toggle || !label) return;
     toggle.addEventListener('change', function () {
         label.textContent = toggle.checked ? 'Public' : 'Unlisted';
+    });
+})();
+
+// ── Advertised IP save on button click ──
+(function () {
+    var input = document.getElementById('advertisedIp');
+    var btn = document.getElementById('save-advertised-ip');
+    if (!input || !btn) return;
+    var serverId = btn.dataset.serverId;
+    var csrf = btn.dataset.csrf;
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); btn.click(); }
+    });
+
+    btn.addEventListener('click', async function () {
+        var value = input.value.trim();
+
+        btn.disabled = true;
+        input.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        try {
+            var res = await fetch('/api/servers/' + serverId + '/advertisedip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+                body: JSON.stringify({ value: value })
+            });
+            if (res.ok) {
+                btn.textContent = 'Saved!';
+            } else {
+                btn.textContent = 'Error';
+            }
+        } catch {
+            btn.textContent = 'Error';
+        }
+        setTimeout(function () {
+            btn.textContent = 'Save';
+            btn.disabled = false;
+            input.disabled = false;
+        }, 2000);
     });
 })();
 

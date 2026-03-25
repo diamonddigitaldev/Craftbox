@@ -47,7 +47,7 @@
                         </span>
                         <span class="d-flex align-items-center gap-1">
                             <span class="material-icons-outlined" style="font-size: 1rem;">lan</span>
-                            <span class="server-ip" data-port="<%= server.port %>">:<%= server.port %></span>
+                            <span class="server-ip" data-port="<%= server.port %>"<% if (server.advertisedIp) { %> data-ip="<%= server.advertisedIp %>"<% } %>>:<%= server.port %></span>
                         </span>
                     </div>
                 </div>

@@ -106,6 +106,8 @@ router.get('/servers/:id/plugins', ensureAuth, async (req, res) => {
         .sort((a, b) => a.name.localeCompare(b.name));
 
     res.render('servers/plugins', {
+        title: server.name + ' ' + contentType.label,
+        description: `View and manage installed ${contentType.label.toLowerCase()} for ${server.name}.`,
         server,
         contentType,
         files,

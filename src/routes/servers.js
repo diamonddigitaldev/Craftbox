@@ -20,6 +20,7 @@ const { getContentType } = require('../utils/contentType');
 router.get('/servers/create', ensureAuth, (req, res) => {
     res.render('servers/create', {
         title: 'Create Server',
+        description: 'Set up a new Minecraft server instance.',
         navbar: true,
         user: req.user,
         messages: req.session.flash || {},
@@ -203,6 +204,7 @@ router.get('/servers/:id', ensureAuth, async (req, res) => {
 
     res.render('servers/view', {
         title: server.name,
+        description: `View live logs and resource metrics for ${server.name}.`,
         navbar: true,
         fluid: true,
         user: req.user,
@@ -503,6 +505,8 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
         });
     }
     res.render('servers/edit', {
+        title: server.name + ' Settings',
+        description: `Configure basic server and runtime settings for ${server.name}.`,
         server,
         user: req.user,
         messages: req.session.flash || {},
@@ -703,6 +707,8 @@ router.get('/servers/:id/properties', ensureAuth, async (req, res) => {
     const properties = parseServerProperties(serverDir);
 
     res.render('servers/properties', {
+        title: server.name + ' Properties',
+        description: `Edit server properties for ${server.name}.`,
         server,
         properties,
         propertyMeta: PROPERTY_META,
@@ -807,6 +813,8 @@ async function handleFiles(req, res, subpath) {
     const parentPath = breadcrumbs.length > 1 ? breadcrumbs.slice(0, -1).join('/') : '';
 
     res.render('servers/files', {
+        title: server.name + ' Files',
+        description: `Browse and manage files for ${server.name}.`,
         server,
         files,
         breadcrumbs,
@@ -943,6 +951,8 @@ router.get('/servers/:id/edit-file', ensureAuth, async (req, res) => {
     const fileName = breadcrumbs[breadcrumbs.length - 1];
 
     res.render('servers/fileEdit', {
+        title: server.name + ' | Edit ' + fileName,
+        description: `Edit ${fileName} for ${server.name}.`,
         server,
         filePath,
         fileName,

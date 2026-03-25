@@ -11,10 +11,11 @@
     <link rel="icon" href="/img/craftbox.ico">
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/img/craftbox.png">
-    <% if (typeof description !== 'undefined' && description) { %><meta name="description" content="<%= description %>"><% } %>
-    <meta property="og:site_name" content="Craftbox">
-    <meta property="og:title" content="<%= typeof title !== 'undefined' && title ? title + ' | Craftbox' : 'Craftbox' %>">
-    <% if (typeof description !== 'undefined' && description) { %><meta property="og:description" content="<%= description %>"><% } %>
+    <% var _desc = (typeof description !== 'undefined' && description) ? description : 'A modern self-hosted platform for managing Minecraft servers with built-in mod support.'; %>
+    <meta name="description" content="<%= _desc %>">
+    <meta property="og:site_name" content="Craftbox | Minecraft Server Control Panel">
+    <meta property="og:title" content="<%= typeof ogTitle !== 'undefined' && ogTitle ? ogTitle : (typeof title !== 'undefined' && title ? title + ' | Craftbox' : 'Craftbox') %>">
+    <meta property="og:description" content="<%= _desc %>">
     <meta property="og:type" content="website">
     <meta property="og:image" content="/img/craftbox.png">
     <meta name="mobile-web-app-capable" content="yes">
