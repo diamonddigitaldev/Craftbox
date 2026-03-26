@@ -130,10 +130,7 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
         <!-- Server Icon -->
         <div class="card mt-3">
             <div class="card-body p-4 text-center">
-                <h6 class="mb-3 d-flex align-items-center justify-content-center gap-2">
-                    <span class="material-icons-outlined" style="font-size: 1.2rem;">image</span>
-                    Server Icon
-                </h6>
+                <h6 class="mb-3">Server Icon</h6>
                 <div class="d-inline-block position-relative mb-3" id="icon-drop-zone"
                     data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
                     <div class="icon-drop-area border rounded"
@@ -162,11 +159,88 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                 </div>
                 <p class="text-body-secondary mb-0" style="font-size: 0.8rem;">
                     The icon shown in the Minecraft server list. PNG only, max 20 MB — will be resized to 64&times;64 automatically.
-                    Changes require a server restart.
                 </p>
                 <div id="icon-status" class="mt-2 small"></div>
             </div>
         </div>
+
+        <!-- MOTD Editor -->
+        <div class="card mt-3">
+            <div class="card-body p-4">
+                <h6 class="mb-3">MOTD</h6>
+
+                <!-- Live Preview -->
+                <div class="mb-3 rounded" style="background: #2b2b2b; border: 1px solid rgba(255,255,255,0.08); overflow-x: auto;">
+                    <div class="p-3" style="font-family: 'Courier New', monospace; min-width: 280px;">
+                        <div id="motd-preview" style="font-size: 0.8rem; line-height: 1.4; white-space: pre;"></div>
+                    </div>
+                </div>
+
+                <!-- Editor -->
+                <div class="mb-3">
+                    <textarea class="form-control" id="motd-input" rows="2" maxlength="400"
+                        placeholder="A Minecraft Server" autocomplete="off" style="resize: none;"></textarea>
+                    <div class="form-text">Two lines maximum. Use the buttons below to insert color and formatting codes.</div>
+                </div>
+
+                <!-- Color Palette -->
+                <div class="mb-2">
+                    <label class="form-label" style="font-size: 0.85rem;">Colors</label>
+                    <div class="d-flex flex-wrap gap-1 motd-colors">
+                        <button type="button" class="motd-color-btn" data-code="0" title="Black" style="background:#000000;"></button>
+                        <button type="button" class="motd-color-btn" data-code="1" title="Dark Blue" style="background:#0000AA;"></button>
+                        <button type="button" class="motd-color-btn" data-code="2" title="Dark Green" style="background:#00AA00;"></button>
+                        <button type="button" class="motd-color-btn" data-code="3" title="Dark Aqua" style="background:#00AAAA;"></button>
+                        <button type="button" class="motd-color-btn" data-code="4" title="Dark Red" style="background:#AA0000;"></button>
+                        <button type="button" class="motd-color-btn" data-code="5" title="Dark Purple" style="background:#AA00AA;"></button>
+                        <button type="button" class="motd-color-btn" data-code="6" title="Gold" style="background:#FFAA00;"></button>
+                        <button type="button" class="motd-color-btn" data-code="7" title="Gray" style="background:#AAAAAA;"></button>
+                        <button type="button" class="motd-color-btn" data-code="8" title="Dark Gray" style="background:#555555;"></button>
+                        <button type="button" class="motd-color-btn" data-code="9" title="Blue" style="background:#5555FF;"></button>
+                        <button type="button" class="motd-color-btn" data-code="a" title="Green" style="background:#55FF55;"></button>
+                        <button type="button" class="motd-color-btn" data-code="b" title="Aqua" style="background:#55FFFF;"></button>
+                        <button type="button" class="motd-color-btn" data-code="c" title="Red" style="background:#FF5555;"></button>
+                        <button type="button" class="motd-color-btn" data-code="d" title="Light Purple" style="background:#FF55FF;"></button>
+                        <button type="button" class="motd-color-btn" data-code="e" title="Yellow" style="background:#FFFF55;"></button>
+                        <button type="button" class="motd-color-btn" data-code="f" title="White" style="background:#FFFFFF;"></button>
+                    </div>
+                </div>
+
+                <!-- Style Buttons -->
+                <div class="mb-3">
+                    <label class="form-label" style="font-size: 0.85rem;">Formatting</label>
+                    <div class="d-flex flex-wrap gap-1">
+                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="l" title="Bold">
+                            <strong>B</strong>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="o" title="Italic">
+                            <em>I</em>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="n" title="Underline">
+                            <span style="text-decoration: underline;">U</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="m" title="Strikethrough">
+                            <span style="text-decoration: line-through;">S</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="k" title="Obfuscated">
+                            <span style="opacity: 0.7;">?</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="r" title="Reset formatting">
+                            <span class="material-icons-outlined" style="font-size: 0.9rem; vertical-align: middle;">format_clear</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Save -->
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="motd-save-btn"
+                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                    Save MOTD
+                </button>
+            </div>
+        </div>
+
+        <%# Pass current MOTD to JS %>
+        <script id="motd-data" type="application/json"><%- JSON.stringify({ motd: currentMotd }) %></script>
 
         <!-- Server Behavior -->
         <div class="card mt-3">
@@ -480,4 +554,4 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
 </div>
 
 
-<%- include('../partials/foot', { scripts: ['/js/edit.js', '/js/restart-modal.js'] }) %>
+<%- include('../partials/foot', { scripts: ['/js/edit.js', '/js/motd.js', '/js/restart-modal.js'] }) %>

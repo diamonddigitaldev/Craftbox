@@ -508,10 +508,17 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
             title: '404', navbar: true, user: req.user, message: 'Server not found.'
         });
     }
+
+    // Read current MOTD from server.properties
+    const serverDir = path.join(SERVERS_DIR, server.id);
+    const props = parseServerProperties(serverDir);
+    const currentMotd = props.motd || 'A Minecraft Server';
+
     res.render('servers/edit', {
         title: server.name + ' Settings',
         description: `Configure basic server and runtime settings for ${server.name}.`,
         server,
+        currentMotd,
         user: req.user,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken

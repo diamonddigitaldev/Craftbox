@@ -66,6 +66,22 @@ body {
     border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
+/* ---- MOTD Color Buttons ---- */
+.motd-color-btn {
+    width: 26px;
+    height: 26px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.1s, border-color 0.15s;
+}
+
+.motd-color-btn:hover {
+    transform: scale(1.2);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
 /* ---- State Badge Animations ---- */
 .badge .material-icons-outlined {
     vertical-align: middle;

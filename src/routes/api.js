@@ -12,6 +12,7 @@ const { getEvents } = require('../utils/eventLogger');
 const { getProcessMemory, getProcessCpu, getDirectorySize, getUptime, formatSize, formatUptime } = require('../utils/resourceStats');
 const { getStatsHistory } = require('../utils/statsHistory');
 const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath } = require('../utils/serverIcon');
+const { updateServerProperties } = require('../mc/serverProperties');
 
 // Multer config for server icon upload — PNG only, 5 MB limit
 const iconUpload = multer({
@@ -524,6 +525,24 @@ router.delete('/api/servers/:id/icon', ensureAuth, async (req, res) => {
     } catch (err) {
         log('error', `Failed to remove server icon: ${err.message}`);
         res.status(500).json({ error: 'Failed to remove server icon.' });
+    }
+});
+
+// POST /api/servers/:id/motd — Update server MOTD
+router.post('/api/servers/:id/motd', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const motd = String(req.body.motd ?? 'A Minecraft Server');
+        const serverDir = path.join(SERVERS_DIR, server.id);
+        updateServerProperties(serverDir, { motd });
+
+        log('info', `Server "${server.name}" MOTD updated.`);
+        res.json({ success: true });
+    } catch (err) {
+        log('error', `Failed to update MOTD: ${err.message}`);
+        res.status(500).json({ error: 'Failed to update MOTD.' });
     }
 });
 
