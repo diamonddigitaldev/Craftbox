@@ -140,9 +140,17 @@
     updatePreview();
 
     // ── Save MOTD (same pattern as Save Retention on backups page) ──
+    var motdStatus = document.getElementById('motd-status');
+
+    function showMotdStatus(type, msg) {
+        motdStatus.className = 'mt-2 small text-' + type;
+        motdStatus.textContent = msg;
+    }
+
     saveBtn.addEventListener('click', async function () {
         saveBtn.disabled = true;
         saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+        motdStatus.textContent = '';
 
         // Convert § back to \u00A7 for server.properties, join lines with literal \n
         var lines = input.value.split('\n');
@@ -162,11 +170,22 @@
 
             if (res.ok) {
                 saveBtn.textContent = 'Saved!';
+                showMotdStatus('success', 'Restart the server for changes to take effect.');
+                // Show restart modal if server is running
+                var modalEl = document.getElementById('restartModal');
+                if (modalEl) {
+                    var state = modalEl.dataset.serverState;
+                    if (state !== 'stopped' && state !== 'crashed') {
+                        new bootstrap.Modal(modalEl).show();
+                    }
+                }
             } else {
                 saveBtn.textContent = 'Error';
+                showMotdStatus('danger', 'Failed to save MOTD.');
             }
         } catch {
             saveBtn.textContent = 'Error';
+            showMotdStatus('danger', 'Failed to save MOTD.');
         }
         setTimeout(function () {
             saveBtn.textContent = 'Save MOTD';
