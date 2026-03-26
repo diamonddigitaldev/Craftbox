@@ -90,7 +90,10 @@ function parseServerProperties(serverDir) {
         if (!trimmed || trimmed.startsWith('#')) continue;
         const eqIdx = trimmed.indexOf('=');
         if (eqIdx === -1) continue;
-        props[trimmed.substring(0, eqIdx)] = trimmed.substring(eqIdx + 1);
+        // Unescape Java Properties escapes that MC's server adds on rewrite
+        props[trimmed.substring(0, eqIdx)] = trimmed.substring(eqIdx + 1)
+            .replace(/\\:/g, ':')
+            .replace(/\\=/g, '=');
     }
     return props;
 }

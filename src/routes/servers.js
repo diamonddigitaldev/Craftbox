@@ -15,6 +15,7 @@ const { logEvent, deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 const { clearStatsHistory } = require('../utils/statsHistory');
 const { getContentType } = require('../utils/contentType');
+const { copyDefaultIcon } = require('../utils/serverIcon');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, (req, res) => {
@@ -119,6 +120,9 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
         if (contentType) {
             fs.mkdirSync(path.join(serverDir, contentType.folder), { recursive: true });
         }
+
+        // Copy default Craftbox icon as server-icon.png
+        copyDefaultIcon(id);
 
         log('info', `Creating server "${trimmedName}" (${id}) — ${type} ${type === 'custom' ? '' : versionStr}`);
 
@@ -504,10 +508,17 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
             title: '404', navbar: true, user: req.user, message: 'Server not found.'
         });
     }
+
+    // Read current MOTD from server.properties
+    const serverDir = path.join(SERVERS_DIR, server.id);
+    const props = parseServerProperties(serverDir);
+    const currentMotd = props.motd || 'A Minecraft Server';
+
     res.render('servers/edit', {
         title: server.name + ' Settings',
         description: `Configure basic server and runtime settings for ${server.name}.`,
         server,
+        currentMotd,
         user: req.user,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken

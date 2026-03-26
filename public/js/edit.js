@@ -215,6 +215,188 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     });
 })();
 
+// ── Server Icon Upload, Drag-and-Drop, Delete & Reset ──
+(function () {
+    var dropZone = document.getElementById('icon-drop-zone');
+    var fileInput = document.getElementById('icon-upload');
+    var resetBtn = document.getElementById('icon-reset-btn');
+    var deleteBtn = document.getElementById('icon-delete-btn');
+    var preview = document.getElementById('icon-preview');
+    var placeholder = document.getElementById('icon-placeholder');
+    var statusEl = document.getElementById('icon-status');
+    var dropArea = dropZone ? dropZone.querySelector('.icon-drop-area') : null;
+    if (!dropZone || !fileInput) return;
+
+    var serverId = dropZone.dataset.serverId;
+    var csrf = dropZone.dataset.csrf;
+    var hasIcon = false;
+
+    // ── State management ──
+    function showIcon() {
+        hasIcon = true;
+        preview.style.display = 'block';
+        placeholder.style.display = 'none';
+        deleteBtn.classList.remove('d-none');
+        deleteBtn.classList.add('d-flex');
+    }
+
+    function showPlaceholder() {
+        hasIcon = false;
+        preview.style.display = 'none';
+        placeholder.style.display = 'flex';
+        deleteBtn.classList.add('d-none');
+        deleteBtn.classList.remove('d-flex');
+    }
+
+    function showSpinner() {
+        preview.style.display = 'none';
+        placeholder.innerHTML =
+            '<div class="spinner-border text-body-secondary" style="width: 2rem; height: 2rem; opacity: 0.5;"></div>';
+        placeholder.style.display = 'flex';
+        deleteBtn.classList.add('d-none');
+        deleteBtn.classList.remove('d-flex');
+        dropArea.style.pointerEvents = 'none';
+    }
+
+    function hideSpinner() {
+        placeholder.innerHTML =
+            '<span class="material-icons-outlined" style="font-size: 2.5rem; opacity: 0.35;">image</span>' +
+            '<small style="font-size: 0.65rem; opacity: 0.5; margin-top: 2px;">Click or drop PNG</small>';
+        dropArea.style.pointerEvents = '';
+    }
+
+    // ── Initial load ──
+    preview.addEventListener('load', showIcon);
+    preview.addEventListener('error', showPlaceholder);
+    // Re-trigger in case the image loaded/errored before listeners were attached
+    if (preview.src) {
+        var src = preview.src;
+        preview.src = '';
+        preview.src = src;
+    }
+
+    function showStatus(type, msg) {
+        statusEl.className = 'mt-2 small text-' + type;
+        statusEl.textContent = msg;
+    }
+
+    // ── Upload a file (shared by click & drop) ──
+    async function uploadFile(file) {
+        if (!file) return;
+        if (file.type !== 'image/png') {
+            showStatus('danger', 'Only PNG files are allowed.');
+            return;
+        }
+
+        var formData = new FormData();
+        formData.append('icon', file);
+
+        showSpinner();
+        resetBtn.disabled = true;
+        showStatus('body-secondary', 'Uploading...');
+        try {
+            var res = await fetch('/api/servers/' + serverId + '/icon', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrf },
+                body: formData
+            });
+            hideSpinner();
+            var data = await res.json();
+            if (res.ok && data.success) {
+                showStatus('success', 'Icon updated. Restart the server for changes to take effect.');
+                preview.src = '/api/servers/' + serverId + '/icon?t=' + Date.now();
+            } else {
+                showStatus('danger', data.error || 'Upload failed.');
+                showPlaceholder();
+            }
+        } catch {
+            hideSpinner();
+            showStatus('danger', 'Upload failed.');
+            showPlaceholder();
+        }
+        resetBtn.disabled = false;
+    }
+
+    // ── Click to upload ──
+    dropArea.addEventListener('click', function () {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function () {
+        uploadFile(fileInput.files[0]);
+        fileInput.value = '';
+    });
+
+    // ── Drag and drop ──
+    dropArea.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dropArea.style.borderColor = 'var(--craftbox-green)';
+        dropArea.style.boxShadow = '0 0 0 2px rgba(76, 175, 80, 0.3)';
+    });
+
+    dropArea.addEventListener('dragleave', function () {
+        dropArea.style.borderColor = '';
+        dropArea.style.boxShadow = '';
+    });
+
+    dropArea.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dropArea.style.borderColor = '';
+        dropArea.style.boxShadow = '';
+        var file = e.dataTransfer.files[0];
+        if (file) uploadFile(file);
+    });
+
+    // ── Delete icon ──
+    deleteBtn.addEventListener('click', async function (e) {
+        e.stopPropagation();
+        deleteBtn.disabled = true;
+        resetBtn.disabled = true;
+        showStatus('body-secondary', 'Removing...');
+        try {
+            var res = await fetch('/api/servers/' + serverId + '/icon', {
+                method: 'DELETE',
+                headers: { 'X-CSRF-Token': csrf }
+            });
+            var data = await res.json();
+            if (res.ok && data.success) {
+                showStatus('success', 'Icon removed. Restart the server for changes to take effect.');
+                showPlaceholder();
+            } else {
+                showStatus('danger', data.error || 'Delete failed.');
+            }
+        } catch {
+            showStatus('danger', 'Delete failed.');
+        }
+        deleteBtn.disabled = false;
+        resetBtn.disabled = false;
+    });
+
+    // ── Reset to default ──
+    if (resetBtn) {
+        resetBtn.addEventListener('click', async function () {
+            resetBtn.disabled = true;
+            showStatus('body-secondary', 'Resetting...');
+            try {
+                var res = await fetch('/api/servers/' + serverId + '/icon/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }
+                });
+                var data = await res.json();
+                if (res.ok && data.success) {
+                    showStatus('success', 'Icon reset to default. Restart the server for changes to take effect.');
+                    preview.src = '/api/servers/' + serverId + '/icon?t=' + Date.now();
+                } else {
+                    showStatus('danger', data.error || 'Reset failed.');
+                }
+            } catch {
+                showStatus('danger', 'Reset failed.');
+            }
+            resetBtn.disabled = false;
+        });
+    }
+})();
+
 // ── Overlay helper ──
 function showEditOverlay(title, desc) {
     showOverlay(title, desc);
