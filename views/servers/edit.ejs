@@ -127,6 +127,47 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
             </div>
         </div>
 
+        <!-- Server Icon -->
+        <div class="card mt-3">
+            <div class="card-body p-4 text-center">
+                <h6 class="mb-3 d-flex align-items-center justify-content-center gap-2">
+                    <span class="material-icons-outlined" style="font-size: 1.2rem;">image</span>
+                    Server Icon
+                </h6>
+                <div class="d-inline-block position-relative mb-3" id="icon-drop-zone"
+                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                    <div class="icon-drop-area border rounded"
+                        style="width: 128px; height: 128px; overflow: hidden; background: #1a1a2e; cursor: pointer;">
+                        <img id="icon-preview" src="/api/servers/<%= server.id %>/icon"
+                            alt="Server icon" width="128" height="128"
+                            style="image-rendering: pixelated; display: none;">
+                        <div id="icon-placeholder" class="d-flex flex-column align-items-center justify-content-center text-body-secondary"
+                            style="width: 128px; height: 128px;">
+                            <span class="material-icons-outlined" style="font-size: 2.5rem; opacity: 0.35;">image</span>
+                            <small style="font-size: 0.65rem; opacity: 0.5; margin-top: 2px;">Click or drop PNG</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-dark btn-sm position-absolute d-none rounded-circle p-0 d-flex align-items-center justify-content-center"
+                        id="icon-delete-btn" style="width: 22px; height: 22px; top: -6px; right: -6px; line-height: 1; z-index: 1; border: 1px solid rgba(255,255,255,0.2);">
+                        <span class="material-icons-outlined" style="font-size: 0.85rem;">close</span>
+                    </button>
+                    <input type="file" id="icon-upload" accept="image/png" class="d-none">
+                </div>
+                <div class="d-flex gap-2 justify-content-center mb-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                        id="icon-reset-btn" data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                        <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span>
+                        Reset to Default
+                    </button>
+                </div>
+                <p class="text-body-secondary mb-0" style="font-size: 0.8rem;">
+                    The icon shown in the Minecraft server list. PNG only, max 20 MB — will be resized to 64&times;64 automatically.
+                    Changes require a server restart.
+                </p>
+                <div id="icon-status" class="mt-2 small"></div>
+            </div>
+        </div>
+
         <!-- Server Behavior -->
         <div class="card mt-3">
             <div class="card-body p-4">

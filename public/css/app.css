@@ -57,6 +57,15 @@ body {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
+/* ---- Server Icon Drop Area ---- */
+.icon-drop-area {
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.icon-drop-area:hover {
+    border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
 /* ---- State Badge Animations ---- */
 .badge .material-icons-outlined {
     vertical-align: middle;

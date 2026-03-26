@@ -15,6 +15,7 @@ const { logEvent, deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 const { clearStatsHistory } = require('../utils/statsHistory');
 const { getContentType } = require('../utils/contentType');
+const { copyDefaultIcon } = require('../utils/serverIcon');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, (req, res) => {
@@ -119,6 +120,9 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
         if (contentType) {
             fs.mkdirSync(path.join(serverDir, contentType.folder), { recursive: true });
         }
+
+        // Copy default Craftbox icon as server-icon.png
+        copyDefaultIcon(id);
 
         log('info', `Creating server "${trimmedName}" (${id}) — ${type} ${type === 'custom' ? '' : versionStr}`);
 

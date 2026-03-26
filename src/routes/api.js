@@ -1,5 +1,7 @@
 const express = require('express');
+const os = require('os');
 const path = require('path');
+const multer = require('multer');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, SERVERS_DIR } = require('../db');
@@ -9,6 +11,19 @@ const { log } = require('../utils/log');
 const { getEvents } = require('../utils/eventLogger');
 const { getProcessMemory, getProcessCpu, getDirectorySize, getUptime, formatSize, formatUptime } = require('../utils/resourceStats');
 const { getStatsHistory } = require('../utils/statsHistory');
+const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath } = require('../utils/serverIcon');
+
+// Multer config for server icon upload — PNG only, 5 MB limit
+const iconUpload = multer({
+    dest: os.tmpdir(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype !== 'image/png') {
+            return cb(new Error('Only PNG files are allowed.'));
+        }
+        cb(null, true);
+    }
+});
 
 // GET /api/servers — JSON list of all servers
 router.get('/api/servers', ensureAuth, async (req, res) => {
@@ -423,6 +438,92 @@ router.post('/api/servers/:id/advertisedip', ensureAuth, async (req, res) => {
         res.json({ advertisedIp: server.advertisedIp });
     } catch (err) {
         res.status(500).json({ error: 'Failed to update setting.' });
+    }
+});
+
+// POST /api/servers/:id/icon — Upload server icon
+router.post('/api/servers/:id/icon', ensureAuth, function (req, res, next) {
+    iconUpload.single('icon')(req, res, function (err) {
+        if (err) {
+            return res.status(400).json({ error: err.message || 'Upload failed.' });
+        }
+        next();
+    });
+}, async (req, res) => {
+    const fs = require('fs');
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded.' });
+        }
+
+        await setServerIcon(req.params.id, req.file.path);
+
+        // Clean up temp file
+        fs.unlink(req.file.path, () => {});
+
+        log('info', `Server "${server.name}" icon updated.`);
+        res.json({ success: true });
+    } catch (err) {
+        // Clean up temp file on error
+        if (req.file) fs.unlink(req.file.path, () => {});
+        log('error', `Failed to update server icon: ${err.message}`);
+        res.status(500).json({ error: 'Failed to update server icon.' });
+    }
+});
+
+// POST /api/servers/:id/icon/reset — Reset server icon to Craftbox default
+router.post('/api/servers/:id/icon/reset', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const success = resetServerIcon(req.params.id);
+        if (!success) {
+            return res.status(500).json({ error: 'Default icon not found.' });
+        }
+
+        log('info', `Server "${server.name}" icon reset to default.`);
+        res.json({ success: true });
+    } catch (err) {
+        log('error', `Failed to reset server icon: ${err.message}`);
+        res.status(500).json({ error: 'Failed to reset server icon.' });
+    }
+});
+
+// GET /api/servers/:id/icon — Get current server icon
+router.get('/api/servers/:id/icon', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const iconPath = getIconPath(req.params.id);
+        const fs = require('fs');
+        if (!fs.existsSync(iconPath)) {
+            return res.status(404).json({ error: 'No icon set.' });
+        }
+
+        res.type('image/png').sendFile(path.resolve(iconPath));
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch icon.' });
+    }
+});
+
+// DELETE /api/servers/:id/icon — Remove server icon entirely
+router.delete('/api/servers/:id/icon', ensureAuth, async (req, res) => {
+    try {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        removeServerIcon(req.params.id);
+
+        log('info', `Server "${server.name}" icon removed.`);
+        res.json({ success: true });
+    } catch (err) {
+        log('error', `Failed to remove server icon: ${err.message}`);
+        res.status(500).json({ error: 'Failed to remove server icon.' });
     }
 });
 
