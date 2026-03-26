@@ -82,9 +82,15 @@ body {
     border-color: rgba(255, 255, 255, 0.6);
 }
 
-/* ---- State Badge Animations ---- */
+/* ---- Icon Alignment ---- */
 .badge .material-icons-outlined {
     vertical-align: middle;
+}
+
+td > .material-icons-outlined {
+    vertical-align: middle;
+    position: relative;
+    top: -2px;
 }
 
 [data-state="starting"] .server-state-badge,
