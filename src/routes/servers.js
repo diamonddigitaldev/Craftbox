@@ -15,7 +15,7 @@ const { logEvent, deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 const { clearStatsHistory } = require('../utils/statsHistory');
 const { getContentType } = require('../utils/contentType');
-const { copyDefaultIcon } = require('../utils/serverIcon');
+const { copyDefaultIcon, hasIcon } = require('../utils/serverIcon');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, (req, res) => {
@@ -519,6 +519,7 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
         description: `Configure basic server and runtime settings for ${server.name}.`,
         server,
         currentMotd,
+        hasIcon: hasIcon(server.id),
         user: req.user,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken

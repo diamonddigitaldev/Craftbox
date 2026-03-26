@@ -231,6 +231,16 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     var csrf = dropZone.dataset.csrf;
     var hasIcon = false;
 
+    function showRestartModal() {
+        var modalEl = document.getElementById('restartModal');
+        if (modalEl) {
+            var state = modalEl.dataset.serverState;
+            if (state !== 'stopped' && state !== 'crashed') {
+                new bootstrap.Modal(modalEl).show();
+            }
+        }
+    }
+
     // ── State management ──
     function showIcon() {
         hasIcon = true;
@@ -305,6 +315,7 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
             if (res.ok && data.success) {
                 showStatus('success', 'Icon updated. Restart the server for changes to take effect.');
                 preview.src = '/api/servers/' + serverId + '/icon?t=' + Date.now();
+                showRestartModal();
             } else {
                 showStatus('danger', data.error || 'Upload failed.');
                 showPlaceholder();
@@ -362,6 +373,7 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
             if (res.ok && data.success) {
                 showStatus('success', 'Icon removed. Restart the server for changes to take effect.');
                 showPlaceholder();
+                showRestartModal();
             } else {
                 showStatus('danger', data.error || 'Delete failed.');
             }
@@ -386,6 +398,7 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
                 if (res.ok && data.success) {
                     showStatus('success', 'Icon reset to default. Restart the server for changes to take effect.');
                     preview.src = '/api/servers/' + serverId + '/icon?t=' + Date.now();
+                    showRestartModal();
                 } else {
                     showStatus('danger', data.error || 'Reset failed.');
                 }

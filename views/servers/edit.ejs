@@ -135,7 +135,7 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                     data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
                     <div class="icon-drop-area border rounded"
                         style="width: 128px; height: 128px; overflow: hidden; background: #1a1a2e; cursor: pointer;">
-                        <img id="icon-preview" src="/api/servers/<%= server.id %>/icon"
+                        <img id="icon-preview" <% if (hasIcon) { %>src="/api/servers/<%= server.id %>/icon"<% } %>
                             alt="Server icon" width="128" height="128"
                             style="image-rendering: pixelated; display: none;">
                         <div id="icon-placeholder" class="d-flex flex-column align-items-center justify-content-center text-body-secondary"
@@ -236,6 +236,7 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
                     data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
                     Save MOTD
                 </button>
+                <div id="motd-status" class="mt-2 small"></div>
             </div>
         </div>
 
