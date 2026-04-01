@@ -1,6 +1,7 @@
 const { serversDb } = require('../db');
 const { log } = require('../utils/log');
-const { createBackup, applyRetention, listBackups } = require('./BackupManager');
+const { logEvent } = require('../utils/eventLogger');
+const { createBackup, applyRetention, listBackups, formatSize } = require('./BackupManager');
 const { STATES } = require('./stateMachine');
 
 /**
@@ -85,9 +86,15 @@ class BackupScheduler {
                     await proc.waitForState(STATES.STOPPED, 60000);
                 }
 
-                await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
-                await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
-                log('info', `[${server.name}] Catch-up backup completed.`);
+                try {
+                    const backup = await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
+                    await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
+                    logEvent(server.id, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+                    log('info', `[${server.name}] Catch-up backup completed.`);
+                } catch (err) {
+                    log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
+                    logEvent(server.id, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+                }
 
                 // Restart if it was running before
                 if (wasRunning) {
@@ -96,7 +103,7 @@ class BackupScheduler {
                 }
             }
         } catch (err) {
-            log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
+            log('error', `[${server.name}] Catch-up backup check failed: ${err.message}`);
         }
     }
 
@@ -256,8 +263,14 @@ class BackupScheduler {
         if (!p || [STATES.STOPPED, STATES.CRASHED].includes(p.state)) {
             // Server not running — just backup directly
             log('info', `[${server.name}] Scheduled backup: server already stopped, creating backup...`);
-            await createBackup(serverId, 'Scheduled Backup', 'scheduled');
-            await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
+            try {
+                const backup = await createBackup(serverId, 'Scheduled Backup', 'scheduled');
+                await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
+                logEvent(serverId, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+            } catch (err) {
+                log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
+                logEvent(serverId, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+            }
             return;
         }
 
@@ -273,8 +286,14 @@ class BackupScheduler {
         }
 
         log('info', `[${server.name}] Scheduled backup: creating backup...`);
-        await createBackup(serverId, 'Scheduled Backup', 'scheduled');
-        await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
+        try {
+            const backup = await createBackup(serverId, 'Scheduled Backup', 'scheduled');
+            await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
+            logEvent(serverId, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+        } catch (err) {
+            log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
+            logEvent(serverId, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+        }
 
         // Only restart if the server was running before the backup
         if (stateBeforeStop === STATES.RUNNING) {
