@@ -1,22 +1,10 @@
 // Shows a "restart required" modal after saving settings/properties
 (function () {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has('saved')) return;
-
-    // Clean URL without reloading
-    const clean = window.location.pathname;
-    window.history.replaceState({}, '', clean);
-
     const modalEl = document.getElementById('restartModal');
     if (!modalEl) return;
 
-    // Only show restart modal if server is not already stopped
-    var serverState = modalEl.dataset.serverState;
-    if (serverState === 'stopped' || serverState === 'crashed') return;
-
-    var modal = new bootstrap.Modal(modalEl);
-    modal.show();
-
+    // Always wire up the restart button so it works whether the modal
+    // was triggered by a ?saved page load OR by AJAX (MOTD save, icon upload, etc.)
     const restartBtn = document.getElementById('restart-now-btn');
     const backupCheckbox = document.getElementById('restartBackup');
 
@@ -29,7 +17,7 @@
                 ? '<span class="spinner-border spinner-border-sm"></span> Backing up & restarting...'
                 : '<span class="spinner-border spinner-border-sm"></span> Restarting...';
 
-            modal.hide();
+            bootstrap.Modal.getInstance(modalEl)?.hide();
             showOverlay(
                 wantBackup ? 'Backing up & restarting...' : 'Restarting server...',
                 wantBackup ? 'Creating a backup before restarting. This may take a moment.' : 'Please wait while the server restarts.'
@@ -61,4 +49,17 @@
             }
         });
     }
+
+    // Auto-show the modal on ?saved page loads (from properties/edit form submits)
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('saved')) return;
+
+    // Clean URL without reloading
+    window.history.replaceState({}, '', window.location.pathname);
+
+    // Only show restart modal if server is not already stopped
+    var serverState = modalEl.dataset.serverState;
+    if (serverState === 'stopped' || serverState === 'crashed') return;
+
+    new bootstrap.Modal(modalEl).show();
 })();
