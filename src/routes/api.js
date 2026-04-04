@@ -534,7 +534,14 @@ router.post('/api/servers/:id/motd', ensureAuth, async (req, res) => {
         const server = await serversDb.get(`server_${req.params.id}`);
         if (!server) return res.status(404).json({ error: 'Server not found.' });
 
-        const motd = String(req.body.motd ?? 'A Minecraft Server');
+        // Escape non-ASCII characters (except \u00A7 which the client already
+        // escapes for §) to \uXXXX so Java's ISO-8859-1 properties reader
+        // decodes them correctly.
+        const rawMotd = String(req.body.motd ?? 'A Minecraft Server');
+        const motd = rawMotd.replace(/[^\x00-\x7F]/g, ch => {
+            const hex = ch.charCodeAt(0).toString(16).padStart(4, '0');
+            return '\\u' + hex;
+        });
         const serverDir = path.join(SERVERS_DIR, server.id);
         updateServerProperties(serverDir, { motd });
 

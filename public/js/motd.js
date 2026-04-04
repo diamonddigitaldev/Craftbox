@@ -28,7 +28,12 @@
             // Split on literal \n, replace \u00A7 with §, rejoin with real newline
             var parts = rawMotd.split('\\n');
             input.value = parts
-                .map(function (p) { return p.replace(/\\u00A7/gi, SECTION); })
+                .map(function (p) {
+                    // Decode all \uXXXX escapes (§, •, etc.) back to real characters
+                    return p.replace(/\\u([0-9A-Fa-f]{4})/g, function (_, hex) {
+                        return String.fromCharCode(parseInt(hex, 16));
+                    });
+                })
                 .join('\n');
         } catch (e) { /* ignore parse errors */ }
     }
@@ -51,10 +56,15 @@
     });
 
     // ── Render MOTD formatting codes to styled HTML ──
-    function renderMotdLine(text) {
+    // Returns { html, state } so formatting carries across lines.
+    function renderMotdLine(text, state) {
         var html = '';
-        var color = '#AAAAAA'; // default gray
-        var bold = false, italic = false, underline = false, strike = false, obfuscated = false;
+        var color = state ? state.color : '#AAAAAA';
+        var bold = state ? state.bold : false;
+        var italic = state ? state.italic : false;
+        var underline = state ? state.underline : false;
+        var strike = state ? state.strike : false;
+        var obfuscated = state ? state.obfuscated : false;
 
         var i = 0;
         while (i < text.length) {
@@ -62,7 +72,6 @@
                 var code = text[i + 1].toLowerCase();
                 if (COLORS[code]) {
                     color = COLORS[code];
-                    bold = italic = underline = strike = obfuscated = false;
                 } else if (code === 'l') {
                     bold = true;
                 } else if (code === 'o') {
@@ -82,7 +91,7 @@
             }
 
             var styles = 'color:' + color + ';';
-            if (bold) styles += 'font-weight:bold;';
+            if (bold) styles += 'font-weight:900;text-shadow:0.25px 0 0 currentColor,-0.5px 0 0 currentColor;';
             if (italic) styles += 'font-style:italic;';
             var deco = [];
             if (underline) deco.push('underline');
@@ -101,14 +110,17 @@
             }
             i++;
         }
-        return html || '<span style="color:#555;">&#8203;</span>';
+        return {
+            html: html || '<span style="color:#555;">&#8203;</span>',
+            state: { color: color, bold: bold, italic: italic, underline: underline, strike: strike, obfuscated: obfuscated }
+        };
     }
 
     function updatePreview() {
         var lines = input.value.split('\n');
-        var html1 = renderMotdLine(lines[0] || '');
-        var html2 = renderMotdLine(lines[1] || '');
-        previewEl.innerHTML = html1 + '\n' + html2;
+        var r1 = renderMotdLine(lines[0] || '', null);
+        var r2 = renderMotdLine(lines[1] || '', r1.state);
+        previewEl.innerHTML = r1.html + '\n' + r2.html;
     }
 
     // ── Insert formatting code at cursor ──
@@ -152,10 +164,15 @@
         saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
         motdStatus.textContent = '';
 
-        // Convert § back to \u00A7 for server.properties, join lines with literal \n
+        // Escape all non-ASCII characters to \uXXXX for Java's server.properties format
         var lines = input.value.split('\n');
-        var val1 = (lines[0] || '').replace(new RegExp(SECTION, 'g'), '\\u00A7');
-        var val2 = (lines[1] || '').replace(new RegExp(SECTION, 'g'), '\\u00A7');
+        function escapeNonAscii(str) {
+            return str.replace(/[^\x00-\x7F]/g, function (ch) {
+                return '\\u' + ('0000' + ch.charCodeAt(0).toString(16)).slice(-4);
+            });
+        }
+        var val1 = escapeNonAscii(lines[0] || '');
+        var val2 = escapeNonAscii(lines[1] || '');
         var motd = val1 + (val2 ? '\\n' + val2 : '');
 
         try {
