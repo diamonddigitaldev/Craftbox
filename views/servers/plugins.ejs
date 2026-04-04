@@ -2,6 +2,19 @@
 
 <%- include('../partials/serverNav', { server, active: 'plugins' }) %>
 
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link active d-flex align-items-center gap-1" href="/servers/<%= server.id %>/plugins">
+            <span class="material-icons-outlined" style="font-size: 1rem;">inventory_2</span> Installed
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link d-flex align-items-center gap-1" href="/servers/<%= server.id %>/plugins/browse">
+            <span class="material-icons-outlined" style="font-size: 1rem;">store</span> Browse
+        </a>
+    </li>
+</ul>
+
 <% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
 
 <!-- CSRF token for JS fetch calls -->

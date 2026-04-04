@@ -1,0 +1,310 @@
+<%- include('../partials/head', { title: (project ? project.title : 'Project') + ' — ' + server.name, navbar: true, fluid: true }) %>
+
+<%- include('../partials/serverNav', { server, active: 'plugins' }) %>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link d-flex align-items-center gap-1" href="/servers/<%= server.id %>/plugins">
+            <span class="material-icons-outlined" style="font-size: 1rem;">inventory_2</span> Installed
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active d-flex align-items-center gap-1" href="/servers/<%= server.id %>/plugins/browse">
+            <span class="material-icons-outlined" style="font-size: 1rem;">store</span> Browse
+        </a>
+    </li>
+</ul>
+
+<% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
+
+<!-- CSRF token for JS fetch calls -->
+<input type="hidden" id="csrf-token" value="<%= csrfToken %>">
+<input type="hidden" id="server-id" value="<%= server.id %>">
+<input type="hidden" id="server-stopped" value="<%= _serverStopped %>">
+
+<a href="/servers/<%= server.id %>/plugins/browse" id="back-to-library" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 mb-3" style="width: fit-content;">
+    <span class="material-icons-outlined" style="font-size: 1rem;">arrow_back</span>
+    Back to Library
+</a>
+
+<% if (error) { %>
+<div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
+    <span class="material-icons-outlined">error</span>
+    <div><%= error %></div>
+</div>
+<% } %>
+
+<% if (project) { %>
+
+<!-- Project Header -->
+<div class="d-flex flex-wrap gap-3 mb-4">
+    <% if (project.icon_url) { %>
+    <img src="<%= project.icon_url %>" alt="" class="rounded" style="width: 80px; height: 80px; object-fit: cover; flex-shrink: 0;">
+    <% } else { %>
+    <div class="rounded d-flex align-items-center justify-content-center bg-body-tertiary" style="width: 80px; height: 80px; flex-shrink: 0;">
+        <span class="material-icons-outlined text-body-secondary" style="font-size: 2.5rem;">extension</span>
+    </div>
+    <% } %>
+    <div>
+        <h4 class="mb-1"><%= project.title %></h4>
+        <p class="text-body-secondary mb-2"><%= project.description %></p>
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            <span class="text-body-secondary small d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">download</span>
+                <%= formatDownloads(project.downloads) %> downloads
+            </span>
+            <span class="text-body-secondary small d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">favorite</span>
+                <%= formatDownloads(project.followers) %> followers
+            </span>
+            <span class="text-body-secondary small d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">calendar_today</span>
+                Created <%= new Date(project.published).toLocaleDateString() %>
+            </span>
+            <% if (project.license && project.license.id) { %>
+            <span class="badge bg-body-tertiary text-body-secondary"><%= project.license.id.toUpperCase() %></span>
+            <% } %>
+        </div>
+        <!-- External Links -->
+        <div class="d-flex flex-wrap gap-2 mt-2">
+            <a href="https://modrinth.com/project/<%= project.slug %>" target="_blank" rel="noopener"
+               class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">open_in_new</span> Modrinth
+            </a>
+            <% if (project.source_url) { %>
+            <a href="<%= project.source_url %>" target="_blank" rel="noopener"
+               class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">code</span> Source
+            </a>
+            <% } %>
+            <% if (project.issues_url) { %>
+            <a href="<%= project.issues_url %>" target="_blank" rel="noopener"
+               class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">bug_report</span> Issues
+            </a>
+            <% } %>
+            <% if (project.wiki_url) { %>
+            <a href="<%= project.wiki_url %>" target="_blank" rel="noopener"
+               class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">menu_book</span> Wiki
+            </a>
+            <% } %>
+            <% if (project.discord_url) { %>
+            <a href="<%= project.discord_url %>" target="_blank" rel="noopener"
+               class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                <span class="material-icons-outlined" style="font-size: 0.9rem;">chat</span> Discord
+            </a>
+            <% } %>
+        </div>
+    </div>
+</div>
+
+<% if (!_serverStopped) { %>
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+    <span class="material-icons-outlined">warning</span>
+    <div>The server must be stopped before installing <%= contentType.label.toLowerCase() %>.</div>
+</div>
+<% } %>
+
+<div class="row">
+    <!-- Left column: Description -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header d-flex align-items-center gap-2">
+                <span class="material-icons-outlined" style="font-size: 1.1rem;">description</span>
+                Description
+            </div>
+            <div class="card-body">
+                <div id="project-description" class="project-description">
+                    <noscript><pre style="white-space: pre-wrap;"><%= project.body %></pre></noscript>
+                </div>
+                <!-- Store raw markdown for client-side rendering -->
+                <script type="application/json" id="project-body-raw"><%-
+                    JSON.stringify(project.body || '')
+                %></script>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right column: Install + Versions -->
+    <div class="col-lg-4 mb-4">
+        <!-- Quick Install Card -->
+        <div class="card mb-3">
+            <div class="card-header d-flex align-items-center gap-2">
+                <span class="material-icons-outlined" style="font-size: 1.1rem;">download</span>
+                Install
+            </div>
+            <div class="card-body">
+                <% if (versions.length > 0) { %>
+                    <%
+                    const latestVersion = versions[0];
+                    const latestFile = latestVersion.files.find(f => f.primary) || latestVersion.files[0];
+                    %>
+                    <div class="mb-3">
+                        <label class="form-label small text-body-secondary">Version</label>
+                        <select class="form-select form-select-sm" id="version-select">
+                            <% versions.forEach(function(v, i) { %>
+                            <%
+                            const vFile = v.files.find(f => f.primary) || v.files[0];
+                            const channelBadge = v.version_type === 'release' ? '' : (v.version_type === 'beta' ? ' [Beta]' : ' [Alpha]');
+                            const _optInstalled = vFile && installedFiles.has(vFile.filename.toLowerCase());
+                            %>
+                            <option value="<%= i %>"
+                                data-file-url="<%= vFile ? vFile.url : '' %>"
+                                data-file-name="<%= vFile ? vFile.filename : '' %>"
+                                data-file-size="<%= vFile ? formatSize(vFile.size) : '' %>"
+                                data-channel="<%= v.version_type %>"
+                                data-installed="<%= _optInstalled ? 'true' : 'false' %>"
+                                <%= i === 0 ? 'selected' : '' %>>
+                                <%= v.version_number %><%= channelBadge %><%= _optInstalled ? ' (Installed)' : '' %>
+                            </option>
+                            <% }) %>
+                        </select>
+                    </div>
+                    <%
+                    const _latestInstalled = latestFile && installedFiles.has(latestFile.filename.toLowerCase());
+                    %>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <small class="text-body-secondary" id="selected-file-info">
+                            <%= latestFile ? latestFile.filename + ' (' + formatSize(latestFile.size) + ')' : '' %>
+                        </small>
+                    </div>
+                    <% if (_latestInstalled) { %>
+                    <div class="d-flex align-items-center justify-content-center gap-1 text-success mb-2" id="installed-badge">
+                        <span class="material-icons-outlined" style="font-size: 1.1rem;">check_circle</span>
+                        <small><strong>Installed</strong></small>
+                    </div>
+                    <% } %>
+                    <% if (_serverStopped) { %>
+                    <button type="button" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-1" id="install-btn"
+                        data-file-url="<%= latestFile ? latestFile.url : '' %>"
+                        data-file-name="<%= latestFile ? latestFile.filename : '' %>"
+                        data-project-name="<%= project.title %>">
+                        <span class="material-icons-outlined" style="font-size: 1.1rem;">download</span>
+                        <%= _latestInstalled ? 'Reinstall' : 'Install' %> <%= project.title %>
+                    </button>
+                    <% } else { %>
+                    <button class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-1" disabled>
+                        <span class="material-icons-outlined" style="font-size: 1.1rem;">download</span>
+                        Stop Server to Install
+                    </button>
+                    <% } %>
+                <% } else { %>
+                    <div class="text-center text-body-secondary py-3">
+                        <span class="material-icons-outlined mb-2" style="font-size: 2rem;">search_off</span>
+                        <p class="mb-0 small">No compatible versions found for <strong><%= server.version || 'this server' %></strong>.</p>
+                    </div>
+                <% } %>
+            </div>
+        </div>
+
+        <!-- Dependencies -->
+        <% if (versions.length > 0 && versions[0].dependencies && versions[0].dependencies.length > 0) { %>
+        <div class="card mb-3">
+            <div class="card-header d-flex align-items-center gap-2">
+                <span class="material-icons-outlined" style="font-size: 1.1rem;">account_tree</span>
+                Dependencies
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    <% versions[0].dependencies.forEach(function(dep) { %>
+                    <li class="list-group-item d-flex align-items-center justify-content-between">
+                        <div>
+                            <% if (dep.project_id) { %>
+                            <a href="/servers/<%= server.id %>/plugins/browse/project/<%= dep.project_id %>" class="text-decoration-none">
+                                <%= dep.project_id %>
+                            </a>
+                            <% } else { %>
+                            <span class="text-body-secondary"><%= dep.version_id || 'Unknown' %></span>
+                            <% } %>
+                        </div>
+                        <span class="badge <%= dep.dependency_type === 'required' ? 'bg-danger' : 'bg-secondary' %>">
+                            <%= dep.dependency_type %>
+                        </span>
+                    </li>
+                    <% }) %>
+                </ul>
+            </div>
+        </div>
+        <% } %>
+    </div>
+</div>
+
+<!-- Version History -->
+<% if (versions.length > 0) { %>
+<div class="card">
+    <div class="card-header d-flex align-items-center gap-2">
+        <span class="material-icons-outlined" style="font-size: 1.1rem;">history</span>
+        Version History
+        <span class="badge bg-body-tertiary text-body-secondary ms-1"><%= versions.length %></span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Game Versions</th>
+                    <th>Channel</th>
+                    <th>Size</th>
+                    <th style="width: 90px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <% versions.forEach(function(v, i) { %>
+                <%
+                const vFile = v.files.find(f => f.primary) || v.files[0];
+                const channelColor = v.version_type === 'release' ? 'success' : (v.version_type === 'beta' ? 'warning' : 'danger');
+                const _vInstalled = vFile && installedFiles.has(vFile.filename.toLowerCase());
+                %>
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <strong><%= v.version_number %></strong>
+                            <% if (_vInstalled) { %>
+                            <span class="badge bg-success d-flex align-items-center gap-1" style="font-size: 0.7rem;">
+                                <span class="material-icons-outlined" style="font-size: 0.75rem;">check_circle</span> Installed
+                            </span>
+                            <% } %>
+                        </div>
+                        <% if (v.name && v.name !== v.version_number) { %>
+                        <small class="text-body-secondary"><%= v.name %></small>
+                        <% } %>
+                    </td>
+                    <td class="small text-body-secondary"><%= v.game_versions.join(', ') %></td>
+                    <td>
+                        <span class="badge bg-<%= channelColor %>"><%= v.version_type %></span>
+                    </td>
+                    <td class="small text-body-secondary"><%= vFile ? formatSize(vFile.size) : '—' %></td>
+                    <td class="text-center">
+                        <% if (_serverStopped && vFile) { %>
+                        <button type="button"
+                            class="btn btn-outline-success btn-sm d-inline-flex align-items-center justify-content-center version-install-btn"
+                            style="width: 32px; height: 32px; padding: 0;" title="Install this version"
+                            data-file-url="<%= vFile.url %>"
+                            data-file-name="<%= vFile.filename %>"
+                            data-project-name="<%= project.title %>">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
+                        </button>
+                        <% } else { %>
+                        <button class="btn btn-outline-success btn-sm d-inline-flex align-items-center justify-content-center"
+                            style="width: 32px; height: 32px; padding: 0;" disabled
+                            title="<%= !_serverStopped ? 'Stop the server first' : 'No file available' %>">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
+                        </button>
+                        <% } %>
+                    </td>
+                </tr>
+                <% }) %>
+            </tbody>
+        </table>
+    </div>
+</div>
+<% } %>
+
+<% } %>
+
+<%- include('../partials/foot', { scripts: [
+    'https://cdn.jsdelivr.net/npm/marked@15.0.7/lib/marked.umd.min.js',
+    'https://cdn.jsdelivr.net/npm/dompurify@3.2.5/dist/purify.min.js',
+    '/js/library.js'
+] }) %>

@@ -1,0 +1,195 @@
+<%- include('../partials/head', { title: server.name + ' ' + contentType.label + ' Library', navbar: true, fluid: true }) %>
+
+<%- include('../partials/serverNav', { server, active: 'plugins' }) %>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link d-flex align-items-center gap-1" href="/servers/<%= server.id %>/plugins">
+            <span class="material-icons-outlined" style="font-size: 1rem;">inventory_2</span> Installed
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active d-flex align-items-center gap-1" href="/servers/<%= server.id %>/plugins/browse">
+            <span class="material-icons-outlined" style="font-size: 1rem;">store</span> Browse
+        </a>
+    </li>
+</ul>
+
+<% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
+
+<!-- CSRF token for JS fetch calls -->
+<input type="hidden" id="csrf-token" value="<%= csrfToken %>">
+<input type="hidden" id="server-id" value="<%= server.id %>">
+<input type="hidden" id="server-stopped" value="<%= _serverStopped %>">
+
+<% if (error) { %>
+<div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
+    <span class="material-icons-outlined">error</span>
+    <div><%= error %></div>
+</div>
+<% } %>
+
+<!-- Search & Filters -->
+<form method="get" action="/servers/<%= server.id %>/plugins/browse" class="mb-3" id="library-search-form">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="input-group input-group-sm" style="max-width: 350px;">
+            <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
+            <input type="text" class="form-control" name="q" placeholder="Search <%= contentType.label.toLowerCase() %>..." value="<%= query %>">
+        </div>
+
+        <select class="form-select form-select-sm" name="sort" style="max-width: 180px;" onchange="this.form.submit()">
+            <option value="relevance" <%= sort === 'relevance' ? 'selected' : '' %>>Relevance</option>
+            <option value="downloads" <%= sort === 'downloads' ? 'selected' : '' %>>Downloads</option>
+            <option value="updated" <%= sort === 'updated' ? 'selected' : '' %>>Recently Updated</option>
+            <option value="newest" <%= sort === 'newest' ? 'selected' : '' %>>Newest</option>
+            <option value="follows" <%= sort === 'follows' ? 'selected' : '' %>>Followers</option>
+        </select>
+
+        <% if (categories.length > 0) { %>
+        <select class="form-select form-select-sm" name="category" style="max-width: 180px;" onchange="this.form.submit()">
+            <option value="">All Categories</option>
+            <% categories.forEach(function(cat) { %>
+            <option value="<%= cat.name %>" <%= category === cat.name ? 'selected' : '' %>>
+                <%= cat.name.charAt(0).toUpperCase() + cat.name.slice(1) %>
+            </option>
+            <% }) %>
+        </select>
+        <% } %>
+
+        <button type="submit" class="btn btn-success btn-sm d-flex align-items-center gap-1">
+            <span class="material-icons-outlined" style="font-size: 1rem;">search</span>
+            Search
+        </button>
+
+        <% if (query || category || sort !== 'relevance') { %>
+        <a href="/servers/<%= server.id %>/plugins/browse" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+            <span class="material-icons-outlined" style="font-size: 1rem;">clear</span>
+            Clear
+        </a>
+        <% } %>
+    </div>
+</form>
+
+<% if (!_serverStopped) { %>
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+    <span class="material-icons-outlined">warning</span>
+    <div>The server must be stopped before installing <%= contentType.label.toLowerCase() %>.</div>
+</div>
+<% } %>
+
+<h6 class="text-body-secondary mb-3">
+    <% if (totalHits > 0) { %>
+        <%= totalHits.toLocaleString() %> <%= contentType.label.toLowerCase() %> found
+        <% if (server.version) { %> for <strong><%= server.version %></strong><% } %>
+    <% } else if (!error) { %>
+        No <%= contentType.label.toLowerCase() %> found<% if (query) { %> for "<%= query %>"<% } %>
+    <% } %>
+</h6>
+
+<%
+const _paginationUrl = '/servers/' + server.id + '/plugins/browse?q=' + encodeURIComponent(query) + '&sort=' + sort + '&category=' + encodeURIComponent(category) + '&page=';
+%>
+
+<% if (results.length > 0) { %>
+
+<% if (totalPages > 1) { %>
+<nav class="d-flex justify-content-center mb-3">
+    <ul class="pagination pagination-sm mb-0">
+        <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+            <a class="page-link" href="<%= _paginationUrl + (page - 1) %>">
+                <span class="material-icons-outlined" style="font-size: 1rem;">chevron_left</span>
+            </a>
+        </li>
+        <li class="page-item disabled">
+            <span class="page-link">Page <%= page %> of <%= totalPages %></span>
+        </li>
+        <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+            <a class="page-link" href="<%= _paginationUrl + (page + 1) %>">
+                <span class="material-icons-outlined" style="font-size: 1rem;">chevron_right</span>
+            </a>
+        </li>
+    </ul>
+</nav>
+<% } %>
+
+<div class="library-grid" id="library-results">
+    <% results.forEach(function(project) { %>
+    <div>
+        <div class="card h-100 library-card">
+            <div class="card-body d-flex flex-column">
+                <div class="d-flex gap-3 mb-2">
+                    <% if (project.icon_url) { %>
+                    <img src="<%= project.icon_url %>" alt="" class="rounded" style="width: 48px; height: 48px; object-fit: cover; flex-shrink: 0;">
+                    <% } else { %>
+                    <div class="rounded d-flex align-items-center justify-content-center bg-body-tertiary" style="width: 48px; height: 48px; flex-shrink: 0;">
+                        <span class="material-icons-outlined text-body-secondary">extension</span>
+                    </div>
+                    <% } %>
+                    <div class="min-width-0">
+                        <a href="/servers/<%= server.id %>/plugins/browse/project/<%= project.slug %>" class="text-decoration-none">
+                            <h6 class="mb-0 text-light"><%= project.title %></h6>
+                        </a>
+                        <small class="text-body-secondary">by <%= project.author %></small>
+                    </div>
+                </div>
+                <p class="text-body-secondary small mb-2 flex-grow-1" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                    <%= project.description %>
+                </p>
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-body-secondary small d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 0.85rem;">download</span>
+                            <%= formatDownloads(project.downloads) %>
+                        </span>
+                        <% if (project.categories && project.categories.length > 0) { %>
+                        <span class="badge bg-body-tertiary text-body-secondary" style="font-size: 0.7rem;">
+                            <%= project.categories[0] %>
+                        </span>
+                        <% } %>
+                    </div>
+                    <a href="/servers/<%= server.id %>/plugins/browse/project/<%= project.slug %>" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                        <span class="material-icons-outlined" style="font-size: 1rem;">visibility</span>
+                        View
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <% }) %>
+</div>
+
+<% if (totalPages > 1) { %>
+<nav class="d-flex justify-content-center mt-3">
+    <ul class="pagination pagination-sm mb-0">
+        <li class="page-item <%= page <= 1 ? 'disabled' : '' %>">
+            <a class="page-link" href="<%= _paginationUrl + (page - 1) %>">
+                <span class="material-icons-outlined" style="font-size: 1rem;">chevron_left</span>
+            </a>
+        </li>
+        <li class="page-item disabled">
+            <span class="page-link">Page <%= page %> of <%= totalPages %></span>
+        </li>
+        <li class="page-item <%= page >= totalPages ? 'disabled' : '' %>">
+            <a class="page-link" href="<%= _paginationUrl + (page + 1) %>">
+                <span class="material-icons-outlined" style="font-size: 1rem;">chevron_right</span>
+            </a>
+        </li>
+    </ul>
+</nav>
+<% } %>
+
+<% } else if (!error) { %>
+<div class="text-center py-5">
+    <span class="material-icons-outlined text-body-secondary mb-3" style="font-size: 4rem;">extension_off</span>
+    <h5 class="text-body-secondary">No <%= contentType.label.toLowerCase() %> found</h5>
+    <p class="text-body-secondary mb-0">
+        <% if (query) { %>
+            Try a different search term or clear your filters.
+        <% } else { %>
+            Browse the Modrinth catalog by entering a search term above.
+        <% } %>
+    </p>
+</div>
+<% } %>
+
+<%- include('../partials/foot', { scripts: ['/js/library.js'] }) %>

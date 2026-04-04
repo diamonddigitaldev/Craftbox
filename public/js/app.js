@@ -36,6 +36,65 @@ document.querySelectorAll('.toast').forEach(function (el) {
     });
 })();
 
+// Restore saved library URLs for Browse tab and Back to Library button
+(function () {
+    var match = window.location.pathname.match(/\/servers\/([^/]+)/);
+    if (!match) return;
+    var id = match[1];
+
+    // Browse tab → restore to last visited page (listing or project)
+    var tabUrl = sessionStorage.getItem('libraryUrl:' + id);
+    if (tabUrl) {
+        document.querySelectorAll('a.nav-link[href*="/plugins/browse"]').forEach(function (el) { el.href = tabUrl; });
+    }
+
+    // Back button → always go to the listing page (not a project page)
+    var listUrl = sessionStorage.getItem('libraryListUrl:' + id);
+    if (listUrl) {
+        var backBtn = document.getElementById('back-to-library');
+        if (backBtn) backBtn.href = listUrl;
+    }
+})();
+
+// ── Shared toast helper ──
+function showToast(message, type) {
+    type = type || 'danger';
+    var icons = { danger: 'error', success: 'check_circle', warning: 'warning', info: 'info' };
+    var icon = icons[type] || 'error';
+    var btnClass = type === 'warning' ? 'btn-close' : 'btn-close btn-close-white';
+
+    var container = document.querySelector('.toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '1090';
+        document.body.appendChild(container);
+    }
+
+    var toastEl = document.createElement('div');
+    toastEl.className = 'toast align-items-center text-bg-' + type + ' border-0';
+    toastEl.setAttribute('role', 'alert');
+    toastEl.innerHTML =
+        '<div class="d-flex">' +
+            '<div class="toast-body d-flex align-items-center gap-2">' +
+                '<span class="material-icons-outlined" style="font-size: 1.2rem;">' + icon + '</span>' +
+                '<span>' + message + '</span>' +
+            '</div>' +
+            '<button type="button" class="' + btnClass + ' me-2 m-auto" data-bs-dismiss="toast"></button>' +
+        '</div>';
+
+    container.appendChild(toastEl);
+    new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 }).show();
+    toastEl.addEventListener('hidden.bs.toast', function () { toastEl.remove(); });
+}
+
+// ── Shared HTML escape helper ──
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // ── Shared overlay spinner ──
 var _overlayEl = null;
 function _getOverlay() {

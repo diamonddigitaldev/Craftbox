@@ -14,9 +14,9 @@ function securityHeaders(req, res, next) {
             "default-src 'self'",
             "style-src 'self' 'unsafe-inline'",
             "font-src 'self'",
-            "script-src 'self'",
-            "connect-src 'self'",
-            "img-src 'self' data:",
+            "script-src 'self' https://cdn.jsdelivr.net",
+            "connect-src 'self' https://cdn.jsdelivr.net",
+            "img-src 'self' data: https:",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'"
