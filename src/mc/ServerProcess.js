@@ -537,6 +537,8 @@ class ServerProcess extends EventEmitter {
 
         if (this._stopRequested && !hadCrashReport) {
             // Clean shutdown — user requested stop
+            this.config.exitCode = code;
+            this.config.crashReason = null;
             await this._setStateRobust(STATES.STOPPED);
 
             // Update DB
@@ -563,6 +565,8 @@ class ServerProcess extends EventEmitter {
         } else if (isCrash) {
             // Crash or unexpected exit
             const crashReason = wasOOM ? 'oom' : hadCrashReport ? 'crash_report' : 'exit_code';
+            this.config.exitCode = code;
+            this.config.crashReason = crashReason;
             await this._setStateRobust(STATES.CRASHED);
 
             const crashMsg = wasOOM
@@ -597,6 +601,8 @@ class ServerProcess extends EventEmitter {
             }
         } else {
             // Process exited with code 0 but stop wasn't requested — treat as clean stop
+            this.config.exitCode = code;
+            this.config.crashReason = null;
             await this._setStateRobust(STATES.STOPPED);
 
             try {
