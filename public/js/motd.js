@@ -72,6 +72,7 @@
                 var code = text[i + 1].toLowerCase();
                 if (COLORS[code]) {
                     color = COLORS[code];
+                    bold = italic = underline = strike = obfuscated = false;
                 } else if (code === 'l') {
                     bold = true;
                 } else if (code === 'o') {
