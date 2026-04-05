@@ -394,7 +394,7 @@ router.post('/servers/:id/duplicate', ensureAuth, async (req, res) => {
             crashReason: null,
             directory: path.join('data', 'servers', newId),
             backupSchedule: {
-                enabled: false,
+                enabled: server.backupSchedule?.enabled || false,
                 intervalHours: server.backupSchedule?.intervalHours || 24,
                 countdownMinutes: server.backupSchedule?.countdownMinutes || 5,
                 retentionCount: server.backupSchedule?.retentionCount || 5,
@@ -404,6 +404,14 @@ router.post('/servers/:id/duplicate', ensureAuth, async (req, res) => {
 
         await serversDb.set(`server_${newId}`, newServer);
         log('info', `Server "${trimmedName}" (${newId}) duplicated from "${server.name}" (${id}).`);
+
+        // Start backup schedule for duplicated server if enabled
+        if (newServer.backupSchedule?.enabled) {
+            const backupScheduler = req.app.get('backupScheduler');
+            if (backupScheduler) {
+                await backupScheduler.restartSchedule(newId);
+            }
+        }
 
         // Restart original server if requested
         if (startAfter && stopFirst) {
