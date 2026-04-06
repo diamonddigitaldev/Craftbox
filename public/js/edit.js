@@ -291,8 +291,10 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     }
 
     // ── Upload a file (shared by click & drop) ──
+    var uploading = false;
     async function uploadFile(file) {
-        if (!file) return;
+        if (!file || uploading) return;
+        uploading = true;
         if (file.type !== 'image/png') {
             showStatus('danger', 'Only PNG files are allowed.');
             return;
@@ -326,6 +328,7 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
             showPlaceholder();
         }
         resetBtn.disabled = false;
+        uploading = false;
     }
 
     // ── Click to upload ──
@@ -341,17 +344,20 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     // ── Drag and drop ──
     dropArea.addEventListener('dragover', function (e) {
         e.preventDefault();
+        if (uploading) return;
         dropArea.style.borderColor = 'var(--craftbox-green)';
         dropArea.style.boxShadow = '0 0 0 2px rgba(76, 175, 80, 0.3)';
     });
 
     dropArea.addEventListener('dragleave', function () {
+        if (uploading) return;
         dropArea.style.borderColor = '';
         dropArea.style.boxShadow = '';
     });
 
     dropArea.addEventListener('drop', function (e) {
         e.preventDefault();
+        if (uploading) return;
         dropArea.style.borderColor = '';
         dropArea.style.boxShadow = '';
         var file = e.dataTransfer.files[0];

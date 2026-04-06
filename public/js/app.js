@@ -55,13 +55,21 @@ function _getOverlay() {
     return _overlayEl;
 }
 
+var _overlayVisible = false;
+
+function isOverlayVisible() {
+    return _overlayVisible;
+}
+
 function showOverlay(title, desc) {
     var el = _getOverlay();
     document.getElementById('overlay-title').textContent = title || '';
     document.getElementById('overlay-desc').innerHTML = desc || '';
     el.classList.remove('d-none');
+    _overlayVisible = true;
 }
 
 function hideOverlay() {
     if (_overlayEl) _overlayEl.classList.add('d-none');
+    _overlayVisible = false;
 }

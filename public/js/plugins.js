@@ -142,6 +142,7 @@
 
         document.addEventListener('dragenter', function (e) {
             e.preventDefault();
+            if (isOverlayVisible()) return;
             dragCounter++;
             if (dragCounter === 1) {
                 dropOverlay.classList.remove('d-none');
@@ -151,6 +152,7 @@
 
         document.addEventListener('dragleave', function (e) {
             e.preventDefault();
+            if (isOverlayVisible()) return;
             dragCounter--;
             if (dragCounter === 0) {
                 dropOverlay.classList.add('d-none');
@@ -159,6 +161,7 @@
         });
 
         document.addEventListener('drop', function (e) {
+            if (isOverlayVisible()) return;
             dragCounter = 0;
             dropOverlay.classList.add('d-none');
             dropOverlay.classList.remove('d-flex');
