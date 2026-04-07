@@ -24,7 +24,7 @@ function supportsTellraw(version) {
  */
 function chatCommand(version, prefix, message, color) {
     if (supportsTellraw(version)) {
-        return `tellraw @a [{"text":"${prefix}","color":"gold","bold":true},{"text":"${message}","color":"${color}","bold":false}]`;
+        return `tellraw @a [{"text":"${prefix}","color":"green","bold":true},{"text":"${message}","color":"${color}","bold":false}]`;
     }
     return `say ${prefix}${message}`;
 }
