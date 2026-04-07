@@ -123,6 +123,38 @@ class ServerManager {
     }
 
     /**
+     * Set an operational state (backing_up, restoring) that exists outside the
+     * normal process lifecycle. Persists to DB and broadcasts via WebSocket.
+     * @param {string} serverId
+     * @param {'backing_up'|'restoring'|'stopped'} newState
+     */
+    async setOperationalState(serverId, newState) {
+        const { STATES } = require('./stateMachine');
+        const allowed = [STATES.BACKING_UP, STATES.RESTORING, STATES.STOPPED];
+        if (!allowed.includes(newState)) {
+            throw new Error(`Invalid operational state: ${newState}`);
+        }
+
+        const server = await serversDb.get(`server_${serverId}`);
+        if (!server) throw new Error('Server not found.');
+
+        server.state = newState;
+        await serversDb.set(`server_${serverId}`, server);
+
+        const proc = this.getProcess(serverId);
+        if (proc) {
+            proc.state = newState;
+            proc.broadcast({
+                type: 'state',
+                serverId,
+                state: newState,
+                exitCode: null,
+                crashReason: null
+            });
+        }
+    }
+
+    /**
      * Remove a ServerProcess from the registry (for server deletion).
      */
     removeProcess(serverId) {

@@ -19,6 +19,14 @@ const { STATES } = require('../mc/stateMachine');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 
 /**
+ * Format a Date as YYYY-MM-DD HH:MM:SS (24-hour, local time).
+ */
+function formatTimestamp(date) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+/**
  * Load server with live state from ServerManager.
  */
 async function getServerWithState(req) {
@@ -50,7 +58,7 @@ router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
     const backupsFormatted = backups.map(b => ({
         ...b,
         sizeFormatted: formatSize(b.size),
-        createdFormatted: new Date(b.createdAt).toLocaleString()
+        createdFormatted: formatTimestamp(new Date(b.createdAt))
     }));
 
     const schedule = server.backupSchedule || {
@@ -72,7 +80,7 @@ router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
         server,
         backups: backupsFormatted,
         schedule,
-        nextBackupAt: nextBackupAt ? nextBackupAt.toLocaleString() : null,
+        nextBackupAt: nextBackupAt ? formatTimestamp(nextBackupAt) : null,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -92,6 +100,10 @@ router.post('/servers/:id/backups/create', ensureAuth, async (req, res) => {
     const proc = serverManager?.getProcess(server.id);
     const stopFirst = req.body.stopFirst === 'true' || req.body.stopFirst === true;
     const startAfter = req.body.startAfter === 'true' || req.body.startAfter === true;
+    let backupName = (req.body.name && req.body.name.trim()) || 'Manual Backup';
+    if (backupName.length > 50 || !/^[A-Za-z0-9 _\-]+$/.test(backupName)) {
+        backupName = 'Manual Backup';
+    }
 
     try {
         // If server is running and user requested stop-first
@@ -108,14 +120,19 @@ router.post('/servers/:id/backups/create', ensureAuth, async (req, res) => {
             }
         }
 
-        const backup = await createBackup(server.id, 'Manual Backup', 'manual');
+        await serverManager.setOperationalState(server.id, STATES.BACKING_UP);
+        try {
+            const backup = await createBackup(server.id, backupName, 'manual');
 
-        // Apply retention policy after backup
-        const schedule = server.backupSchedule || {};
-        await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
+            // Apply retention policy after backup
+            const schedule = server.backupSchedule || {};
+            await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
 
-        logEvent(server.id, 'backup_create', `Manual backup created (${formatSize(backup.size)})`, { initiatedBy: req.user.username }).catch(() => {});
-        req.session.flash = { success: `Backup created: ${formatSize(backup.size)}` };
+            logEvent(server.id, 'backup_create', `Manual backup created (${formatSize(backup.size)})`, { initiatedBy: req.user.username }).catch(() => {});
+            req.session.flash = { success: `Backup created: ${formatSize(backup.size)}` };
+        } finally {
+            await serverManager.setOperationalState(server.id, STATES.STOPPED);
+        }
 
         // Start server after backup if requested
         if (startAfter) {
@@ -159,13 +176,18 @@ router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, re
             }
         }
 
-        await restoreBackup(server.id, req.params.backupId);
+        await serverManager.setOperationalState(server.id, STATES.RESTORING);
+        try {
+            await restoreBackup(server.id, req.params.backupId);
 
-        // Sync DB fields from the restored server.properties
-        await syncServerConfig(server.id);
+            // Sync DB fields from the restored server.properties
+            await syncServerConfig(server.id);
 
-        logEvent(server.id, 'backup_restore', 'Backup restored', { initiatedBy: req.user.username }).catch(() => {});
-        req.session.flash = { success: 'Backup restored successfully.' };
+            logEvent(server.id, 'backup_restore', 'Backup restored', { initiatedBy: req.user.username }).catch(() => {});
+            req.session.flash = { success: 'Backup restored successfully.' };
+        } finally {
+            await serverManager.setOperationalState(server.id, STATES.STOPPED);
+        }
 
         // Start server after restore if requested
         if (startAfter) {

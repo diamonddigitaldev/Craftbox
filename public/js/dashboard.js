@@ -8,14 +8,22 @@
         starting: 'info',
         running: 'success',
         stopping: 'warning',
-        crashed: 'danger'
+        crashed: 'danger',
+        backing_up: 'info',
+        restoring: 'info'
     };
     const stateIcons = {
         stopped: 'stop_circle',
         starting: 'hourglass_top',
         running: 'play_circle',
         stopping: 'pending',
-        crashed: 'error'
+        crashed: 'error',
+        backing_up: 'backup',
+        restoring: 'cloud_download'
+    };
+    const stateDisplayNames = {
+        backing_up: 'Backing Up',
+        restoring: 'Restoring'
     };
 
     let ws = null;
@@ -81,7 +89,7 @@
             const iconEl = badge.querySelector('.material-icons-outlined');
             if (iconEl) iconEl.textContent = icon;
             const textEl = badge.querySelector('.server-state-text');
-            if (textEl) textEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+            if (textEl) textEl.textContent = stateDisplayNames[state] || state.charAt(0).toUpperCase() + state.slice(1);
         }
 
         // Update card border

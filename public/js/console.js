@@ -18,14 +18,22 @@
         starting: 'info',
         running: 'success',
         stopping: 'warning',
-        crashed: 'danger'
+        crashed: 'danger',
+        backing_up: 'info',
+        restoring: 'info'
     };
     const stateIcons = {
         stopped: 'stop_circle',
         starting: 'hourglass_top',
         running: 'play_circle',
         stopping: 'pending',
-        crashed: 'error'
+        crashed: 'error',
+        backing_up: 'backup',
+        restoring: 'cloud_download'
+    };
+    const stateDisplayNames = {
+        backing_up: 'Backing Up',
+        restoring: 'Restoring'
     };
     const actionStates = {
         start: ['stopped', 'crashed'],
@@ -147,7 +155,7 @@
             stateBadge.className = `badge bg-${color} d-flex align-items-center gap-1`;
         }
         if (stateText) {
-            stateText.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+            stateText.textContent = stateDisplayNames[state] || state.charAt(0).toUpperCase() + state.slice(1);
         }
         if (stateIcon) {
             stateIcon.textContent = stateIcons[state] || 'help';
@@ -173,7 +181,7 @@
         // Update delete button
         const deleteBtn = document.querySelector('form[action$="/delete"] button');
         if (deleteBtn) {
-            deleteBtn.disabled = ['running', 'starting', 'stopping'].includes(state);
+            deleteBtn.disabled = !['stopped', 'crashed'].includes(state);
         }
 
         // Immediately wipe stats and set charts offline when server stops/crashes

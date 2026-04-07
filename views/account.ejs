@@ -9,7 +9,7 @@
 
         <div class="card">
             <div class="card-body p-4">
-                <form id="accountForm" novalidate>
+                <form id="accountForm">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
                     <h6 class="fw-bold text-body-secondary mb-3">Change Username</h6>
@@ -65,7 +65,7 @@
                     </div>
 
                     <button type="button" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2"
-                        id="saveBtn" data-bs-toggle="modal" data-bs-target="#confirmModal" disabled>
+                        id="saveBtn" disabled>
                         <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
                         Save Changes
                     </button>

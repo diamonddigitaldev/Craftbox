@@ -47,7 +47,7 @@
         <form method="POST" action="/servers/<%= server.id %>/delete" class="d-inline">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button type="submit" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1"
-                <%= ['running', 'starting', 'stopping'].includes(server.state) ? 'disabled' : '' %>>
+                <%= !['stopped', 'crashed'].includes(server.state) ? 'disabled' : '' %>>
                 <span class="material-icons-outlined" style="font-size: 1rem;">delete</span> Delete
             </button>
         </form>

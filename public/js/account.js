@@ -39,15 +39,20 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Final validation before showing the modal
-    saveBtn.addEventListener('click', function (e) {
+    var confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+    saveBtn.addEventListener('click', function () {
+        if (!form.reportValidity()) return;
+
         var newPassword = newPasswordField.value;
         var confirmPw = confirmPwField.value;
 
         if (newPassword && newPassword !== confirmPw) {
-            e.stopPropagation();
-            e.preventDefault();
-            confirmPwField.focus();
+            confirmPwField.setCustomValidity('Passwords do not match.');
+            confirmPwField.reportValidity();
+            confirmPwField.setCustomValidity('');
             return;
         }
+
+        confirmModal.show();
     });
 });
