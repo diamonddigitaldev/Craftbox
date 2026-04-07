@@ -3,45 +3,39 @@
     var serverId = window.location.pathname.split('/')[2];
     var csrf = document.getElementById('csrf-token')?.value || '';
 
-    // ── Manual Backup (server running) ──
-    var runningBtn = document.getElementById('create-backup-running-btn');
-    if (runningBtn) {
-        var stopBackupModal = new bootstrap.Modal(document.getElementById('stopBackupModal'));
-        runningBtn.addEventListener('click', function () {
-            stopBackupModal.show();
-        });
-    }
-
-    // Wire up "Start server after backup" checkbox
-    var startAfterBackupCheckbox = document.getElementById('startAfterBackup');
-    var startAfterBackupInput = document.getElementById('startAfterBackupInput');
-    if (startAfterBackupCheckbox && startAfterBackupInput) {
-        startAfterBackupCheckbox.addEventListener('change', function () {
-            startAfterBackupInput.value = startAfterBackupCheckbox.checked ? 'true' : 'false';
-        });
-    }
-
-    // ── Backup form overlay ──
+    // ── Create Backup Modal ──
+    var createBackupModal = new bootstrap.Modal(document.getElementById('createBackupModal'));
+    var createBackupBtn = document.getElementById('create-backup-btn');
     var backupForm = document.getElementById('backup-form');
+    var backupNameInput = document.getElementById('backupName');
+    var backupStartAfterInput = document.getElementById('backupStartAfter');
+    var startAfterBackupCheckbox = document.getElementById('startAfterBackup');
+    var stopFirst = document.getElementById('backupStopFirst');
+    var needsStop = stopFirst && stopFirst.value === 'true';
+
+    if (createBackupBtn) {
+        createBackupBtn.addEventListener('click', function () {
+            backupNameInput.value = '';
+            createBackupModal.show();
+        });
+    }
+
+    if (startAfterBackupCheckbox && backupStartAfterInput) {
+        startAfterBackupCheckbox.addEventListener('change', function () {
+            backupStartAfterInput.value = startAfterBackupCheckbox.checked ? 'true' : 'false';
+        });
+    }
+
     if (backupForm) {
         backupForm.addEventListener('submit', function () {
-            var btn = document.getElementById('create-backup-btn');
+            var btn = document.getElementById('confirm-backup-btn');
             if (btn) {
                 btn.disabled = true;
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating...';
             }
-            showOverlay('Creating backup...', 'Compressing server files. This may take a moment.');
-        });
-    }
-
-    // Stop & Backup form overlay
-    var stopBackupBtn = document.getElementById('stop-backup-btn');
-    if (stopBackupBtn) {
-        stopBackupBtn.closest('form').addEventListener('submit', function () {
-            stopBackupBtn.disabled = true;
-            stopBackupBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Stopping...';
-            if (stopBackupModal) stopBackupModal.hide();
-            showOverlay('Stopping server & creating backup...', 'Compressing server files. This may take a moment.');
+            createBackupModal.hide();
+            var overlayTitle = needsStop ? 'Stopping server & creating backup...' : 'Creating backup...';
+            showOverlay(overlayTitle, 'Compressing server files. This may take a moment.');
         });
     }
 
@@ -104,10 +98,16 @@
     // ── Next Backup Display Helper ──
     var nextBackupText = document.getElementById('next-backup-text');
 
+    function formatTimestamp(date) {
+        var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
+            + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+    }
+
     function updateNextBackup(isoString) {
         if (!nextBackupText) return;
         if (isoString) {
-            nextBackupText.textContent = 'Next backup: ' + new Date(isoString).toLocaleString();
+            nextBackupText.textContent = 'Next backup: ' + formatTimestamp(new Date(isoString));
         } else {
             nextBackupText.textContent = '';
         }

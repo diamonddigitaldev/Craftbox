@@ -21,20 +21,10 @@
                         </h6>
                         <small class="text-body-secondary">Create a full backup of the server directory.</small>
                     </div>
-                    <% if (_serverStopped) { %>
-                    <form method="POST" action="/servers/<%= server.id %>/backups/create" id="backup-form">
-                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                        <button type="submit" class="btn btn-success btn-sm d-flex align-items-center gap-1" id="create-backup-btn">
-                            <span class="material-icons-outlined" style="font-size: 1rem;">add</span>
-                            Create Backup
-                        </button>
-                    </form>
-                    <% } else { %>
-                    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1" id="create-backup-running-btn">
+                    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1" id="create-backup-btn">
                         <span class="material-icons-outlined" style="font-size: 1rem;">add</span>
                         Create Backup
                     </button>
-                    <% } %>
                 </div>
             </div>
         </div>
@@ -189,33 +179,47 @@
     </div>
 </div>
 
-<!-- Stop & Backup Modal -->
-<div class="modal fade" id="stopBackupModal" tabindex="-1">
+<!-- Create Backup Modal -->
+<div class="modal fade" id="createBackupModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-sm">
         <div class="modal-content">
             <div class="modal-header border-0 pb-0">
                 <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-warning">warning</span>
-                    Server Running
+                    <span class="material-icons-outlined text-success">backup</span>
+                    Create Backup
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <p>The server must be stopped to create a backup. Stop the server and create the backup?</p>
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="startAfterBackup" checked>
-                    <label class="form-check-label" for="startAfterBackup">Start server after backup</label>
+            <form method="POST" action="/servers/<%= server.id %>/backups/create" id="backup-form">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="stopFirst" id="backupStopFirst" value="<%= _serverStopped ? 'false' : 'true' %>">
+                <input type="hidden" name="startAfter" id="backupStartAfter" value="<%= _serverStopped ? 'false' : 'true' %>">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="backupName" class="form-label">Backup Name</label>
+                        <input type="text" class="form-control form-control-sm" id="backupName" name="name"
+                            placeholder="Manual Backup" maxlength="50" autocomplete="off"
+                            pattern="[A-Za-z0-9 _\-]{1,50}">
+                        <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+                    </div>
+                    <% if (!_serverStopped) { %>
+                    <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3" role="alert">
+                        <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
+                        <small>The server will be stopped to create the backup.</small>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="startAfterBackup" checked>
+                        <label class="form-check-label" for="startAfterBackup">Start server after backup</label>
+                    </div>
+                    <% } %>
                 </div>
-            </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <form method="POST" action="/servers/<%= server.id %>/backups/create" style="display:inline;">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="stopFirst" value="true">
-                    <input type="hidden" name="startAfter" id="startAfterBackupInput" value="true">
-                    <button type="submit" class="btn btn-warning btn-sm" id="stop-backup-btn">Stop & Backup</button>
-                </form>
-            </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-<%= _serverStopped ? 'success' : 'warning' %> btn-sm" id="confirm-backup-btn">
+                        <%= _serverStopped ? 'Create Backup' : 'Stop & Backup' %>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -234,7 +238,10 @@
             <div class="modal-body">
                 <p>Restoring will replace all current server files. This cannot be undone.</p>
                 <% if (!_serverStopped) { %>
-                <p class="text-warning mb-2">The server will be stopped first.</p>
+                <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3" role="alert">
+                    <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
+                    <small>The server will be stopped to restore the backup.</small>
+                </div>
                 <% } %>
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="startAfterRestore" checked>

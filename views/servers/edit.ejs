@@ -18,7 +18,7 @@ const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
 
         <div class="card">
             <div class="card-body p-4">
-                <form method="POST" action="/servers/<%= server.id %>/edit" novalidate>
+                <form method="POST" action="/servers/<%= server.id %>/edit">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
                     <div class="mb-3">

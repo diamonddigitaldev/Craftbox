@@ -4,14 +4,22 @@ const stateColors = {
     starting: 'info',
     running: 'success',
     stopping: 'warning',
-    crashed: 'danger'
+    crashed: 'danger',
+    backing_up: 'info',
+    restoring: 'info'
 };
 const stateIcons = {
     stopped: 'stop_circle',
     starting: 'hourglass_top',
     running: 'play_circle',
     stopping: 'pending',
-    crashed: 'error'
+    crashed: 'error',
+    backing_up: 'backup',
+    restoring: 'cloud_download'
+};
+const stateDisplayNames = {
+    backing_up: 'Backing Up',
+    restoring: 'Restoring'
 };
 const color = stateColors[server.state] || 'secondary';
 const icon = stateIcons[server.state] || 'help';
@@ -34,7 +42,7 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
                 </div>
                 <span class="badge bg-<%= color %> d-flex align-items-center gap-1 server-state-badge">
                     <span class="material-icons-outlined" style="font-size: 0.9rem;"><%= icon %></span>
-                    <span class="server-state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
+                    <span class="server-state-text"><%= stateDisplayNames[server.state] || server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
                 </span>
             </div>
             <div class="d-flex flex-wrap gap-3 text-body-secondary mb-3" style="font-size: 0.85rem;">

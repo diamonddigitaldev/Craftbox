@@ -4,9 +4,9 @@
     <span class="material-icons-outlined text-warning mb-3" style="font-size: 5rem;">block</span>
     <h2 class="fw-bold">403 — Forbidden</h2>
     <p class="text-body-secondary mb-4"><%= typeof message !== 'undefined' && message ? message : 'You do not have permission to access this resource.' %></p>
-    <a href="/dashboard" class="btn btn-outline-success d-inline-flex align-items-center gap-2">
+    <a href="<%= typeof user !== 'undefined' && user ? '/dashboard' : '/status' %>" class="btn btn-outline-success d-inline-flex align-items-center gap-2">
         <span class="material-icons-outlined" style="font-size: 1.2rem;">home</span>
-        Back to Dashboard
+        <%= typeof user !== 'undefined' && user ? 'Back to Dashboard' : 'Back to Server Status' %>
     </a>
 </div>
 

@@ -86,6 +86,7 @@ class BackupScheduler {
                     await proc.waitForState(STATES.STOPPED, 60000);
                 }
 
+                await this.serverManager.setOperationalState(server.id, STATES.BACKING_UP);
                 try {
                     const backup = await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
                     await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
@@ -94,6 +95,8 @@ class BackupScheduler {
                 } catch (err) {
                     log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
                     logEvent(server.id, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+                } finally {
+                    await this.serverManager.setOperationalState(server.id, STATES.STOPPED);
                 }
 
                 // Restart if it was running before
@@ -263,6 +266,7 @@ class BackupScheduler {
         if (!p || [STATES.STOPPED, STATES.CRASHED].includes(p.state)) {
             // Server not running — just backup directly
             log('info', `[${server.name}] Scheduled backup: server already stopped, creating backup...`);
+            await this.serverManager.setOperationalState(serverId, STATES.BACKING_UP);
             try {
                 const backup = await createBackup(serverId, 'Scheduled Backup', 'scheduled');
                 await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
@@ -270,6 +274,8 @@ class BackupScheduler {
             } catch (err) {
                 log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
                 logEvent(serverId, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+            } finally {
+                await this.serverManager.setOperationalState(serverId, STATES.STOPPED);
             }
             return;
         }
@@ -286,6 +292,7 @@ class BackupScheduler {
         }
 
         log('info', `[${server.name}] Scheduled backup: creating backup...`);
+        await this.serverManager.setOperationalState(serverId, STATES.BACKING_UP);
         try {
             const backup = await createBackup(serverId, 'Scheduled Backup', 'scheduled');
             await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
@@ -293,6 +300,8 @@ class BackupScheduler {
         } catch (err) {
             log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
             logEvent(serverId, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+        } finally {
+            await this.serverManager.setOperationalState(serverId, STATES.STOPPED);
         }
 
         // Only restart if the server was running before the backup

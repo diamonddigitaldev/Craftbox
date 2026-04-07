@@ -341,6 +341,10 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         fileInput.value = '';
     });
 
+    // ── Prevent browser from opening dropped files outside the drop area ──
+    document.addEventListener('dragover', function (e) { e.preventDefault(); });
+    document.addEventListener('drop', function (e) { e.preventDefault(); });
+
     // ── Drag and drop ──
     dropArea.addEventListener('dragover', function (e) {
         e.preventDefault();

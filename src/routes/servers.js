@@ -16,6 +16,7 @@ const { syncServerConfig } = require('../mc/syncServerConfig');
 const { clearStatsHistory } = require('../utils/statsHistory');
 const { getContentType } = require('../utils/contentType');
 const { copyDefaultIcon, hasIcon } = require('../utils/serverIcon');
+const { STATES } = require('../mc/stateMachine');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, (req, res) => {
@@ -268,8 +269,13 @@ router.post('/servers/:id/restart', ensureAuth, async (req, res) => {
             // Sync server metadata before backup so the backup includes current DB state
             await syncServerConfig(id);
 
-            await createBackup(id, 'Pre-restart backup', 'manual');
-            logEvent(id, 'action', 'Pre-restart backup created', { initiatedBy: req.user.username }).catch(() => {});
+            await serverManager.setOperationalState(id, STATES.BACKING_UP);
+            try {
+                await createBackup(id, 'Pre-restart backup', 'manual');
+                logEvent(id, 'action', 'Pre-restart backup created', { initiatedBy: req.user.username }).catch(() => {});
+            } finally {
+                await serverManager.setOperationalState(id, STATES.STOPPED);
+            }
 
             // Now start the server (since we stopped it for backup)
             await clearStatsHistory(id);
@@ -442,10 +448,11 @@ router.post('/servers/:id/delete', ensureAuth, async (req, res) => {
         return res.redirect('/dashboard');
     }
 
-    // Don't delete running servers
+    // Don't delete running/busy servers
     const serverManager = req.app.get('serverManager');
     const proc = serverManager?.getProcess(id);
-    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+    const liveState = proc ? proc.state : server.state;
+    if (!['stopped', 'crashed'].includes(liveState)) {
         req.session.flash = { error: 'Stop the server before deleting it.' };
         return res.redirect(`/servers/${id}`);
     }
