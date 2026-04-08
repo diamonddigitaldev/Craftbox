@@ -107,7 +107,7 @@ const eventLabels = {
                     </td>
                     <td><%= event.message %></td>
                     <td>
-                        <% if (event.initiatedBy) { %>
+                        <% if (event.initiatedBy && event.initiatedBy !== 'System') { %>
                         <span class="d-flex align-items-center gap-1" style="font-size: 0.85rem;">
                             <span class="material-icons-outlined" style="font-size: 0.9rem;"><%= event.initiatedBy === 'Backup Scheduler' ? 'schedule' : event.initiatedBy === 'Auto Start' ? 'play_circle' : 'person' %></span>
                             <%= event.initiatedBy %>

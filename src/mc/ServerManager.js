@@ -203,6 +203,7 @@ class ServerManager {
 
                 proc.on('stateChange', onStateChange);
 
+                proc._initiatedBy = 'System';
                 proc.stop().catch((err) => {
                     log('warn', `[${proc.config.name}] stop() failed: ${err.message}`);
                     clearTimeout(timeout);
