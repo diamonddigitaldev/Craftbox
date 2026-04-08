@@ -138,7 +138,15 @@ class BackupScheduler {
             nextBackupAt: null
         });
 
-        this._scheduleCycle(serverId, intervalMs, countdownMs);
+        // If a persisted nextBackupAt exists, compute remaining time instead of full interval
+        let initialDelayMs = intervalMs;
+        if (schedule.nextBackupAt) {
+            const remaining = new Date(schedule.nextBackupAt).getTime() - Date.now();
+            // Use remaining time if still in the future, otherwise fire soon (1s grace)
+            initialDelayMs = remaining > 1000 ? remaining : 1000;
+        }
+
+        this._scheduleCycle(serverId, intervalMs, countdownMs, initialDelayMs);
 
         log('info', `Backup schedule started for server ${serverId}: every ${schedule.intervalHours}h, next at ${this.timers.get(serverId).nextBackupAt.toISOString()}`);
     }
@@ -146,23 +154,37 @@ class BackupScheduler {
     /**
      * Schedule one backup cycle: countdown timer + backup timer.
      * Called on start and after each backup completes to chain the next cycle.
+     *
+     * @param {string} serverId
+     * @param {number} intervalMs   — full interval between backups
+     * @param {number} countdownMs  — countdown warning period before backup
+     * @param {number} [delayMs]    — override delay for this cycle (used on restart to honor persisted time)
      */
-    _scheduleCycle(serverId, intervalMs, countdownMs) {
+    _scheduleCycle(serverId, intervalMs, countdownMs, delayMs) {
         const entry = this.timers.get(serverId);
         if (!entry) return;
 
-        const nextBackupAt = new Date(Date.now() + intervalMs);
+        const effectiveDelay = delayMs != null ? delayMs : intervalMs;
+        const nextBackupAt = new Date(Date.now() + effectiveDelay);
         entry.nextBackupAt = nextBackupAt;
 
-        // Schedule countdown to start at (interval - countdown) before backup
-        const countdownDelay = Math.max(intervalMs - countdownMs, 0);
+        // Persist nextBackupAt to DB so it survives restarts
+        serversDb.get(`server_${serverId}`).then(server => {
+            if (server?.backupSchedule) {
+                server.backupSchedule.nextBackupAt = nextBackupAt.toISOString();
+                serversDb.set(`server_${serverId}`, server);
+            }
+        }).catch(err => log('error', `Failed to persist nextBackupAt for ${serverId}: ${err.message}`));
+
+        // Schedule countdown to start at (delay - countdown) before backup
+        const countdownDelay = Math.max(effectiveDelay - countdownMs, 0);
         const countdownTimer = setTimeout(() => {
             this._startCountdown(serverId);
         }, countdownDelay);
         countdownTimer.unref();
         entry.countdownTimers.push(countdownTimer);
 
-        // Schedule backup at exactly the interval boundary
+        // Schedule backup at exactly the delay boundary
         const backupTimer = setTimeout(async () => {
             // Cancel any remaining countdown chat timers
             for (const t of entry.countdownTimers) clearTimeout(t);
@@ -174,11 +196,11 @@ class BackupScheduler {
                 log('error', `Scheduled backup failed for ${serverId}: ${err.message}`);
             }
 
-            // Chain the next cycle
+            // Chain the next cycle (always uses full interval from here on)
             if (this.timers.has(serverId)) {
                 this._scheduleCycle(serverId, intervalMs, countdownMs);
             }
-        }, intervalMs);
+        }, effectiveDelay);
         backupTimer.unref();
         entry.backupTimer = backupTimer;
     }
@@ -195,6 +217,15 @@ class BackupScheduler {
             clearTimeout(t);
         }
         this.timers.delete(serverId);
+
+        // Clear persisted nextBackupAt so a stale time isn't used if re-enabled later
+        serversDb.get(`server_${serverId}`).then(server => {
+            if (server?.backupSchedule?.nextBackupAt) {
+                delete server.backupSchedule.nextBackupAt;
+                serversDb.set(`server_${serverId}`, server);
+            }
+        }).catch(err => log('error', `Failed to clear nextBackupAt for ${serverId}: ${err.message}`));
+
         log('info', `Backup schedule stopped for server ${serverId}`);
     }
 

@@ -9,7 +9,7 @@
 <div align="center">
 
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)
-![version](https://img.shields.io/badge/version-1.0.0--beta.17-brightgreen?style=flat-square)
+![version](https://img.shields.io/badge/version-1.0.0--beta.18-brightgreen?style=flat-square)
 ![docker](https://img.shields.io/badge/docker-supported-blue?style=flat-square)
 
 [![discord](https://img.shields.io/discord/667479986214666272?logo=discord&logoColor=white&style=flat-square)](https://diamonddigital.dev/discord)
