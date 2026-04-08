@@ -96,7 +96,11 @@ td > .material-icons-outlined {
 [data-state="starting"] .server-state-badge,
 [data-state="stopping"] .server-state-badge,
 [data-state="backing_up"] .server-state-badge,
-[data-state="restoring"] .server-state-badge {
+[data-state="restoring"] .server-state-badge,
+[data-state="starting"] .status-badge,
+[data-state="stopping"] .status-badge,
+[data-state="backing_up"] .status-badge,
+[data-state="restoring"] .status-badge {
     animation: pulse-badge 1.5s ease-in-out infinite;
 }
 

@@ -29,7 +29,7 @@ function sanitizeForPublic(server, proc) {
         version: (server.serverType || 'vanilla') === 'custom' ? null : server.version,
         serverType: server.serverType || 'vanilla',
         playerCount: proc ? proc.players.size : 0,
-        players: proc ? Array.from(proc.players) : [],
+        players: proc ? Array.from(proc.players).sort((a, b) => a.localeCompare(b)) : [],
         uptime: running ? getUptime(server.lastStarted) : 0,
         uptimeFormatted: running ? formatUptime(getUptime(server.lastStarted)) : 'Offline',
         statusPagePublic: !!server.statusPagePublic,
@@ -51,7 +51,7 @@ router.get('/status', async (req, res) => {
                 return sanitizeForPublic(s, proc);
             })
             .sort((a, b) => {
-                const stateOrder = { running: 0, starting: 1, stopping: 2, crashed: 3, stopped: 4 };
+                const stateOrder = { running: 0, starting: 1, backing_up: 2, restoring: 3, stopping: 4, crashed: 5, stopped: 6 };
                 return (stateOrder[a.state] ?? 5) - (stateOrder[b.state] ?? 5)
                     || a.name.localeCompare(b.name);
             });

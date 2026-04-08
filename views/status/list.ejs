@@ -15,20 +15,21 @@
 <div class="row justify-content-center">
     <% servers.forEach(function(server) { %>
     <%
-    const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger' };
-    const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error' };
+    const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger', backing_up: 'info', restoring: 'info' };
+    const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error', backing_up: 'backup', restoring: 'settings_backup_restore' };
+    const stateDisplayNames = { backing_up: 'Backing Up', restoring: 'Restoring' };
     const color = stateColors[server.state] || 'secondary';
     const icon = stateIcons[server.state] || 'help';
     %>
     <div class="col-md-6 col-xl-4 mb-4">
         <a href="/status/<%= server.id %>" class="text-decoration-none">
-            <div class="card status-card h-100 border-<%= color %>">
+            <div class="card status-card h-100 border-<%= color %>" data-server-id="<%= server.id %>" data-state="<%= server.state %>">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h5 class="card-title mb-0 text-light"><%= server.name %></h5>
-                        <span class="badge bg-<%= color %> d-flex align-items-center gap-1">
-                            <span class="material-icons-outlined" style="font-size: 0.9rem;"><%= icon %></span>
-                            <%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %>
+                        <span class="badge bg-<%= color %> d-flex align-items-center gap-1 status-badge">
+                            <span class="material-icons-outlined status-icon" style="font-size: 0.9rem;"><%= icon %></span>
+                            <span class="status-text"><%= stateDisplayNames[server.state] || server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
                         </span>
                     </div>
                     <small class="text-body-secondary d-flex align-items-center gap-1 mb-3">
@@ -39,11 +40,11 @@
                     <div class="d-flex flex-wrap gap-3 text-body-secondary" style="font-size: 0.85rem;">
                         <span class="d-flex align-items-center gap-1">
                             <span class="material-icons-outlined" style="font-size: 1rem;">people</span>
-                            <%= server.playerCount %> online
+                            <span class="status-players"><%= server.playerCount %></span> online
                         </span>
                         <span class="d-flex align-items-center gap-1">
                             <span class="material-icons-outlined" style="font-size: 1rem;">schedule</span>
-                            <%= server.uptimeFormatted %>
+                            <span class="status-uptime"><%= server.uptimeFormatted %></span>
                         </span>
                         <span class="d-flex align-items-center gap-1">
                             <span class="material-icons-outlined" style="font-size: 1rem;">lan</span>

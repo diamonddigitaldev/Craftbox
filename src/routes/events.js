@@ -59,6 +59,18 @@ router.post('/servers/:id/events/clear', ensureAuth, async (req, res) => {
     }
 
     await deleteServerEvents(server.id);
+
+    // Broadcast to all WS clients subscribed to this server
+    const wss = req.app.get('wss');
+    if (wss) {
+        const msg = JSON.stringify({ type: 'events_cleared', serverId: server.id });
+        for (const client of wss.clients) {
+            if (client.readyState === 1 && client.subscribedServers && client.subscribedServers.has(server.id)) {
+                client.send(msg);
+            }
+        }
+    }
+
     res.redirect(`/servers/${server.id}/events`);
 });
 

@@ -29,7 +29,7 @@
         stopping: 'pending',
         crashed: 'error',
         backing_up: 'backup',
-        restoring: 'cloud_download'
+        restoring: 'settings_backup_restore'
     };
     const stateDisplayNames = {
         backing_up: 'Backing Up',

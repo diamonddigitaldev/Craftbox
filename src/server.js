@@ -166,6 +166,7 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
 
         // ── 9. Initialize WebSocket ──
         const wss = initWebSocket(server, sessionMiddleware, serverManager);
+        app.set('wss', wss);
 
         // ── 10. Listen ──
         server.listen(PORT, () => {

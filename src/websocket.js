@@ -10,8 +10,21 @@ const { log } = require('./utils/log');
 function initWebSocket(httpServer, sessionMiddleware, serverManager) {
     const wss = new WebSocket.Server({ noServer: true });
 
-    // Authenticate WebSocket connections via session cookie
+    // Authenticate WebSocket connections via session cookie.
+    // Public connections (path /ws/status) are allowed without auth but
+    // receive only safe, non-sensitive data.
     httpServer.on('upgrade', (request, socket, head) => {
+        const url = new URL(request.url, `http://${request.headers.host}`);
+
+        // Public WebSocket for status pages — no auth required
+        if (url.pathname === '/ws/status') {
+            wss.handleUpgrade(request, socket, head, (ws) => {
+                ws.isPublic = true;
+                wss.emit('connection', ws, request);
+            });
+            return;
+        }
+
         // Fake response object for session middleware
         const res = {
             setHeader: () => {},
@@ -127,6 +140,10 @@ function handleMessage(ws, msg, serverManager) {
         }
 
         case 'command': {
+            if (ws.isPublic) {
+                ws.send(JSON.stringify({ type: 'error', message: 'Commands not available on public connections.' }));
+                return;
+            }
             const serverId = msg.serverId;
             const line = msg.line;
             if (!serverId || typeof line !== 'string') {

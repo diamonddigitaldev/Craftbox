@@ -31,6 +31,7 @@ class ServerProcess extends EventEmitter {
         this.players = new Set(); // Currently online player names
         this._stopRequested = false;
         this._restartPending = false;
+        this._restartStarting = false; // Suppress "started" event after restart
         this._crashDetected = false; // Set when crash report is detected in logs
         this._oomKillInProgress = false; // Guards against multiple OOM kill attempts
         this._initiatedBy = null; // Who triggered the current action (username or system label)
@@ -75,19 +76,33 @@ class ServerProcess extends EventEmitter {
             log('error', `[${this.config.name}] Failed to persist state: ${err.message}`);
         }
 
-        // Log state-change events
+        // Log state-change events (suppressed during restart — a single "restarted" event is logged instead)
+        const skipEventLog = (this._restartPending && newState === STATES.STOPPED)
+            || (this._restartStarting && newState === STATES.RUNNING);
+        if (this._restartStarting && newState === STATES.RUNNING) {
+            this._restartStarting = false;
+        }
         const eventTypes = {
             [STATES.RUNNING]: 'started',
             [STATES.STOPPED]: 'stopped',
             [STATES.CRASHED]: 'crashed'
         };
-        if (eventTypes[newState]) {
+        if (eventTypes[newState] && !skipEventLog) {
             // Crashes are system events — never attribute to the user who started the server
             const extra = (this._initiatedBy && newState !== STATES.CRASHED)
                 ? { initiatedBy: this._initiatedBy }
                 : {};
-            logEvent(this.id, eventTypes[newState], `Server ${eventTypes[newState]}`, extra).catch(() => {});
+            const eventMessage = `Server ${eventTypes[newState]}`;
+            logEvent(this.id, eventTypes[newState], eventMessage, extra).catch(() => {});
             pruneEvents(this.id, 500).catch(() => {});
+
+            this.broadcast({
+                type: 'event',
+                serverId: this.id,
+                eventType: eventTypes[newState],
+                message: eventMessage,
+                createdAt: new Date().toISOString()
+            });
         }
 
         // Broadcast state change to all WebSocket subscribers
@@ -370,18 +385,48 @@ class ServerProcess extends EventEmitter {
         this._appendLine(`> ${line}`, 'command');
     }
 
+    // States safe to expose on public WebSocket connections
+    static SAFE_PUBLIC_STATES = ['stopped', 'crashed', 'starting', 'running', 'stopping'];
+
+    // Event types safe to expose on public WebSocket connections
+    static PUBLIC_EVENT_TYPES = ['started', 'stopped', 'crashed', 'restarted'];
+
+    /**
+     * Map an internal state to a public-safe state.
+     * Non-public states (e.g. backing_up, restoring) map to 'stopped'.
+     */
+    static toPublicState(state) {
+        return ServerProcess.SAFE_PUBLIC_STATES.includes(state) ? state : 'stopped';
+    }
+
     /**
      * Subscribe a WebSocket client.
      */
     subscribe(ws) {
         this.subscribers.add(ws);
-        // Send history
+
+        const sortedPlayers = Array.from(this.players).sort((a, b) => a.localeCompare(b));
+
+        if (ws.isPublic) {
+            // Public clients receive only safe, non-sensitive data
+            const msg = JSON.stringify({
+                type: 'subscribed',
+                serverId: this.id,
+                state: ServerProcess.toPublicState(this.state),
+                players: sortedPlayers,
+                playerCount: this.players.size
+            });
+            if (ws.readyState === 1) ws.send(msg);
+            return;
+        }
+
+        // Authenticated clients receive full data
         const msg = JSON.stringify({
             type: 'subscribed',
             serverId: this.id,
             state: this.state,
             history: this.lastLines.slice(-200),
-            players: Array.from(this.players),
+            players: sortedPlayers,
             playerCount: this.players.size,
             exitCode: this.config.exitCode || null,
             crashReason: this.config.crashReason || null
@@ -398,12 +443,44 @@ class ServerProcess extends EventEmitter {
 
     /**
      * Broadcast a message to all subscribers.
+     * Public clients only receive state and player updates (no console, no sensitive fields).
      */
     broadcast(data) {
         const msg = JSON.stringify(data);
+
+        // Build a filtered message for public clients (only for safe message types)
+        let publicMsg = null;
+        if (data.type === 'state') {
+            publicMsg = JSON.stringify({
+                type: 'state',
+                serverId: data.serverId,
+                state: ServerProcess.toPublicState(data.state)
+            });
+        } else if (data.type === 'players') {
+            publicMsg = JSON.stringify({
+                type: 'players',
+                serverId: data.serverId,
+                players: data.players,
+                count: data.count
+            });
+        } else if (data.type === 'event' && ServerProcess.PUBLIC_EVENT_TYPES.includes(data.eventType)) {
+            publicMsg = JSON.stringify({
+                type: 'event',
+                serverId: data.serverId,
+                eventType: data.eventType,
+                message: data.eventType === 'crashed' ? 'Server crashed' : data.message,
+                createdAt: data.createdAt
+            });
+        }
+        // Console output and other types are never sent to public clients
+
         for (const ws of this.subscribers) {
             if (ws.readyState === 1) {
-                ws.send(msg);
+                if (ws.isPublic) {
+                    if (publicMsg) ws.send(publicMsg);
+                } else {
+                    ws.send(msg);
+                }
             } else {
                 this.subscribers.delete(ws);
             }
@@ -464,7 +541,7 @@ class ServerProcess extends EventEmitter {
                 this.broadcast({
                     type: 'players',
                     serverId: this.id,
-                    players: Array.from(this.players),
+                    players: Array.from(this.players).sort((a, b) => a.localeCompare(b)),
                     count: this.players.size
                 });
                 logEvent(this.id, 'player_join', `${playerName} joined`, { playerName }).catch(() => {});
@@ -477,7 +554,7 @@ class ServerProcess extends EventEmitter {
                 this.broadcast({
                     type: 'players',
                     serverId: this.id,
-                    players: Array.from(this.players),
+                    players: Array.from(this.players).sort((a, b) => a.localeCompare(b)),
                     count: this.players.size
                 });
                 logEvent(this.id, 'player_leave', `${playerName} left`, { playerName }).catch(() => {});
@@ -557,9 +634,18 @@ class ServerProcess extends EventEmitter {
             // Handle pending restart
             if (this._restartPending) {
                 this._restartPending = false;
+                this._restartStarting = true;
                 log('info', `[${this.config.name}] Restarting server...`);
                 this._appendLine('[Craftbox] Restarting server...');
-                logEvent(this.id, 'restarted', 'Server restarted').catch(() => {});
+                const extra = this._initiatedBy ? { initiatedBy: this._initiatedBy } : {};
+                logEvent(this.id, 'restarted', 'Server restarted', extra).catch(() => {});
+                this.broadcast({
+                    type: 'event',
+                    serverId: this.id,
+                    eventType: 'restarted',
+                    message: 'Server restarted',
+                    createdAt: new Date().toISOString()
+                });
                 setTimeout(() => this.start(), 2000);
             }
         } else if (isCrash) {
@@ -667,7 +753,16 @@ class ServerProcess extends EventEmitter {
                 const extra = (this._initiatedBy && targetState !== STATES.CRASHED)
                     ? { initiatedBy: this._initiatedBy }
                     : {};
-                logEvent(this.id, eventTypes[targetState], `Server ${eventTypes[targetState]} (forced from ${oldState})`, extra).catch(() => {});
+                const eventMessage = `Server ${eventTypes[targetState]} (forced from ${oldState})`;
+                logEvent(this.id, eventTypes[targetState], eventMessage, extra).catch(() => {});
+
+                this.broadcast({
+                    type: 'event',
+                    serverId: this.id,
+                    eventType: eventTypes[targetState],
+                    message: eventMessage,
+                    createdAt: new Date().toISOString()
+                });
             }
 
             // Broadcast state change
