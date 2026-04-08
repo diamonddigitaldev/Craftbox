@@ -145,6 +145,7 @@ router.post('/servers/:id/backups/create', ensureAuth, async (req, res) => {
         }
     } catch (err) {
         log('error', `Backup creation failed for ${server.name}: ${err.message}`);
+        logEvent(server.id, 'backup_create_fail', `Manual backup failed: ${err.message}`, { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { error: `Backup failed: ${err.message}` };
     }
 
@@ -178,12 +179,16 @@ router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, re
 
         await serverManager.setOperationalState(server.id, STATES.RESTORING);
         try {
+            const backup = await backupsDb.get(`backup_${req.params.backupId}`);
             await restoreBackup(server.id, req.params.backupId);
 
             // Sync DB fields from the restored server.properties
             await syncServerConfig(server.id);
 
-            logEvent(server.id, 'backup_restore', 'Backup restored', { initiatedBy: req.user.username }).catch(() => {});
+            const restoreDetail = backup?.createdAt
+                ? `Restored from backup (${formatTimestamp(new Date(backup.createdAt))})`
+                : 'Restored from backup';
+            logEvent(server.id, 'backup_restore', restoreDetail, { initiatedBy: req.user.username }).catch(() => {});
             req.session.flash = { success: 'Backup restored successfully.' };
         } finally {
             await serverManager.setOperationalState(server.id, STATES.STOPPED);
@@ -200,6 +205,7 @@ router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, re
         }
     } catch (err) {
         log('error', `Restore failed for ${server.name}: ${err.message}`);
+        logEvent(server.id, 'backup_restore_fail', `Backup restore failed: ${err.message}`, { initiatedBy: req.user.username }).catch(() => {});
         req.session.flash = { error: `Restore failed: ${err.message}` };
     }
 

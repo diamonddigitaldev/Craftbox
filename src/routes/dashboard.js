@@ -15,7 +15,7 @@ router.get('/dashboard', ensureAuth, async (req, res) => {
         const all = await serversDb.all();
         servers = all.map(row => row.value).sort((a, b) => {
             // Sort running servers first, then by name
-            const stateOrder = { running: 0, starting: 1, stopping: 2, crashed: 3, stopped: 4 };
+            const stateOrder = { running: 0, starting: 1, backing_up: 2, restoring: 3, stopping: 4, crashed: 5, stopped: 6 };
             const aOrder = stateOrder[a.state] ?? 5;
             const bOrder = stateOrder[b.state] ?? 5;
             if (aOrder !== bOrder) return aOrder - bOrder;

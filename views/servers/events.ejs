@@ -11,7 +11,9 @@ const eventIcons = {
     player_leave: 'logout',
     action: 'person',
     backup_create: 'backup',
+    backup_create_fail: 'backup',
     backup_restore: 'settings_backup_restore',
+    backup_restore_fail: 'settings_backup_restore',
     backup_delete: 'delete'
 };
 const eventColors = {
@@ -23,7 +25,9 @@ const eventColors = {
     player_leave: 'text-warning',
     action: 'text-primary',
     backup_create: 'text-info',
-    backup_restore: 'text-warning',
+    backup_create_fail: 'text-danger',
+    backup_restore: 'text-info',
+    backup_restore_fail: 'text-danger',
     backup_delete: 'text-secondary'
 };
 const eventLabels = {
@@ -35,7 +39,9 @@ const eventLabels = {
     player_leave: 'Player Leave',
     action: 'Action',
     backup_create: 'Backup Created',
+    backup_create_fail: 'Backup Failed',
     backup_restore: 'Backup Restored',
+    backup_restore_fail: 'Restore Failed',
     backup_delete: 'Backup Deleted'
 };
 
@@ -95,7 +101,7 @@ const eventLabels = {
                         </span>
                     </td>
                     <td>
-                        <span class="badge bg-<%= event.type === 'crashed' ? 'danger' : event.type === 'started' || event.type === 'player_join' ? 'success' : event.type === 'restarted' || event.type === 'backup_create' ? 'info' : event.type === 'action' ? 'primary' : event.type === 'backup_restore' || event.type === 'player_leave' ? 'warning' : 'secondary' %>" style="font-size: 0.75rem;">
+                        <span class="badge bg-<%= event.type === 'crashed' || event.type === 'backup_create_fail' || event.type === 'backup_restore_fail' ? 'danger' : event.type === 'started' || event.type === 'player_join' ? 'success' : event.type === 'restarted' || event.type === 'backup_create' || event.type === 'backup_restore' ? 'info' : event.type === 'action' ? 'primary' : event.type === 'player_leave' ? 'warning' : 'secondary' %>" style="font-size: 0.75rem;">
                             <%= eventLabels[event.type] || event.type %>
                         </span>
                     </td>
@@ -149,4 +155,4 @@ const eventLabels = {
 </div>
 
 
-<%- include('../partials/foot', { scripts: ['/js/events.js'] }) %>
+<%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/events.js'] }) %>

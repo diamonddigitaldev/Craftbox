@@ -8,8 +8,9 @@
 </div>
 
 <%
-const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger' };
-const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error' };
+const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger', backing_up: 'info', restoring: 'info' };
+const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error', backing_up: 'backup', restoring: 'settings_backup_restore' };
+const stateDisplayNames = { backing_up: 'Backing Up', restoring: 'Restoring' };
 const color = stateColors[server.state] || 'secondary';
 const icon = stateIcons[server.state] || 'help';
 %>
@@ -18,7 +19,7 @@ const icon = stateIcons[server.state] || 'help';
     <div class="col-lg-8 col-xl-6">
 
         <!-- Server Header -->
-        <div class="card mb-3 border-<%= color %>">
+        <div class="card mb-3 border-<%= color %>" id="server-header" data-server-id="<%= server.id %>" data-state="<%= server.state %>">
             <div class="card-body p-4">
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div>
@@ -29,9 +30,9 @@ const icon = stateIcons[server.state] || 'help';
                             <%= server.version || '' %>
                         </small>
                     </div>
-                    <span class="badge bg-<%= color %> d-flex align-items-center gap-1 fs-6">
-                        <span class="material-icons-outlined" style="font-size: 1rem;"><%= icon %></span>
-                        <%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %>
+                    <span class="badge bg-<%= color %> d-flex align-items-center gap-1 fs-6 status-badge">
+                        <span class="material-icons-outlined status-icon" style="font-size: 1rem;"><%= icon %></span>
+                        <span class="status-text"><%= stateDisplayNames[server.state] || server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
                     </span>
                 </div>
                 <div class="row g-3 text-center">
@@ -41,25 +42,24 @@ const icon = stateIcons[server.state] || 'help';
                     </div>
                     <div class="col-4">
                         <div class="text-body-secondary small">Players</div>
-                        <strong><%= server.playerCount %></strong>
+                        <strong class="status-players"><%= server.playerCount %></strong>
                     </div>
                     <div class="col-4">
                         <div class="text-body-secondary small">Uptime</div>
-                        <strong><%= server.uptimeFormatted %></strong>
+                        <strong class="status-uptime"><%= server.uptimeFormatted %></strong>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Players Online -->
-        <% if (server.players.length > 0) { %>
-        <div class="card mb-3">
+        <div class="card mb-3 status-players-card<%= server.players.length === 0 ? ' d-none' : '' %>">
             <div class="card-body p-4">
                 <h6 class="mb-3 d-flex align-items-center gap-2">
                     <span class="material-icons-outlined" style="font-size: 1.2rem;">people</span>
-                    Players Online (<%= server.playerCount %>)
+                    Players Online (<span class="status-players-heading-count"><%= server.playerCount %></span>)
                 </h6>
-                <div class="d-flex flex-wrap gap-2">
+                <div class="d-flex flex-wrap gap-2 status-players-list">
                     <% server.players.forEach(function(name) { %>
                     <span class="badge bg-body-secondary text-body d-flex align-items-center gap-1">
                         <span class="material-icons-outlined" style="font-size: 0.9rem;">person</span>
@@ -69,7 +69,6 @@ const icon = stateIcons[server.state] || 'help';
                 </div>
             </div>
         </div>
-        <% } %>
 
         <!-- Mods Download -->
         <% if (hasMods && modsCount > 0) { %>
@@ -100,9 +99,9 @@ const icon = stateIcons[server.state] || 'help';
                     Recent Events
                 </h6>
                 <% if (events.length === 0) { %>
-                <p class="text-body-secondary mb-0">No recent events.</p>
+                <p class="text-body-secondary mb-0" id="events-empty">No recent events.</p>
                 <% } else { %>
-                <div class="list-group list-group-flush">
+                <div class="list-group list-group-flush" id="events-list">
                     <% events.forEach(function(event) { %>
                     <%
                     const eventIcons = { started: 'play_circle', stopped: 'stop_circle', crashed: 'error', restarted: 'restart_alt' };

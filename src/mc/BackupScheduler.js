@@ -94,7 +94,7 @@ class BackupScheduler {
                     log('info', `[${server.name}] Catch-up backup completed.`);
                 } catch (err) {
                     log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
-                    logEvent(server.id, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+                    logEvent(server.id, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
                 } finally {
                     await this.serverManager.setOperationalState(server.id, STATES.STOPPED);
                 }
@@ -273,7 +273,7 @@ class BackupScheduler {
                 logEvent(serverId, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
             } catch (err) {
                 log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
-                logEvent(serverId, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+                logEvent(serverId, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
             } finally {
                 await this.serverManager.setOperationalState(serverId, STATES.STOPPED);
             }
@@ -299,7 +299,7 @@ class BackupScheduler {
             logEvent(serverId, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
         } catch (err) {
             log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
-            logEvent(serverId, 'backup_create', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+            logEvent(serverId, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
         } finally {
             await this.serverManager.setOperationalState(serverId, STATES.STOPPED);
         }
