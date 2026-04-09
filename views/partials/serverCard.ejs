@@ -28,7 +28,7 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
     : (server.version || '(Unknown Version)');
 %>
 <div class="col-md-6 col-xl-4 mb-4">
-    <div class="card server-card h-100 border-<%= color %>" data-server-id="<%= server.id %>">
+    <div class="card server-card h-100 border-<%= color %>" data-server-id="<%= server.id %>" data-state="<%= server.state %>">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-start mb-3">
                 <div>

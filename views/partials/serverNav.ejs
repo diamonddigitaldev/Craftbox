@@ -4,14 +4,22 @@ const _stateColors = {
     starting: 'info',
     running: 'success',
     stopping: 'warning',
-    crashed: 'danger'
+    crashed: 'danger',
+    backing_up: 'info',
+    restoring: 'info'
 };
 const _stateIcons = {
     stopped: 'stop_circle',
     starting: 'hourglass_top',
     running: 'play_circle',
     stopping: 'pending',
-    crashed: 'error'
+    crashed: 'error',
+    backing_up: 'backup',
+    restoring: 'settings_backup_restore'
+};
+const _stateDisplayNames = {
+    backing_up: 'Backing Up',
+    restoring: 'Restoring'
 };
 const _color = _stateColors[server.state] || 'secondary';
 const _icon = _stateIcons[server.state] || 'help';
@@ -19,14 +27,14 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
     ? '(Unknown Version)'
     : (server.version || '(Unknown Version)');
 %>
-<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="server-nav-header" data-state="<%= server.state %>">
     <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
         <span class="material-icons-outlined" style="font-size: 1.2rem;">arrow_back</span>
     </a>
     <h4 class="mb-0"><%= server.name %></h4>
-    <span class="badge bg-<%= _color %> d-flex align-items-center gap-1" id="server-state-badge">
+    <span class="badge bg-<%= _color %> d-flex align-items-center gap-1 server-state-badge" id="server-state-badge">
         <span class="material-icons-outlined" style="font-size: 0.9rem;" id="state-icon"><%= _icon %></span>
-        <span id="state-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
+        <span id="state-text"><%= _stateDisplayNames[server.state] || server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
     </span>
     <span class="text-body-secondary ms-2 d-flex align-items-center gap-1" style="font-size: 0.85rem;">
         <img src="/img/server-types/<%= server.serverType || 'vanilla' %>.svg" alt="" class="server-type-logo">

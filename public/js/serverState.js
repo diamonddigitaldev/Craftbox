@@ -7,6 +7,7 @@
     var stateTextEl = document.getElementById('state-text');
     var stateIconEl = document.getElementById('state-icon');
     var navEl = document.getElementById('server-nav');
+    var navHeader = document.getElementById('server-nav-header');
     if (!badge || !navEl) return;
 
     var serverId = null;
@@ -79,7 +80,10 @@
         var icon = stateIcons[state] || 'help';
         var displayName = stateDisplayNames[state] || state.charAt(0).toUpperCase() + state.slice(1);
 
-        badge.className = 'badge bg-' + color + ' d-flex align-items-center gap-1';
+        // Update data-state on parent for CSS animations
+        if (navHeader) navHeader.dataset.state = state;
+
+        badge.className = 'badge bg-' + color + ' d-flex align-items-center gap-1 server-state-badge';
         badge.id = 'server-state-badge';
         if (stateIconEl) stateIconEl.textContent = icon;
         if (stateTextEl) stateTextEl.textContent = displayName;

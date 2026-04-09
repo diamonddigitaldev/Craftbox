@@ -12,6 +12,7 @@
     const stateBadge = document.getElementById('server-state-badge');
     const stateText = document.getElementById('state-text');
     const stateIcon = document.getElementById('state-icon');
+    const navHeader = document.getElementById('server-nav-header');
 
     const stateColors = {
         stopped: 'secondary',
@@ -152,10 +153,13 @@
     function updateState(state, crashReason, exitCode) {
         currentState = state;
 
+        // Update data-state on parent for CSS animations
+        if (navHeader) navHeader.dataset.state = state;
+
         // Update badge
         if (stateBadge) {
             const color = stateColors[state] || 'secondary';
-            stateBadge.className = `badge bg-${color} d-flex align-items-center gap-1`;
+            stateBadge.className = `badge bg-${color} d-flex align-items-center gap-1 server-state-badge`;
         }
         if (stateText) {
             stateText.textContent = stateDisplayNames[state] || state.charAt(0).toUpperCase() + state.slice(1);
