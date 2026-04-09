@@ -63,13 +63,18 @@ class ServerProcess extends EventEmitter {
             this.players.clear();
         }
 
-        // Persist to database
+        // Persist to database and keep this.config in sync
         try {
             const server = await serversDb.get(`server_${this.id}`);
             if (server) {
                 server.state = newState;
-                if (newState === STATES.RUNNING) server.lastStarted = new Date().toISOString();
-                if (newState === STATES.STOPPED) server.lastStopped = new Date().toISOString();
+                if (newState === STATES.RUNNING) {
+                    server.lastStarted = new Date().toISOString();
+                } else if ([STATES.STOPPED, STATES.CRASHED].includes(newState)) {
+                    server.lastStarted = null;
+                    server.lastStopped = new Date().toISOString();
+                }
+                this.config.lastStarted = server.lastStarted;
                 await serversDb.set(`server_${this.id}`, server);
             }
         } catch (err) {
@@ -110,6 +115,7 @@ class ServerProcess extends EventEmitter {
             type: 'state',
             serverId: this.id,
             state: newState,
+            lastStarted: this.config.lastStarted || null,
             exitCode: this.config.exitCode || null,
             crashReason: this.config.crashReason || null
         });
@@ -413,6 +419,7 @@ class ServerProcess extends EventEmitter {
                 type: 'subscribed',
                 serverId: this.id,
                 state: ServerProcess.toPublicState(this.state),
+                lastStarted: this.config.lastStarted || null,
                 players: sortedPlayers,
                 playerCount: this.players.size
             });
@@ -425,6 +432,7 @@ class ServerProcess extends EventEmitter {
             type: 'subscribed',
             serverId: this.id,
             state: this.state,
+            lastStarted: this.config.lastStarted || null,
             history: this.lastLines.slice(-200),
             players: sortedPlayers,
             playerCount: this.players.size,
@@ -454,7 +462,8 @@ class ServerProcess extends EventEmitter {
             publicMsg = JSON.stringify({
                 type: 'state',
                 serverId: data.serverId,
-                state: ServerProcess.toPublicState(data.state)
+                state: ServerProcess.toPublicState(data.state),
+                lastStarted: data.lastStarted || null
             });
         } else if (data.type === 'players') {
             publicMsg = JSON.stringify({

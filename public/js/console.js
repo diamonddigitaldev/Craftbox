@@ -46,6 +46,7 @@
     let reconnectAttempts = 0;
     let autoScroll = true;
     let currentState = wrapper.dataset.serverState || 'stopped';
+    var serverLastStarted = null;
 
     function connect() {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -71,6 +72,7 @@
                         msg.history.forEach(line => appendLine(line));
                     }
                     if (msg.state) updateState(msg.state, msg.crashReason, msg.exitCode);
+                    updateLastStarted(msg.state, msg.lastStarted);
                     if (typeof msg.playerCount === 'number') updatePlayerCount(msg.playerCount);
                     scrollToBottom();
                     break;
@@ -91,6 +93,7 @@
                 case 'state':
                     if (msg.serverId === serverId) {
                         updateState(msg.state, msg.crashReason, msg.exitCode);
+                        updateLastStarted(msg.state, msg.lastStarted);
                     }
                     break;
 
@@ -186,7 +189,6 @@
 
         // Immediately wipe stats and set charts offline when server stops/crashes
         if (state !== 'running') {
-            if (statUptime) statUptime.textContent = '--';
             if (statCpu) statCpu.textContent = '--';
             if (statMemory) statMemory.textContent = '--';
             updatePlayerCount(0);
@@ -487,6 +489,42 @@
         if (ramLabel) ramLabel.textContent = offline ? '--' : ramLabel.textContent;
     }
 
+    function formatUptime(seconds) {
+        if (seconds < 0) return 'Offline';
+        var d = Math.floor(seconds / 86400);
+        var h = Math.floor((seconds % 86400) / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var parts = [];
+        if (d > 0) parts.push(d + 'd');
+        if (h > 0) parts.push(h + 'h');
+        parts.push(m + 'm');
+        return parts.join(' ');
+    }
+
+    function updateLastStarted(state, lastStarted) {
+        var running = (state === 'running');
+        serverLastStarted = running && lastStarted ? lastStarted : null;
+        resetUptimeTick();
+    }
+
+    function updateUptimeDisplay() {
+        if (!statUptime) return;
+        if (serverLastStarted) {
+            var seconds = Math.max(0, Math.floor((Date.now() - new Date(serverLastStarted).getTime()) / 1000));
+            statUptime.textContent = formatUptime(seconds);
+        } else {
+            statUptime.textContent = '--';
+        }
+    }
+
+    var uptimeTickInterval = setInterval(updateUptimeDisplay, 10000);
+
+    function resetUptimeTick() {
+        clearInterval(uptimeTickInterval);
+        updateUptimeDisplay();
+        uptimeTickInterval = setInterval(updateUptimeDisplay, 10000);
+    }
+
     async function fetchStats() {
         try {
             var res = await fetch('/api/servers/' + serverId + '/stats');
@@ -495,7 +533,6 @@
             var s = data.stats;
             var isRunning = s.state === 'running';
 
-            if (statUptime) statUptime.textContent = s.uptimeFormatted || '--';
             if (statCpu) statCpu.textContent = isRunning && s.cpuPercent != null ? s.cpuPercent.toFixed(1) + '%' : '--';
             if (statMemory) statMemory.textContent = s.memoryFormatted || '--';
             if (statDisk) statDisk.textContent = s.diskFormatted || '--';
