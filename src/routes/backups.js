@@ -18,13 +18,6 @@ const {
 const { STATES } = require('../mc/stateMachine');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 
-/**
- * Format a Date as YYYY-MM-DD HH:MM:SS (24-hour, local time).
- */
-function formatTimestamp(date) {
-    const pad = n => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
 
 /**
  * Load server with live state from ServerManager.
@@ -57,8 +50,7 @@ router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
     const backups = await listBackups(server.id);
     const backupsFormatted = backups.map(b => ({
         ...b,
-        sizeFormatted: formatSize(b.size),
-        createdFormatted: formatTimestamp(new Date(b.createdAt))
+        sizeFormatted: formatSize(b.size)
     }));
 
     const schedule = server.backupSchedule || {
@@ -80,7 +72,7 @@ router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
         server,
         backups: backupsFormatted,
         schedule,
-        nextBackupAt: nextBackupAt ? formatTimestamp(nextBackupAt) : null,
+        nextBackupAt: nextBackupAt ? nextBackupAt.toISOString() : null,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -186,7 +178,7 @@ router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, re
             await syncServerConfig(server.id);
 
             const restoreDetail = backup?.createdAt
-                ? `Restored from backup (${formatTimestamp(new Date(backup.createdAt))})`
+                ? `Restored from backup (${backup.createdAt})`
                 : 'Restored from backup';
             logEvent(server.id, 'backup_restore', restoreDetail, { initiatedBy: req.user.username }).catch(() => {});
             req.session.flash = { success: 'Backup restored successfully.' };

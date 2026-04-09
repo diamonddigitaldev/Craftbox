@@ -1,5 +1,24 @@
 // Global Craftbox scripts — loaded on every page
 
+// ── Client-side date formatting ──
+// Formats an ISO string to the user's local date/time.
+// style: 'datetime' (default) = full date+time, 'date' = date only
+function formatDate(isoString, style) {
+    var d = new Date(isoString);
+    if (style === 'date') {
+        return d.toLocaleDateString();
+    }
+    return d.toLocaleString(undefined, {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+}
+
+// Auto-format all .format-date elements on page load
+document.querySelectorAll('.format-date[data-iso]').forEach(function (el) {
+    el.textContent = formatDate(el.dataset.iso, el.dataset.style);
+});
+
 // Initialize Bootstrap toasts (auto-show flash messages)
 document.querySelectorAll('.toast').forEach(function (el) {
     new bootstrap.Toast(el).show();

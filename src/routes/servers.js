@@ -828,7 +828,7 @@ async function handleFiles(req, res, subpath) {
             size: stat.size,
             sizeFormatted: formatSize(stat.size),
             modified: stat.mtime,
-            modifiedFormatted: stat.mtime.toISOString().replace('T', ' ').substring(0, 19),
+            modifiedISO: stat.mtime.toISOString(),
             editable: !entry.isDirectory() && isTextFile(entry.name)
         };
     }).filter(Boolean).sort((a, b) => {

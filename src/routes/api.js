@@ -272,6 +272,9 @@ router.post('/api/servers/:id/backup-schedule', ensureAuth, async (req, res) => 
             if (m >= 1 && m <= 30) server.backupSchedule.countdownMinutes = m;
         }
 
+        // Clear persisted nextBackupAt so the scheduler starts a fresh cycle
+        delete server.backupSchedule.nextBackupAt;
+
         await serversDb.set(`server_${server.id}`, server);
 
         // Update the scheduler

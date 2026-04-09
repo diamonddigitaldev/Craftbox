@@ -99,7 +99,7 @@ const _hasContentTab = !!_contentTypes[server.serverType];
                         <% } %>
                     </td>
                     <td class="text-body-secondary small"><%= file.isDirectory ? '—' : file.sizeFormatted %></td>
-                    <td class="text-body-secondary small"><%= file.modifiedFormatted %></td>
+                    <td class="text-body-secondary small"><span class="format-date" data-iso="<%= file.modifiedISO %>"></span></td>
                     <td class="text-center">
                         <% if (!file.isDirectory) { %>
                         <div class="d-inline-flex gap-1">

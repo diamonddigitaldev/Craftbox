@@ -98,16 +98,10 @@
     // ── Next Backup Display Helper ──
     var nextBackupText = document.getElementById('next-backup-text');
 
-    function formatTimestamp(date) {
-        var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
-        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
-            + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
-    }
-
     function updateNextBackup(isoString) {
         if (!nextBackupText) return;
         if (isoString) {
-            nextBackupText.textContent = 'Next backup: ' + formatTimestamp(new Date(isoString));
+            nextBackupText.innerHTML = 'Next backup: <span class="format-date">' + formatDate(isoString) + '</span>';
         } else {
             nextBackupText.textContent = '';
         }
