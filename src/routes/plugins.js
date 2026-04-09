@@ -99,7 +99,7 @@ router.get('/servers/:id/plugins', ensureAuth, async (req, res) => {
                 size: stat.size,
                 sizeFormatted: formatSize(stat.size),
                 modified: stat.mtime,
-                modifiedFormatted: stat.mtime.toISOString().replace('T', ' ').substring(0, 19)
+                modifiedISO: stat.mtime.toISOString()
             };
         })
         .filter(Boolean)

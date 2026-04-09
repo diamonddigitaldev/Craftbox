@@ -37,7 +37,7 @@
                                     <td><%= t.serverType === 'custom' ? '—' : (t.version || '—') %></td>
                                     <td><%= t.memory %> MB</td>
                                     <td><%= t.port %></td>
-                                    <td><%= new Date(t.createdAt).toLocaleDateString() %></td>
+                                    <td><span class="format-date" data-iso="<%= t.createdAt %>" data-style="date"></span></td>
                                     <td class="text-end">
                                         <button type="button" class="btn btn-outline-danger btn-sm d-inline-flex align-items-center gap-1 delete-template-btn"
                                             data-template-id="<%= t.id %>" data-template-name="<%= t.name %>"

@@ -85,7 +85,7 @@
                     </td>
                     <td><%= file.name %></td>
                     <td class="text-body-secondary small"><%= file.sizeFormatted %></td>
-                    <td class="text-body-secondary small"><%= file.modifiedFormatted %></td>
+                    <td class="text-body-secondary small"><span class="format-date" data-iso="<%= file.modifiedISO %>"></span></td>
                     <td class="text-center">
                         <div class="d-inline-flex gap-1">
                             <a href="/servers/<%= server.id %>/plugins/download?file=<%= encodeURIComponent(file.name) %>"
