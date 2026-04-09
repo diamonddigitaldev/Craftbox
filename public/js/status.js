@@ -69,6 +69,9 @@
     var serverIds = getServerIds();
     if (serverIds.length === 0) return;
 
+    // Track lastStarted per server for client-side uptime ticking
+    var serverStartTimes = {}; // serverId -> ISO string or null
+
     var ws = null;
     var reconnectAttempts = 0;
 
@@ -89,12 +92,14 @@
 
             if (msg.type === 'subscribed' && msg.serverId) {
                 updateServerState(msg.serverId, msg.state);
+                updateLastStarted(msg.serverId, msg.state, msg.lastStarted);
                 if (typeof msg.playerCount === 'number') {
                     updatePlayers(msg.serverId, msg.playerCount, msg.players || []);
                 }
             }
             if (msg.type === 'state' && msg.serverId) {
                 updateServerState(msg.serverId, msg.state);
+                updateLastStarted(msg.serverId, msg.state, msg.lastStarted);
             }
             if (msg.type === 'players' && msg.serverId) {
                 updatePlayers(msg.serverId, msg.count, msg.players || []);
@@ -255,6 +260,52 @@
                 });
             }
         }
+    }
+
+    function updateLastStarted(serverId, state, lastStarted) {
+        var running = (state === 'running');
+        serverStartTimes[serverId] = running && lastStarted ? lastStarted : null;
+        resetUptimeTick();
+    }
+
+    function formatUptime(seconds) {
+        if (seconds < 0) return 'Offline';
+        var d = Math.floor(seconds / 86400);
+        var h = Math.floor((seconds % 86400) / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var parts = [];
+        if (d > 0) parts.push(d + 'd');
+        if (h > 0) parts.push(h + 'h');
+        parts.push(m + 'm');
+        return parts.join(' ');
+    }
+
+    function updateUptimeDisplay(serverId) {
+        var startTime = serverStartTimes[serverId];
+        var text = 'Offline';
+        if (startTime) {
+            var seconds = Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000));
+            text = formatUptime(seconds);
+        }
+        document.querySelectorAll('[data-server-id="' + serverId + '"]').forEach(function (el) {
+            var uptimeEl = el.querySelector('.status-uptime');
+            if (uptimeEl) uptimeEl.textContent = text;
+        });
+    }
+
+    // Tick all uptime displays every 10 seconds, resettable on state change
+    var uptimeTickInterval = setInterval(uptimeTick, 10000);
+
+    function uptimeTick() {
+        serverIds.forEach(function (id) {
+            updateUptimeDisplay(id);
+        });
+    }
+
+    function resetUptimeTick() {
+        clearInterval(uptimeTickInterval);
+        uptimeTick();
+        uptimeTickInterval = setInterval(uptimeTick, 10000);
     }
 
     connect();

@@ -26,6 +26,9 @@
         restoring: 'Restoring'
     };
 
+    // Track lastStarted per server for client-side uptime ticking
+    var serverStartTimes = {};
+
     let ws = null;
     let reconnectAttempts = 0;
 
@@ -57,12 +60,16 @@
 
             if (msg.type === 'state' && msg.serverId) {
                 updateCard(msg.serverId, msg.state);
+                updateLastStarted(msg.serverId, msg.state, msg.lastStarted);
             }
             if (msg.type === 'players' && msg.serverId) {
                 updateCardStat(msg.serverId, 'players', msg.count);
             }
-            if (msg.type === 'subscribed' && msg.serverId && typeof msg.playerCount === 'number') {
-                updateCardStat(msg.serverId, 'players', msg.playerCount);
+            if (msg.type === 'subscribed' && msg.serverId) {
+                if (typeof msg.playerCount === 'number') {
+                    updateCardStat(msg.serverId, 'players', msg.playerCount);
+                }
+                updateLastStarted(msg.serverId, msg.state, msg.lastStarted);
             }
         };
 
@@ -116,27 +123,47 @@
         if (el) el.textContent = value;
     }
 
-    // Fetch stats for all servers
-    async function fetchAllStats() {
-        var ids = getServerIds();
-        for (var i = 0; i < ids.length; i++) {
-            try {
-                var res = await fetch('/api/servers/' + ids[i] + '/stats');
-                if (!res.ok) continue;
-                var data = await res.json();
-                var s = data.stats;
-                updateCard(ids[i], s.state);
-                updateCardStat(ids[i], 'players', s.playerCount);
-                updateCardStat(ids[i], 'uptime', s.uptimeFormatted || '--');
-            } catch {
-                // ignore
-            }
-        }
+    function formatUptime(seconds) {
+        if (seconds < 0) return 'Offline';
+        var d = Math.floor(seconds / 86400);
+        var h = Math.floor((seconds % 86400) / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var parts = [];
+        if (d > 0) parts.push(d + 'd');
+        if (h > 0) parts.push(h + 'h');
+        parts.push(m + 'm');
+        return parts.join(' ');
     }
 
-    // Fetch stats on load and every 10 seconds
-    fetchAllStats();
-    setInterval(fetchAllStats, 10000);
+    function updateLastStarted(serverId, state, lastStarted) {
+        var running = (state === 'running');
+        serverStartTimes[serverId] = running && lastStarted ? lastStarted : null;
+        resetUptimeTick();
+    }
+
+    function updateUptimeDisplay(serverId) {
+        var startTime = serverStartTimes[serverId];
+        var text = 'Offline';
+        if (startTime) {
+            var seconds = Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000));
+            text = formatUptime(seconds);
+        }
+        updateCardStat(serverId, 'uptime', text);
+    }
+
+    var uptimeTickInterval = setInterval(uptimeTick, 10000);
+
+    function uptimeTick() {
+        getServerIds().forEach(function (id) {
+            updateUptimeDisplay(id);
+        });
+    }
+
+    function resetUptimeTick() {
+        clearInterval(uptimeTickInterval);
+        uptimeTick();
+        uptimeTickInterval = setInterval(uptimeTick, 10000);
+    }
 
     connect();
 })();
