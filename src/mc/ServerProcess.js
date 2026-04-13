@@ -15,8 +15,8 @@ const { clearCpuTracking } = require('../utils/resourceStats');
 const DONE_PATTERN = /\]: Done \(/;
 const OOM_PATTERN = /java\.lang\.OutOfMemoryError/;
 const CRASH_REPORT_PATTERN = /Preparing crash report|This crash report has been saved to/;
-const JOIN_PATTERN = /\]: (\S+) joined the game$/;
-const LEAVE_PATTERN = /\]: (\S+) left the game$/;
+const JOIN_PATTERN = /\]: .*?(\S+) joined the game$/;
+const LEAVE_PATTERN = /\]: .*?(\S+) left the game$/;
 
 class ServerProcess extends EventEmitter {
     constructor(config) {
