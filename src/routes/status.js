@@ -8,6 +8,7 @@ const { serversDb } = require('../db');
 const { getEvents } = require('../utils/eventLogger');
 const { getUptime, formatUptime } = require('../utils/resourceStats');
 const { log } = require('../utils/log');
+const ServerProcess = require('../mc/ServerProcess');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -19,7 +20,8 @@ const PUBLIC_EVENT_TYPES = ['started', 'stopped', 'crashed', 'restarted'];
  * NEVER expose: directory, crashReason, javaArgs, exitCode, file paths.
  */
 function sanitizeForPublic(server, proc) {
-    const state = proc?.state || server.state;
+    const rawState = proc?.state || server.state;
+    const state = ServerProcess.toPublicState(rawState);
     const running = state === 'running';
     return {
         id: server.id,
@@ -51,7 +53,7 @@ router.get('/status', async (req, res) => {
                 return sanitizeForPublic(s, proc);
             })
             .sort((a, b) => {
-                const stateOrder = { running: 0, starting: 1, backing_up: 2, restoring: 3, stopping: 4, crashed: 5, stopped: 6 };
+                const stateOrder = { running: 0, starting: 1, stopping: 2, crashed: 3, stopped: 4 };
                 return (stateOrder[a.state] ?? 5) - (stateOrder[b.state] ?? 5)
                     || a.name.localeCompare(b.name);
             });
