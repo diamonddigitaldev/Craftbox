@@ -7,24 +7,16 @@
         starting: 'info',
         running: 'success',
         stopping: 'warning',
-        crashed: 'danger',
-        backing_up: 'info',
-        restoring: 'info'
+        crashed: 'danger'
     };
     var stateIcons = {
         stopped: 'stop_circle',
         starting: 'hourglass_top',
         running: 'play_circle',
         stopping: 'pending',
-        crashed: 'error',
-        backing_up: 'backup',
-        restoring: 'settings_backup_restore'
+        crashed: 'error'
     };
-    var stateDisplayNames = {
-        backing_up: 'Backing Up',
-        restoring: 'Restoring'
-    };
-    var stateOrder = { running: 0, starting: 1, backing_up: 2, restoring: 3, stopping: 4, crashed: 5, stopped: 6 };
+    var stateOrder = { running: 0, starting: 1, stopping: 2, crashed: 3, stopped: 4 };
 
     // Populate server IP addresses using advertised IP or browser hostname + port
     document.querySelectorAll('.server-ip').forEach(function (el) {
@@ -124,7 +116,7 @@
     function updateServerState(serverId, state) {
         var color = stateColors[state] || 'secondary';
         var icon = stateIcons[state] || 'help';
-        var displayName = stateDisplayNames[state] || state.charAt(0).toUpperCase() + state.slice(1);
+        var displayName = state.charAt(0).toUpperCase() + state.slice(1);
 
         // Update all elements with this server ID (covers both list and detail pages)
         document.querySelectorAll('[data-server-id="' + serverId + '"]').forEach(function (el) {

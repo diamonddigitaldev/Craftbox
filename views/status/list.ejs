@@ -15,9 +15,8 @@
 <div class="row justify-content-center">
     <% servers.forEach(function(server) { %>
     <%
-    const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger', backing_up: 'info', restoring: 'info' };
-    const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error', backing_up: 'backup', restoring: 'settings_backup_restore' };
-    const stateDisplayNames = { backing_up: 'Backing Up', restoring: 'Restoring' };
+    const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger' };
+    const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error' };
     const color = stateColors[server.state] || 'secondary';
     const icon = stateIcons[server.state] || 'help';
     %>
@@ -29,7 +28,7 @@
                         <h5 class="card-title mb-0 text-light"><%= server.name %></h5>
                         <span class="badge bg-<%= color %> d-flex align-items-center gap-1 status-badge">
                             <span class="material-icons-outlined status-icon" style="font-size: 0.9rem;"><%= icon %></span>
-                            <span class="status-text"><%= stateDisplayNames[server.state] || server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
+                            <span class="status-text"><%= server.state.charAt(0).toUpperCase() + server.state.slice(1) %></span>
                         </span>
                     </div>
                     <small class="text-body-secondary d-flex align-items-center gap-1 mb-3">
