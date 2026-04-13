@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const { log } = require('./utils/log');
+const { serversDb } = require('./db');
 
 /**
  * Initialize WebSocket server on the given HTTP server.
@@ -69,7 +70,9 @@ function initWebSocket(httpServer, sessionMiddleware, serverManager) {
                 return;
             }
 
-            handleMessage(ws, msg, serverManager);
+            handleMessage(ws, msg, serverManager).catch((err) => {
+                log('error', `WebSocket handleMessage error: ${err.message}`);
+            });
         });
 
         ws.on('close', () => {
@@ -104,7 +107,7 @@ function initWebSocket(httpServer, sessionMiddleware, serverManager) {
     return wss;
 }
 
-function handleMessage(ws, msg, serverManager) {
+async function handleMessage(ws, msg, serverManager) {
     switch (msg.type) {
         case 'subscribe': {
             const serverId = msg.serverId;
@@ -117,13 +120,46 @@ function handleMessage(ws, msg, serverManager) {
             if (proc) {
                 proc.subscribe(ws);
             } else {
-                // Server exists but no process yet — send current state
-                ws.send(JSON.stringify({
-                    type: 'subscribed',
-                    serverId,
-                    state: 'stopped',
-                    history: []
-                }));
+                // No in-memory process — hydrate from DB so the crash banner
+                // and state badge stay accurate after a Craftbox restart.
+                let dbState = 'stopped';
+                let dbExitCode = null;
+                let dbCrashReason = null;
+                let dbLastStarted = null;
+                try {
+                    const server = await serversDb.get(`server_${serverId}`);
+                    if (server) {
+                        dbState = server.state === 'crashed' ? 'crashed' : 'stopped';
+                        dbExitCode = server.exitCode != null ? server.exitCode : null;
+                        dbCrashReason = server.crashReason || null;
+                        dbLastStarted = server.lastStarted || null;
+                    }
+                } catch (err) {
+                    log('warn', `WebSocket subscribe: failed to read server ${serverId} from DB: ${err.message}`);
+                }
+
+                if (ws.isPublic) {
+                    ws.send(JSON.stringify({
+                        type: 'subscribed',
+                        serverId,
+                        state: dbState,
+                        lastStarted: dbLastStarted,
+                        players: [],
+                        playerCount: 0
+                    }));
+                } else {
+                    ws.send(JSON.stringify({
+                        type: 'subscribed',
+                        serverId,
+                        state: dbState,
+                        lastStarted: dbLastStarted,
+                        history: [],
+                        players: [],
+                        playerCount: 0,
+                        exitCode: dbExitCode,
+                        crashReason: dbCrashReason
+                    }));
+                }
             }
             ws.subscribedServers.add(serverId);
             break;

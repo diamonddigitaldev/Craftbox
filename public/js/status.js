@@ -30,11 +30,17 @@
     });
 
     // Format event times as relative ("5m ago", "2h ago")
-    document.querySelectorAll('.event-time').forEach(function (el) {
-        var time = new Date(el.dataset.time);
-        el.textContent = timeAgo(time);
-        el.title = time.toLocaleString();
-    });
+    function refreshEventTimes() {
+        document.querySelectorAll('.event-time').forEach(function (el) {
+            if (!el.dataset.time) return;
+            var time = new Date(el.dataset.time);
+            el.textContent = timeAgo(time);
+            el.title = time.toLocaleString();
+        });
+    }
+    refreshEventTimes();
+    // Re-tick every 30s so "just now" rolls over to "1m ago", "2m ago", ...
+    setInterval(refreshEventTimes, 30000);
 
     function timeAgo(date) {
         var seconds = Math.floor((Date.now() - date.getTime()) / 1000);
