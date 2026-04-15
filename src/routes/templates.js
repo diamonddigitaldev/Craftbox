@@ -70,7 +70,7 @@ router.post('/templates/create', ensureAuth, async (req, res) => {
     // Validate template name
     const trimmedName = String(name || '').trim();
     if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
-        req.session.flash = { error: 'Template name must be 1–50 characters (letters, numbers, spaces, hyphens, underscores).' };
+        req.session.flash = { error: 'Template name must be 1-50 characters (letters, numbers, spaces, hyphens, underscores).' };
         return res.redirect(`/servers/${serverId}/edit`);
     }
 

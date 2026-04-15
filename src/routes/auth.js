@@ -38,7 +38,7 @@ router.post('/setup', async (req, res, next) => {
     const trimmedUsername = username.trim();
 
     if (trimmedUsername.length < 3 || trimmedUsername.length > 32) {
-        req.session.flash = { error: 'Username must be 3–32 characters.' };
+        req.session.flash = { error: 'Username must be 3-32 characters.' };
         return res.redirect('/setup');
     }
 
@@ -189,7 +189,7 @@ router.post('/account', ensureAuth, async (req, res) => {
     // Validate new username
     if (hasUsernameChange) {
         if (trimmedUsername.length < 3 || trimmedUsername.length > 32) {
-            req.session.flash = { error: 'Username must be 3–32 characters.' };
+            req.session.flash = { error: 'Username must be 3-32 characters.' };
             return res.redirect('/account');
         }
         if (!/^[a-zA-Z0-9_\-]+$/.test(trimmedUsername)) {

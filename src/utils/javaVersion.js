@@ -12,7 +12,7 @@ const TEMURIN_ARCH = ARCH_MAP[process.arch] || 'amd64';
  * These are checked first; if none exist we fall back to system java.
  */
 const TEMURIN_PATHS = {
-    8:  `/usr/lib/jvm/temurin-8-jre-${TEMURIN_ARCH}/bin/java`,
+    8: `/usr/lib/jvm/temurin-8-jre-${TEMURIN_ARCH}/bin/java`,
     17: `/usr/lib/jvm/temurin-17-jre-${TEMURIN_ARCH}/bin/java`,
     21: `/usr/lib/jvm/temurin-21-jre-${TEMURIN_ARCH}/bin/java`,
     25: `/usr/lib/jvm/temurin-25-jre-${TEMURIN_ARCH}/bin/java`,
@@ -30,9 +30,9 @@ const _hasTemurin = process.platform !== 'win32' &&
  * Determine the required Java version for a given Minecraft version.
  *
  * MC Version Requirements:
- *   1.7.x  – 1.16.x  → Java 8
- *   1.17.x – 1.20.4   → Java 17
- *   1.20.5 – 1.21.x+  → Java 21
+ *   1.7.x  - 1.16.x  → Java 8
+ *   1.17.x - 1.20.4   → Java 17
+ *   1.20.5 - 1.21.x+  → Java 21
  *   26.x+             → Java 25  (new year.drop.patch versioning from 2026)
  *
  * @param {string} mcVersion - e.g. "1.20.4", "1.21.1", "26.1"
@@ -53,7 +53,7 @@ function getRequiredJavaVersion(mcVersion) {
 
     if (minor >= 21) return 21;
     if (minor === 20 && patch >= 5) return 21;
-    if (minor >= 17) return 17;  // 1.17 – 1.20.4
+    if (minor >= 17) return 17;  // 1.17 - 1.20.4
     return 8;                     // 1.16.x and below
 }
 

@@ -11,6 +11,13 @@ const typeSelector = document.getElementById('type-selector');
 const versionGroup = document.getElementById('version-group');
 const versionSelect = document.getElementById('version');
 const customUrlGroup = document.getElementById('custom-url-group');
+const customTypeNotice = document.getElementById('custom-type-notice');
+
+function setCustomNoticeVisible(visible) {
+    if (!customTypeNotice) return;
+    customTypeNotice.classList.toggle('d-none', !visible);
+    customTypeNotice.classList.toggle('d-flex', visible);
+}
 
 // ── Required field validation + EULA gating ──
 function validateCreateForm() {
@@ -100,10 +107,12 @@ async function selectType(typeId) {
         versionGroup.classList.add('d-none');
         customUrlGroup.classList.remove('d-none');
         versionSelect.removeAttribute('required');
+        setCustomNoticeVisible(true);
     } else {
         versionGroup.classList.remove('d-none');
         customUrlGroup.classList.add('d-none');
         versionSelect.setAttribute('required', '');
+        setCustomNoticeVisible(false);
         await loadVersions(typeId);
     }
 }
@@ -220,6 +229,7 @@ templateSelect.addEventListener('change', async () => {
                 versionGroup.classList.add('d-none');
                 customUrlGroup.classList.remove('d-none');
                 versionSelect.removeAttribute('required');
+                setCustomNoticeVisible(true);
                 if (t.customJarUrl) {
                     document.getElementById('customJarUrl').value = t.customJarUrl;
                 }
@@ -227,6 +237,7 @@ templateSelect.addEventListener('change', async () => {
                 versionGroup.classList.remove('d-none');
                 customUrlGroup.classList.add('d-none');
                 versionSelect.setAttribute('required', '');
+                setCustomNoticeVisible(false);
                 await loadVersions(t.serverType, t.version);
             }
         } else if (t.serverType === 'custom' && t.customJarUrl) {

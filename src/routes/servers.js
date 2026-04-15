@@ -43,7 +43,7 @@ router.post('/servers/create', ensureAuth, async (req, res) => {
 
     const trimmedName = String(name).trim();
     if (trimmedName.length < 1 || trimmedName.length > 50) {
-        req.session.flash = { error: 'Server name must be 1–50 characters.' };
+        req.session.flash = { error: 'Server name must be 1-50 characters.' };
         return res.redirect('/servers/create');
     }
     if (!/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
@@ -226,7 +226,7 @@ router.post('/servers/:id/start', ensureAuth, async (req, res) => {
     try {
         await clearStatsHistory(req.params.id);
         await serverManager.startServer(req.params.id, { initiatedBy: req.user.username });
-        logEvent(req.params.id, 'action', 'Server start requested', { initiatedBy: req.user.username }).catch(() => {});
+        logEvent(req.params.id, 'action', 'Server start requested', { initiatedBy: req.user.username }).catch(() => { });
         req.session.flash = { success: 'Server is starting...' };
     } catch (err) {
         req.session.flash = { error: err.message };
@@ -240,7 +240,7 @@ router.post('/servers/:id/stop', ensureAuth, async (req, res) => {
     try {
         await clearStatsHistory(req.params.id);
         await serverManager.stopServer(req.params.id, { initiatedBy: req.user.username });
-        logEvent(req.params.id, 'action', 'Server stop requested', { initiatedBy: req.user.username }).catch(() => {});
+        logEvent(req.params.id, 'action', 'Server stop requested', { initiatedBy: req.user.username }).catch(() => { });
         req.session.flash = { success: 'Server is stopping...' };
     } catch (err) {
         req.session.flash = { error: err.message };
@@ -272,7 +272,7 @@ router.post('/servers/:id/restart', ensureAuth, async (req, res) => {
             await serverManager.setOperationalState(id, STATES.BACKING_UP);
             try {
                 await createBackup(id, 'Pre-restart backup', 'manual');
-                logEvent(id, 'action', 'Pre-restart backup created', { initiatedBy: req.user.username }).catch(() => {});
+                logEvent(id, 'action', 'Pre-restart backup created', { initiatedBy: req.user.username }).catch(() => { });
             } finally {
                 await serverManager.setOperationalState(id, STATES.STOPPED);
             }
@@ -280,12 +280,12 @@ router.post('/servers/:id/restart', ensureAuth, async (req, res) => {
             // Now start the server (since we stopped it for backup)
             await clearStatsHistory(id);
             await serverManager.startServer(id, { initiatedBy: req.user.username });
-            logEvent(id, 'action', 'Server restarted with backup', { initiatedBy: req.user.username }).catch(() => {});
+            logEvent(id, 'action', 'Server restarted with backup', { initiatedBy: req.user.username }).catch(() => { });
             req.session.flash = { success: 'Backup created and server is restarting...' };
         } else {
             await clearStatsHistory(id);
             await serverManager.restartServer(id, { initiatedBy: req.user.username });
-            logEvent(id, 'action', 'Server restart requested', { initiatedBy: req.user.username }).catch(() => {});
+            logEvent(id, 'action', 'Server restart requested', { initiatedBy: req.user.username }).catch(() => { });
             req.session.flash = { success: 'Server is restarting...' };
         }
     } catch (err) {
@@ -300,7 +300,7 @@ router.post('/servers/:id/kill', ensureAuth, async (req, res) => {
     try {
         await clearStatsHistory(req.params.id);
         await serverManager.killServer(req.params.id, { initiatedBy: req.user.username });
-        logEvent(req.params.id, 'action', 'Server force-killed', { initiatedBy: req.user.username }).catch(() => {});
+        logEvent(req.params.id, 'action', 'Server force-killed', { initiatedBy: req.user.username }).catch(() => { });
         req.session.flash = { warning: 'Server force-killed.' };
     } catch (err) {
         req.session.flash = { error: err.message };

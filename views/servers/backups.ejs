@@ -1,289 +1,325 @@
-<%- include('../partials/head', { title: server.name + ' Backups', navbar: true, fluid: true }) %>
+<%- include('../partials/head', { title: server.name + ' Backups' , navbar: true, fluid: true }) %>
 
-<%- include('../partials/serverNav', { server, active: 'backups' }) %>
+    <%- include('../partials/serverNav', { server, active: 'backups' }) %>
 
-<% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
+        <% const _serverStopped=['stopped', 'crashed' ].includes(server.state); %>
 
-<!-- CSRF token for JS fetch calls -->
-<input type="hidden" id="csrf-token" value="<%= csrfToken %>">
+            <!-- CSRF token for JS fetch calls -->
+            <input type="hidden" id="csrf-token" value="<%= csrfToken %>">
 
-<div class="row justify-content-center">
-    <div class="col-lg-8 col-xl-6">
+            <div class="row justify-content-center">
+                <div class="col-lg-8 col-xl-6">
 
-        <!-- Manual Backup -->
-        <div class="card mb-3">
-            <div class="card-body p-4">
-                <div class="d-flex align-items-center justify-content-between">
-                    <div>
-                        <h6 class="mb-1 d-flex align-items-center gap-2">
-                            <span class="material-icons-outlined" style="font-size: 1.2rem;">backup</span>
-                            Manual Backup
-                        </h6>
-                        <small class="text-body-secondary">Create a full backup of the server directory.</small>
-                    </div>
-                    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1" id="create-backup-btn">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">add</span>
-                        Create Backup
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Scheduled Backups -->
-        <div class="card mb-3">
-            <div class="card-body p-4">
-                <h6 class="mb-3 d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined" style="font-size: 1.2rem;">schedule</span>
-                    Scheduled Backups
-                </h6>
-                <div class="form-check form-switch mb-3">
-                    <input class="form-check-input" type="checkbox" id="scheduleEnabled"
-                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
-                        <%= schedule.enabled ? 'checked' : '' %>>
-                    <label class="form-check-label" for="scheduleEnabled">Enable scheduled backups</label>
-                </div>
-                <div id="schedule-settings" class="<%= schedule.enabled ? '' : 'd-none' %>">
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label for="intervalHours" class="form-label">Backup Interval</label>
-                            <select class="form-select form-select-sm" id="intervalHours">
-                                <% [1,2,4,6,8,12,24,48,72].forEach(function(h) { %>
-                                <option value="<%= h %>" <%= schedule.intervalHours === h ? 'selected' : '' %>>
-                                    Every <%= h %> hour<%= h > 1 ? 's' : '' %>
-                                </option>
-                                <% }) %>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="countdownMinutes" class="form-label">Warning Countdown</label>
-                            <div class="input-group input-group-sm">
-                                <input type="number" class="form-control" id="countdownMinutes"
-                                    value="<%= schedule.countdownMinutes %>" min="1" max="30">
-                                <span class="input-group-text">minutes</span>
-                            </div>
-                            <div class="form-text">Chat warnings before backup starts.</div>
-                        </div>
-                    </div>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="save-schedule-btn"
-                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
-                        Save Schedule
-                    </button>
-                    <small class="text-body-secondary ms-2" id="next-backup-text"><% if (nextBackupAt) { %>Next backup: <span class="format-date" data-iso="<%= nextBackupAt %>"></span><% } %></small>
-                </div>
-            </div>
-        </div>
-
-        <!-- Retention Policy -->
-        <div class="card mb-3">
-            <div class="card-body p-4">
-                <h6 class="mb-1 d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined" style="font-size: 1.2rem;">auto_delete</span>
-                    Retention Policy
-                </h6>
-                <small class="text-body-secondary d-block mb-3">Applied after every backup, both manual and scheduled.</small>
-                <div class="row g-3 mb-3">
-                    <div class="col-md-6">
-                        <label for="retentionCount" class="form-label">Keep Last N Backups</label>
-                        <input type="number" class="form-control form-control-sm" id="retentionCount"
-                            value="<%= schedule.retentionCount %>" min="0" max="100">
-                        <div class="form-text">0 = unlimited</div>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="retentionDays" class="form-label">Keep Backups From Last N Days</label>
-                        <input type="number" class="form-control form-control-sm" id="retentionDays"
-                            value="<%= schedule.retentionDays %>" min="0" max="365">
-                        <div class="form-text">0 = unlimited. Both policies apply when set.</div>
-                    </div>
-                </div>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="save-retention-btn"
-                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
-                    Save Retention
-                </button>
-            </div>
-        </div>
-
-        <!-- Backup List -->
-        <div class="card">
-            <div class="card-header d-flex align-items-center justify-content-between">
-                <strong class="d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined" style="font-size: 1.2rem;">inventory_2</span>
-                    Backups (<%= backups.length %>)
-                </strong>
-            </div>
-            <% if (backups.length === 0) { %>
-            <div class="card-body text-center text-body-secondary py-5">
-                <span class="material-icons-outlined mb-2" style="font-size: 3rem; opacity: 0.3;">backup</span>
-                <p class="mb-0">No backups yet. Create one above to get started.</p>
-            </div>
-            <% } else { %>
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
-                    <thead>
-                        <tr>
-                            <th style="width: 40px;"></th>
-                            <th>Name</th>
-                            <th style="width: 100px;">Size</th>
-                            <th style="width: 170px;">Created</th>
-                            <th style="width: 80px;">Type</th>
-                            <th style="width: 120px;"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <% backups.forEach(function(backup) { %>
-                        <tr>
-                            <td class="text-center">
-                                <span class="material-icons-outlined text-body-secondary align-middle" style="font-size: 1.2rem;">
-                                    <%= backup.type === 'scheduled' ? 'schedule' : 'backup' %>
-                                </span>
-                            </td>
-                            <td><%= backup.name %></td>
-                            <td class="text-body-secondary small"><%= backup.sizeFormatted %></td>
-                            <td class="text-body-secondary small"><span class="format-date" data-iso="<%= backup.createdAt %>"></span></td>
-                            <td>
-                                <span class="badge bg-<%= backup.type === 'scheduled' ? 'info' : 'secondary' %>">
-                                    <%= backup.type %>
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                <div class="d-inline-flex gap-1">
-                                    <!-- Download -->
-                                    <a href="/servers/<%= server.id %>/backups/<%= backup.id %>/download"
-                                       class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center"
-                                       style="width: 32px; height: 32px; padding: 0;" title="Download">
-                                        <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
-                                    </a>
-                                    <!-- Restore -->
-                                    <button type="button"
-                                        class="btn btn-outline-primary btn-sm d-inline-flex align-items-center justify-content-center restore-btn"
-                                        style="width: 32px; height: 32px; padding: 0;" title="Restore"
-                                        data-backup-id="<%= backup.id %>" data-backup-name="<%= backup.name %>">
-                                        <span class="material-icons-outlined" style="font-size: 1rem;">restore</span>
-                                    </button>
-                                    <!-- Delete -->
-                                    <button type="button"
-                                        class="btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center delete-btn"
-                                        style="width: 32px; height: 32px; padding: 0;" title="Delete"
-                                        data-backup-id="<%= backup.id %>" data-backup-name="<%= backup.name %>">
-                                        <span class="material-icons-outlined" style="font-size: 1rem;">delete</span>
-                                    </button>
+                    <!-- Manual Backup -->
+                    <div class="card mb-3">
+                        <div class="card-body p-4">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div>
+                                    <h6 class="mb-1 d-flex align-items-center gap-2">
+                                        <span class="material-icons-outlined" style="font-size: 1.2rem;">backup</span>
+                                        Manual Backup
+                                    </h6>
+                                    <small class="text-body-secondary">Create a full backup of the server
+                                        directory.</small>
                                 </div>
-                            </td>
-                        </tr>
-                        <% }) %>
-                    </tbody>
-                </table>
-            </div>
-            <% } %>
-        </div>
-
-    </div>
-</div>
-
-<!-- Create Backup Modal -->
-<div class="modal fade" id="createBackupModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-success">backup</span>
-                    Create Backup
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" action="/servers/<%= server.id %>/backups/create" id="backup-form">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <input type="hidden" name="stopFirst" id="backupStopFirst" value="<%= _serverStopped ? 'false' : 'true' %>">
-                <input type="hidden" name="startAfter" id="backupStartAfter" value="<%= _serverStopped ? 'false' : 'true' %>">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="backupName" class="form-label">Backup Name</label>
-                        <input type="text" class="form-control form-control-sm" id="backupName" name="name"
-                            placeholder="Manual Backup" maxlength="50" autocomplete="off"
-                            pattern="[A-Za-z0-9 _\-]{1,50}">
-                        <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+                                <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1"
+                                    id="create-backup-btn">
+                                    <span class="material-icons-outlined" style="font-size: 1rem;">add</span>
+                                    Create Backup
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <% if (!_serverStopped) { %>
-                    <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3" role="alert">
-                        <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
-                        <small>The server will be stopped to create the backup.</small>
+
+                    <!-- Scheduled Backups -->
+                    <div class="card mb-3">
+                        <div class="card-body p-4">
+                            <h6 class="mb-3 d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined" style="font-size: 1.2rem;">schedule</span>
+                                Scheduled Backups
+                            </h6>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="scheduleEnabled"
+                                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>" <%=schedule.enabled
+                                    ? 'checked' : '' %>>
+                                <label class="form-check-label" for="scheduleEnabled">Enable scheduled backups</label>
+                            </div>
+                            <div id="schedule-settings" class="<%= schedule.enabled ? '' : 'd-none' %>">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-6">
+                                        <label for="intervalHours" class="form-label">Backup Interval</label>
+                                        <select class="form-select form-select-sm" id="intervalHours">
+                                            <% [1,2,4,6,8,12,24,48,72].forEach(function(h) { %>
+                                                <option value="<%= h %>" <%=schedule.intervalHours===h ? 'selected' : ''
+                                                    %>>
+                                                    Every <%= h %> hour<%= h> 1 ? 's' : '' %>
+                                                </option>
+                                                <% }) %>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="countdownMinutes" class="form-label">Warning Countdown</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="number" class="form-control" id="countdownMinutes"
+                                                value="<%= schedule.countdownMinutes %>" min="1" max="30">
+                                            <span class="input-group-text">minutes</span>
+                                        </div>
+                                        <div class="form-text">Chat warnings before backup starts.</div>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="save-schedule-btn"
+                                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                    Save Schedule
+                                </button>
+                                <small class="text-body-secondary ms-2" id="next-backup-text">
+                                    <% if (nextBackupAt) { %>Next backup: <span class="format-date"
+                                            data-iso="<%= nextBackupAt %>"></span>
+                                        <% } %>
+                                </small>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="startAfterBackup" checked>
-                        <label class="form-check-label" for="startAfterBackup">Start server after backup</label>
+
+                    <!-- Retention Policy -->
+                    <div class="card mb-3">
+                        <div class="card-body p-4">
+                            <h6 class="mb-1 d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined" style="font-size: 1.2rem;">auto_delete</span>
+                                Retention Policy
+                            </h6>
+                            <small class="text-body-secondary d-block mb-3">Applied after every backup, both manual and
+                                scheduled.</small>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label for="retentionCount" class="form-label">Keep Last N Backups</label>
+                                    <input type="number" class="form-control form-control-sm" id="retentionCount"
+                                        value="<%= schedule.retentionCount %>" min="0" max="100">
+                                    <div class="form-text">0 = unlimited</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="retentionDays" class="form-label">Keep Backups From Last N Days</label>
+                                    <input type="number" class="form-control form-control-sm" id="retentionDays"
+                                        value="<%= schedule.retentionDays %>" min="0" max="365">
+                                    <div class="form-text">0 = unlimited. Both policies apply when set.</div>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="save-retention-btn"
+                                data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                Save Retention
+                            </button>
+                        </div>
                     </div>
-                    <% } %>
-                </div>
-                <div class="modal-footer border-0 pt-0">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-<%= _serverStopped ? 'success' : 'warning' %> btn-sm" id="confirm-backup-btn">
-                        <%= _serverStopped ? 'Create Backup' : 'Stop & Backup' %>
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 
-<!-- Restore Modal -->
-<div class="modal fade" id="restoreModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-primary">restore</span>
-                    Restore Backup
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>Restoring will replace all current server files. This cannot be undone.</p>
-                <% if (!_serverStopped) { %>
-                <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3" role="alert">
-                    <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
-                    <small>The server will be stopped to restore the backup.</small>
+                    <!-- Backup List -->
+                    <div class="card">
+                        <div class="card-header d-flex align-items-center justify-content-between">
+                            <strong class="d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined" style="font-size: 1.2rem;">inventory_2</span>
+                                Backups (<%= backups.length %>)
+                            </strong>
+                        </div>
+                        <% if (backups.length===0) { %>
+                            <div class="card-body text-center text-body-secondary py-5">
+                                <span class="material-icons-outlined mb-2"
+                                    style="font-size: 3rem; opacity: 0.3;">backup</span>
+                                <p class="mb-0">No backups yet. Create one above to get started.</p>
+                            </div>
+                            <% } else { %>
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 align-middle">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 40px;"></th>
+                                                <th>Name</th>
+                                                <th style="width: 100px;">Size</th>
+                                                <th style="width: 170px;">Created</th>
+                                                <th style="width: 80px;">Type</th>
+                                                <th style="width: 120px;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <% backups.forEach(function(backup) { %>
+                                                <tr>
+                                                    <td class="text-center">
+                                                        <span
+                                                            class="material-icons-outlined text-body-secondary align-middle"
+                                                            style="font-size: 1.2rem;">
+                                                            <%= backup.type==='scheduled' ? 'schedule' : 'backup' %>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <%= backup.name %>
+                                                    </td>
+                                                    <td class="text-body-secondary small">
+                                                        <%= backup.sizeFormatted %>
+                                                    </td>
+                                                    <td class="text-body-secondary small"><span class="format-date"
+                                                            data-iso="<%= backup.createdAt %>"></span></td>
+                                                    <td>
+                                                        <span
+                                                            class="badge bg-<%= backup.type === 'scheduled' ? 'info' : 'secondary' %>">
+                                                            <%= backup.type %>
+                                                        </span>
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <div class="d-inline-flex gap-1">
+                                                            <!-- Download -->
+                                                            <a href="/servers/<%= server.id %>/backups/<%= backup.id %>/download"
+                                                                class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center"
+                                                                style="width: 32px; height: 32px; padding: 0;"
+                                                                title="Download">
+                                                                <span class="material-icons-outlined"
+                                                                    style="font-size: 1rem;">download</span>
+                                                            </a>
+                                                            <!-- Restore -->
+                                                            <button type="button"
+                                                                class="btn btn-outline-primary btn-sm d-inline-flex align-items-center justify-content-center restore-btn"
+                                                                style="width: 32px; height: 32px; padding: 0;"
+                                                                title="Restore" data-backup-id="<%= backup.id %>"
+                                                                data-backup-name="<%= backup.name %>">
+                                                                <span class="material-icons-outlined"
+                                                                    style="font-size: 1rem;">restore</span>
+                                                            </button>
+                                                            <!-- Delete -->
+                                                            <button type="button"
+                                                                class="btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center delete-btn"
+                                                                style="width: 32px; height: 32px; padding: 0;"
+                                                                title="Delete" data-backup-id="<%= backup.id %>"
+                                                                data-backup-name="<%= backup.name %>">
+                                                                <span class="material-icons-outlined"
+                                                                    style="font-size: 1rem;">delete</span>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                <% }) %>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <% } %>
+                    </div>
+
                 </div>
-                <% } %>
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="startAfterRestore" checked>
-                    <label class="form-check-label" for="startAfterRestore">Start server after restore</label>
+            </div>
+
+            <!-- Create Backup Modal -->
+            <div class="modal fade" id="createBackupModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-success">backup</span>
+                                Create Backup
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <form method="POST" action="/servers/<%= server.id %>/backups/create" id="backup-form">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <input type="hidden" name="stopFirst" id="backupStopFirst"
+                                value="<%= _serverStopped ? 'false' : 'true' %>">
+                            <input type="hidden" name="startAfter" id="backupStartAfter"
+                                value="<%= _serverStopped ? 'false' : 'true' %>">
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label for="backupName" class="form-label">Backup Name</label>
+                                    <input type="text" class="form-control form-control-sm" id="backupName" name="name"
+                                        placeholder="Manual Backup" maxlength="50" autocomplete="off"
+                                        pattern="[A-Za-z0-9 _\-]{1,50}">
+                                    <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens,
+                                        underscores.</div>
+                                </div>
+                                <% if (!_serverStopped) { %>
+                                    <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3"
+                                        role="alert">
+                                        <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
+                                        <small>The server will be stopped to create the backup.</small>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="startAfterBackup" checked>
+                                        <label class="form-check-label" for="startAfterBackup">Start server after
+                                            backup</label>
+                                    </div>
+                                    <% } %>
+                            </div>
+                            <div class="modal-footer border-0 pt-0">
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                    data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit"
+                                    class="btn btn-<%= _serverStopped ? 'success' : 'warning' %> btn-sm"
+                                    id="confirm-backup-btn">
+                                    <%= _serverStopped ? 'Create Backup' : 'Stop & Backup' %>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <form method="POST" id="restore-form" action="" style="display:inline;">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="startAfter" id="startAfterInput" value="true">
-                    <button type="submit" class="btn btn-primary btn-sm" id="confirm-restore-btn">Restore</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Delete Modal -->
-<div class="modal fade" id="deleteBackupModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-danger">delete</span>
-                    Delete Backup
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <!-- Restore Modal -->
+            <div class="modal fade" id="restoreModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-primary">restore</span>
+                                Restore Backup
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Restoring will replace all current server files. This cannot be undone.</p>
+                            <% if (!_serverStopped) { %>
+                                <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3"
+                                    role="alert">
+                                    <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
+                                    <small>The server will be stopped to restore the backup.</small>
+                                </div>
+                                <% } %>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="startAfterRestore" checked>
+                                        <label class="form-check-label" for="startAfterRestore">Start server after
+                                            restore</label>
+                                    </div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                data-bs-dismiss="modal">Cancel</button>
+                            <form method="POST" id="restore-form" action="" style="display:inline;">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="startAfter" id="startAfterInput" value="true">
+                                <button type="submit" class="btn btn-primary btn-sm"
+                                    id="confirm-restore-btn">Restore</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="modal-body">
-                Permanently delete backup "<span id="delete-backup-name"></span>"?
+
+            <!-- Delete Modal -->
+            <div class="modal fade" id="deleteBackupModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-danger">delete</span>
+                                Delete Backup
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            Permanently delete backup "<span id="delete-backup-name"></span>"?
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                data-bs-dismiss="modal">Cancel</button>
+                            <form method="POST" id="delete-form" action="" style="display:inline;">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <form method="POST" id="delete-form" action="" style="display:inline;">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
 
 
-<%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/backups.js'] }) %>
+            <%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/backups.js' ] }) %>

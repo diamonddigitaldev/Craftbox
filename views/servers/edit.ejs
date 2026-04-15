@@ -1,558 +1,668 @@
-<%- include('../partials/head', { title: server.name + ' Settings', navbar: true, fluid: true }) %>
+<%- include('../partials/head', { title: server.name + ' Settings' , navbar: true, fluid: true }) %>
 
-<%- include('../partials/serverNav', { server, active: 'settings' }) %>
+    <%- include('../partials/serverNav', { server, active: 'settings' }) %>
 
-<%
-const _displayVersion = (server.serverType || 'vanilla') === 'custom'
-    ? '(Unknown Version)'
-    : (server.version || '(Unknown Version)');
-const _canChangeJar = ['stopped', 'crashed'].includes(server.state);
-%>
+        <% const _displayVersion=(server.serverType || 'vanilla' )==='custom' ? '(Unknown Version)' : (server.version
+            || '(Unknown Version)' ); const _canChangeJar=['stopped', 'crashed' ].includes(server.state); %>
 
-<div class="row justify-content-center">
-    <div class="col-lg-8 col-xl-6">
-        <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
-            <span class="material-icons-outlined">info</span>
-            Changes take effect on next server restart.
-        </div>
-
-        <div class="card">
-            <div class="card-body p-4">
-                <form method="POST" action="/servers/<%= server.id %>/edit">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-
-                    <div class="mb-3">
-                        <label for="name" class="form-label required-star">Server Name</label>
-                        <input type="text" class="form-control" id="name" name="name" required
-                            minlength="1" maxlength="50" pattern="[a-zA-Z0-9 _\-]+"
-                            value="<%= server.name %>">
-                        <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+            <div class="row justify-content-center">
+                <div class="col-lg-8 col-xl-6">
+                    <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+                        <span class="material-icons-outlined">info</span>
+                        Changes take effect on next server restart.
                     </div>
 
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label">Server Type</label>
-                            <input type="text" class="form-control" value="<%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %>" disabled>
-                        </div>
-                        <% if ((server.serverType || 'vanilla') === 'custom') { %>
-                        <div class="col-md-8 mt-3 mt-md-0">
-                            <label for="customJarUrl" class="form-label">JAR Download URL</label>
-                            <input type="url" class="form-control" id="customJarUrl" name="customJarUrl"
-                                value="<%= server.customJarUrl || '' %>"
-                                data-current-url="<%= server.customJarUrl || '' %>"
-                                placeholder="https://example.com/server.jar"
-                                <%= _canChangeJar ? '' : 'disabled' %>
-                                title="<%= _canChangeJar ? '' : 'Stop the server to change the JAR URL' %>">
-                            <div class="form-text"><%= _canChangeJar ? 'Change the URL to replace the server jar.' : 'Stop the server to change the JAR URL.' %></div>
-                        </div>
-                        <% } else { %>
-                        <div class="col-md-4 mt-3 mt-md-0">
-                            <label class="form-label">Version</label>
-                            <select class="form-select" id="version" name="version"
-                                data-server-type="<%= server.serverType || 'vanilla' %>"
-                                data-current-version="<%= server.version %>"
-                                <%= _canChangeJar ? '' : 'disabled' %>
-                                title="<%= _canChangeJar ? '' : 'Stop the server to change the version' %>">
-                                <option value="<%= server.version %>" selected><%= server.version %></option>
-                            </select>
-                            <div class="form-text"><%= _canChangeJar ? 'Only upgrades are permitted — downgrades are not allowed.' : 'Stop the server to change the version.' %></div>
-                        </div>
-                        <% } %>
-                        <div class="col-md-4 mt-3 mt-md-0">
-                            <label for="port" class="form-label required-star">Server Port</label>
-                            <input type="number" class="form-control" id="port" name="port"
-                                value="<%= server.port %>" min="1024" max="65535" required>
-                        </div>
-                    </div>
+                    <div class="card">
+                        <div class="card-body p-4">
+                            <form method="POST" action="/servers/<%= server.id %>/edit">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label for="gamemode" class="form-label">Game Mode</label>
-                            <select class="form-select" id="gamemode" name="gamemode">
-                                <option value="survival" <%= server.gamemode === 'survival' ? 'selected' : '' %>>Survival</option>
-                                <option value="creative" <%= server.gamemode === 'creative' ? 'selected' : '' %>>Creative</option>
-                                <option value="adventure" <%= server.gamemode === 'adventure' ? 'selected' : '' %>>Adventure</option>
-                                <option value="spectator" <%= server.gamemode === 'spectator' ? 'selected' : '' %>>Spectator</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4 mt-3 mt-md-0">
-                            <label for="difficulty" class="form-label">Difficulty</label>
-                            <select class="form-select" id="difficulty" name="difficulty">
-                                <option value="peaceful" <%= server.difficulty === 'peaceful' ? 'selected' : '' %>>Peaceful</option>
-                                <option value="easy" <%= server.difficulty === 'easy' ? 'selected' : '' %>>Easy</option>
-                                <option value="normal" <%= server.difficulty === 'normal' ? 'selected' : '' %>>Normal</option>
-                                <option value="hard" <%= server.difficulty === 'hard' ? 'selected' : '' %>>Hard</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4 mt-3 mt-md-0">
-                            <label for="seed" class="form-label">World Seed</label>
-                            <input type="text" class="form-control" id="seed" name="seed"
-                                value="<%= server.seed || '' %>" placeholder="Optional">
-                        </div>
-                    </div>
-
-                    <!-- Advanced Options -->
-                    <div class="mb-3 text-center">
-                        <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 advanced-toggle"
-                           data-bs-toggle="collapse" href="#advancedOptions" role="button" aria-expanded="false">
-                            <span class="material-icons-outlined" style="font-size: 1rem;">tune</span>
-                            Advanced Options
-                            <span class="material-icons-outlined advanced-arrow" style="font-size: 1rem;">expand_more</span>
-                        </a>
-                        <div class="collapse mt-3" id="advancedOptions">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <label for="memory" class="form-label required-star">Memory (MB)</label>
-                                    <input type="number" class="form-control" id="memory" name="memory"
-                                        value="<%= server.memory %>" min="512" max="65536" step="256" required>
-                                    <div class="form-text">RAM allocated to the server (-Xmx).</div>
+                                <div class="mb-3">
+                                    <label for="name" class="form-label required-star">Server Name</label>
+                                    <input type="text" class="form-control" id="name" name="name" required minlength="1"
+                                        maxlength="50" pattern="[a-zA-Z0-9 _\-]+" value="<%= server.name %>">
+                                    <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens,
+                                        underscores.</div>
                                 </div>
-                                <div class="col-md-6 mt-3 mt-md-0">
-                                    <label for="javaArgs" class="form-label">Additional JVM Arguments</label>
-                                    <input type="text" class="form-control" id="javaArgs" name="javaArgs"
-                                        value="<%= server.javaArgs || '' %>" placeholder="-XX:+UseG1GC">
-                                    <div class="form-text">Optional. Extra Java flags.</div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Server Type</label>
+                                        <input type="text" class="form-control"
+                                            value="<%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %>"
+                                            disabled>
+                                    </div>
+                                    <% if ((server.serverType || 'vanilla' )==='custom' ) { %>
+                                        <div class="col-md-8 mt-3 mt-md-0">
+                                            <label for="customJarUrl" class="form-label">JAR Download URL</label>
+                                            <input type="url" class="form-control" id="customJarUrl" name="customJarUrl"
+                                                value="<%= server.customJarUrl || '' %>"
+                                                data-current-url="<%= server.customJarUrl || '' %>"
+                                                placeholder="https://example.com/server.jar" <%=_canChangeJar ? ''
+                                                : 'disabled' %>
+                                            title="<%= _canChangeJar ? '' : 'Stop the server to change the JAR URL' %>">
+                                                <div class="form-text">
+                                                    <%= _canChangeJar ? 'Change the URL to replace the server jar.'
+                                                        : 'Stop the server to change the JAR URL.' %>
+                                                </div>
+                                        </div>
+                                        <% } else { %>
+                                            <div class="col-md-4 mt-3 mt-md-0">
+                                                <label class="form-label">Version</label>
+                                                <select class="form-select" id="version" name="version"
+                                                    data-server-type="<%= server.serverType || 'vanilla' %>"
+                                                    data-current-version="<%= server.version %>" <%=_canChangeJar ? ''
+                                                    : 'disabled' %>
+                                                    title="<%= _canChangeJar ? ''
+                                                        : 'Stop the server to change the version' %>">
+                                                        <option value="<%= server.version %>" selected>
+                                                            <%= server.version %>
+                                                        </option>
+                                                </select>
+                                                <div class="form-text">
+                                                    <%= _canChangeJar
+                                                        ? 'Only upgrades are permitted — downgrades are not allowed.'
+                                                        : 'Stop the server to change the version.' %>
+                                                </div>
+                                            </div>
+                                            <% } %>
+                                                <div class="col-md-4 mt-3 mt-md-0">
+                                                    <label for="port" class="form-label required-star">Server
+                                                        Port</label>
+                                                    <input type="number" class="form-control" id="port" name="port"
+                                                        value="<%= server.port %>" min="1024" max="65535" required>
+                                                </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="gamemode" class="form-label">Game Mode</label>
+                                        <select class="form-select" id="gamemode" name="gamemode">
+                                            <option value="survival" <%=server.gamemode==='survival' ? 'selected' : ''
+                                                %>>Survival</option>
+                                            <option value="creative" <%=server.gamemode==='creative' ? 'selected' : ''
+                                                %>>Creative</option>
+                                            <option value="adventure" <%=server.gamemode==='adventure' ? 'selected' : ''
+                                                %>>Adventure</option>
+                                            <option value="spectator" <%=server.gamemode==='spectator' ? 'selected' : ''
+                                                %>>Spectator</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 mt-3 mt-md-0">
+                                        <label for="difficulty" class="form-label">Difficulty</label>
+                                        <select class="form-select" id="difficulty" name="difficulty">
+                                            <option value="peaceful" <%=server.difficulty==='peaceful' ? 'selected' : ''
+                                                %>>Peaceful</option>
+                                            <option value="easy" <%=server.difficulty==='easy' ? 'selected' : '' %>>Easy
+                                            </option>
+                                            <option value="normal" <%=server.difficulty==='normal' ? 'selected' : '' %>
+                                                >Normal</option>
+                                            <option value="hard" <%=server.difficulty==='hard' ? 'selected' : '' %>>Hard
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 mt-3 mt-md-0">
+                                        <label for="seed" class="form-label">World Seed</label>
+                                        <input type="text" class="form-control" id="seed" name="seed"
+                                            value="<%= server.seed || '' %>" placeholder="Optional">
+                                    </div>
+                                </div>
+
+                                <!-- Advanced Options -->
+                                <div class="mb-3 text-center">
+                                    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 advanced-toggle"
+                                        data-bs-toggle="collapse" href="#advancedOptions" role="button"
+                                        aria-expanded="false">
+                                        <span class="material-icons-outlined" style="font-size: 1rem;">tune</span>
+                                        Advanced Options
+                                        <span class="material-icons-outlined advanced-arrow"
+                                            style="font-size: 1rem;">expand_more</span>
+                                    </a>
+                                    <div class="collapse mt-3" id="advancedOptions">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <label for="memory" class="form-label required-star">Memory (MB)</label>
+                                                <input type="number" class="form-control" id="memory" name="memory"
+                                                    value="<%= server.memory %>" min="512" max="65536" step="256"
+                                                    required>
+                                                <div class="form-text">RAM allocated to the server (-Xmx).</div>
+                                            </div>
+                                            <div class="col-md-6 mt-3 mt-md-0">
+                                                <label for="javaArgs" class="form-label">Additional JVM
+                                                    Arguments</label>
+                                                <input type="text" class="form-control" id="javaArgs" name="javaArgs"
+                                                    value="<%= server.javaArgs || '' %>" placeholder="-XX:+UseG1GC">
+                                                <div class="form-text">Optional. Extra Java flags.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <hr class="my-4">
+
+                                <button type="submit"
+                                    class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2"
+                                    data-validate-required>
+                                    <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
+                                    Save Changes
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Server Icon -->
+                    <div class="card mt-3">
+                        <div class="card-body p-4 text-center">
+                            <h6 class="mb-3">Server Icon</h6>
+                            <div class="d-inline-block position-relative mb-3" id="icon-drop-zone"
+                                data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                <div class="icon-drop-area border rounded"
+                                    style="width: 128px; height: 128px; overflow: hidden; background: #1a1a2e; cursor: pointer;">
+                                    <img id="icon-preview" <% if (hasIcon) { %>src="/api/servers/<%= server.id %>/icon"
+                                        <% } %>
+                                            alt="Server icon" width="128" height="128"
+                                            style="image-rendering: pixelated; display: none;">
+                                            <div id="icon-placeholder"
+                                                class="d-flex flex-column align-items-center justify-content-center text-body-secondary"
+                                                style="width: 128px; height: 128px;">
+                                                <span class="material-icons-outlined"
+                                                    style="font-size: 2.5rem; opacity: 0.35;">image</span>
+                                                <small style="font-size: 0.65rem; opacity: 0.5; margin-top: 2px;">Click
+                                                    or drop PNG</small>
+                                            </div>
+                                </div>
+                                <button type="button"
+                                    class="btn btn-dark btn-sm position-absolute d-none rounded-circle p-0 d-flex align-items-center justify-content-center"
+                                    id="icon-delete-btn"
+                                    style="width: 22px; height: 22px; top: -6px; right: -6px; line-height: 1; z-index: 1; border: 1px solid rgba(255,255,255,0.2);">
+                                    <span class="material-icons-outlined" style="font-size: 0.85rem;">close</span>
+                                </button>
+                                <input type="file" id="icon-upload" accept="image/png" class="d-none">
+                            </div>
+                            <div class="d-flex gap-2 justify-content-center mb-2">
+                                <button type="button"
+                                    class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                                    id="icon-reset-btn" data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                    <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span>
+                                    Reset to Default
+                                </button>
+                            </div>
+                            <p class="text-body-secondary mb-0" style="font-size: 0.8rem;">
+                                The icon shown in the Minecraft server list. PNG only, max 20 MB — will be resized to
+                                64&times;64 automatically.
+                            </p>
+                            <div id="icon-status" class="mt-2 small"></div>
+                        </div>
+                    </div>
+
+                    <!-- MOTD Editor -->
+                    <div class="card mt-3">
+                        <div class="card-body p-4">
+                            <h6 class="mb-3">MOTD</h6>
+
+                            <!-- Live Preview -->
+                            <div class="mb-3 rounded"
+                                style="background: #2b2b2b; border: 1px solid rgba(255,255,255,0.08); overflow-x: auto;">
+                                <div class="p-3"
+                                    style="font-family: 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace; min-width: 280px;">
+                                    <div id="motd-preview"
+                                        style="font-size: 0.85rem; line-height: 1.4; white-space: pre;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Editor -->
+                            <div class="mb-3">
+                                <textarea class="form-control" id="motd-input" rows="2" maxlength="400"
+                                    placeholder="A Minecraft Server" autocomplete="off"
+                                    style="resize: none;"></textarea>
+                                <div class="form-text">Two lines maximum. Use the buttons below to insert color and
+                                    formatting codes.</div>
+                            </div>
+
+                            <!-- Color Palette -->
+                            <div class="mb-2">
+                                <label class="form-label" style="font-size: 0.85rem;">Colors</label>
+                                <div class="d-flex flex-wrap gap-1 motd-colors">
+                                    <button type="button" class="motd-color-btn" data-code="0" title="Black"
+                                        style="background:#000000;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="1" title="Dark Blue"
+                                        style="background:#0000AA;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="2" title="Dark Green"
+                                        style="background:#00AA00;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="3" title="Dark Aqua"
+                                        style="background:#00AAAA;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="4" title="Dark Red"
+                                        style="background:#AA0000;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="5" title="Dark Purple"
+                                        style="background:#AA00AA;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="6" title="Gold"
+                                        style="background:#FFAA00;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="7" title="Gray"
+                                        style="background:#AAAAAA;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="8" title="Dark Gray"
+                                        style="background:#555555;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="9" title="Blue"
+                                        style="background:#5555FF;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="a" title="Green"
+                                        style="background:#55FF55;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="b" title="Aqua"
+                                        style="background:#55FFFF;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="c" title="Red"
+                                        style="background:#FF5555;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="d" title="Light Purple"
+                                        style="background:#FF55FF;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="e" title="Yellow"
+                                        style="background:#FFFF55;"></button>
+                                    <button type="button" class="motd-color-btn" data-code="f" title="White"
+                                        style="background:#FFFFFF;"></button>
+                                </div>
+                            </div>
+
+                            <!-- Style Buttons -->
+                            <div class="mb-3">
+                                <label class="form-label" style="font-size: 0.85rem;">Formatting</label>
+                                <div class="d-flex flex-wrap gap-1">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn"
+                                        data-code="l" title="Bold">
+                                        <strong>B</strong>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn"
+                                        data-code="o" title="Italic">
+                                        <em>I</em>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn"
+                                        data-code="n" title="Underline">
+                                        <span style="text-decoration: underline;">U</span>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn"
+                                        data-code="m" title="Strikethrough">
+                                        <span style="text-decoration: line-through;">S</span>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn"
+                                        data-code="k" title="Obfuscated">
+                                        <span style="opacity: 0.7;">?</span>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn"
+                                        data-code="r" title="Reset formatting">
+                                        <span class="material-icons-outlined"
+                                            style="font-size: 0.9rem; vertical-align: middle;">format_clear</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Save -->
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="motd-save-btn"
+                                data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                Save MOTD
+                            </button>
+                            <div id="motd-status" class="mt-2 small"></div>
+                        </div>
+                    </div>
+
+                    <%# Pass current MOTD to JS %>
+                        <script id="motd-data"
+                            type="application/json"><%- JSON.stringify({ motd: currentMotd }) %></script>
+
+                        <!-- Server Behavior -->
+                        <div class="card mt-3">
+                            <div class="card-body p-4">
+                                <h6 class="mb-3">Server Behavior</h6>
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input toggle-switch" type="checkbox" id="autoRestart"
+                                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                                        data-endpoint="autorestart" <%=server.autoRestart ? 'checked' : '' %>>
+                                    <label class="form-check-label" for="autoRestart">Auto-restart on crash</label>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input toggle-switch" type="checkbox" id="autoStart"
+                                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                                        data-endpoint="autostart" <%=server.autoStart ? 'checked' : '' %>>
+                                    <label class="form-check-label" for="autoStart">Start with Craftbox</label>
+                                </div>
+                                <hr class="my-3">
+                                <h6 class="mb-2">Status Page</h6>
+                                <div class="form-check form-switch mb-1">
+                                    <input class="form-check-input toggle-switch" type="checkbox" id="statusPagePublic"
+                                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                                        data-endpoint="statuspublic" <%=server.statusPagePublic ? 'checked' : '' %>>
+                                    <label class="form-check-label" for="statusPagePublic">
+                                        Status Page Visibility: <strong id="statusPageLabel">
+                                            <%= server.statusPagePublic ? 'Public' : 'Unlisted' %>
+                                        </strong>
+                                    </label>
+                                </div>
+                                <small class="text-body-secondary d-block mb-3">
+                                    <strong>Public</strong>: Server appears on the <a href="/status"
+                                        target="_blank">/status</a> page for anyone to see.<br>
+                                    <strong>Unlisted</strong> (default): Only accessible via its <a
+                                        href="/status/<%= server.id %>" target="_blank">direct link</a>.
+                                </small>
+                                <div>
+                                    <label for="advertisedIp" class="form-label d-flex align-items-center gap-1">
+                                        Advertised IP
+                                        <span class="material-icons-outlined text-body-secondary"
+                                            style="font-size: 1rem; cursor: help;" data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="Use this if Craftbox is behind a reverse proxy, running in Docker with mapped ports, or if players connect via a domain name different from the Craftbox hostname.">
+                                            help_outline
+                                        </span>
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="advertisedIp" name="advertisedIp"
+                                            value="<%= server.advertisedIp || '' %>"
+                                            placeholder="e.g. play.example.com or 203.0.113.5" maxlength="253"
+                                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                        <button type="button" class="btn btn-outline-secondary" id="save-advertised-ip"
+                                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Save</button>
+                                    </div>
+                                    <div class="form-text">Override the IP shown on the status page. Leave blank to use
+                                        the Craftbox hostname automatically.</div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <hr class="my-4">
-
-                    <button type="submit" class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2" data-validate-required>
-                        <span class="material-icons-outlined" style="font-size: 1.2rem;">save</span>
-                        Save Changes
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <!-- Server Icon -->
-        <div class="card mt-3">
-            <div class="card-body p-4 text-center">
-                <h6 class="mb-3">Server Icon</h6>
-                <div class="d-inline-block position-relative mb-3" id="icon-drop-zone"
-                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
-                    <div class="icon-drop-area border rounded"
-                        style="width: 128px; height: 128px; overflow: hidden; background: #1a1a2e; cursor: pointer;">
-                        <img id="icon-preview" <% if (hasIcon) { %>src="/api/servers/<%= server.id %>/icon"<% } %>
-                            alt="Server icon" width="128" height="128"
-                            style="image-rendering: pixelated; display: none;">
-                        <div id="icon-placeholder" class="d-flex flex-column align-items-center justify-content-center text-body-secondary"
-                            style="width: 128px; height: 128px;">
-                            <span class="material-icons-outlined" style="font-size: 2.5rem; opacity: 0.35;">image</span>
-                            <small style="font-size: 0.65rem; opacity: 0.5; margin-top: 2px;">Click or drop PNG</small>
-                        </div>
-                    </div>
-                    <button type="button" class="btn btn-dark btn-sm position-absolute d-none rounded-circle p-0 d-flex align-items-center justify-content-center"
-                        id="icon-delete-btn" style="width: 22px; height: 22px; top: -6px; right: -6px; line-height: 1; z-index: 1; border: 1px solid rgba(255,255,255,0.2);">
-                        <span class="material-icons-outlined" style="font-size: 0.85rem;">close</span>
-                    </button>
-                    <input type="file" id="icon-upload" accept="image/png" class="d-none">
-                </div>
-                <div class="d-flex gap-2 justify-content-center mb-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
-                        id="icon-reset-btn" data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span>
-                        Reset to Default
-                    </button>
-                </div>
-                <p class="text-body-secondary mb-0" style="font-size: 0.8rem;">
-                    The icon shown in the Minecraft server list. PNG only, max 20 MB — will be resized to 64&times;64 automatically.
-                </p>
-                <div id="icon-status" class="mt-2 small"></div>
-            </div>
-        </div>
-
-        <!-- MOTD Editor -->
-        <div class="card mt-3">
-            <div class="card-body p-4">
-                <h6 class="mb-3">MOTD</h6>
-
-                <!-- Live Preview -->
-                <div class="mb-3 rounded" style="background: #2b2b2b; border: 1px solid rgba(255,255,255,0.08); overflow-x: auto;">
-                    <div class="p-3" style="font-family: 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace; min-width: 280px;">
-                        <div id="motd-preview" style="font-size: 0.85rem; line-height: 1.4; white-space: pre;"></div>
-                    </div>
-                </div>
-
-                <!-- Editor -->
-                <div class="mb-3">
-                    <textarea class="form-control" id="motd-input" rows="2" maxlength="400"
-                        placeholder="A Minecraft Server" autocomplete="off" style="resize: none;"></textarea>
-                    <div class="form-text">Two lines maximum. Use the buttons below to insert color and formatting codes.</div>
-                </div>
-
-                <!-- Color Palette -->
-                <div class="mb-2">
-                    <label class="form-label" style="font-size: 0.85rem;">Colors</label>
-                    <div class="d-flex flex-wrap gap-1 motd-colors">
-                        <button type="button" class="motd-color-btn" data-code="0" title="Black" style="background:#000000;"></button>
-                        <button type="button" class="motd-color-btn" data-code="1" title="Dark Blue" style="background:#0000AA;"></button>
-                        <button type="button" class="motd-color-btn" data-code="2" title="Dark Green" style="background:#00AA00;"></button>
-                        <button type="button" class="motd-color-btn" data-code="3" title="Dark Aqua" style="background:#00AAAA;"></button>
-                        <button type="button" class="motd-color-btn" data-code="4" title="Dark Red" style="background:#AA0000;"></button>
-                        <button type="button" class="motd-color-btn" data-code="5" title="Dark Purple" style="background:#AA00AA;"></button>
-                        <button type="button" class="motd-color-btn" data-code="6" title="Gold" style="background:#FFAA00;"></button>
-                        <button type="button" class="motd-color-btn" data-code="7" title="Gray" style="background:#AAAAAA;"></button>
-                        <button type="button" class="motd-color-btn" data-code="8" title="Dark Gray" style="background:#555555;"></button>
-                        <button type="button" class="motd-color-btn" data-code="9" title="Blue" style="background:#5555FF;"></button>
-                        <button type="button" class="motd-color-btn" data-code="a" title="Green" style="background:#55FF55;"></button>
-                        <button type="button" class="motd-color-btn" data-code="b" title="Aqua" style="background:#55FFFF;"></button>
-                        <button type="button" class="motd-color-btn" data-code="c" title="Red" style="background:#FF5555;"></button>
-                        <button type="button" class="motd-color-btn" data-code="d" title="Light Purple" style="background:#FF55FF;"></button>
-                        <button type="button" class="motd-color-btn" data-code="e" title="Yellow" style="background:#FFFF55;"></button>
-                        <button type="button" class="motd-color-btn" data-code="f" title="White" style="background:#FFFFFF;"></button>
-                    </div>
-                </div>
-
-                <!-- Style Buttons -->
-                <div class="mb-3">
-                    <label class="form-label" style="font-size: 0.85rem;">Formatting</label>
-                    <div class="d-flex flex-wrap gap-1">
-                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="l" title="Bold">
-                            <strong>B</strong>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="o" title="Italic">
-                            <em>I</em>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="n" title="Underline">
-                            <span style="text-decoration: underline;">U</span>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="m" title="Strikethrough">
-                            <span style="text-decoration: line-through;">S</span>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="k" title="Obfuscated">
-                            <span style="opacity: 0.7;">?</span>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm motd-style-btn" data-code="r" title="Reset formatting">
-                            <span class="material-icons-outlined" style="font-size: 0.9rem; vertical-align: middle;">format_clear</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Save -->
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="motd-save-btn"
-                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
-                    Save MOTD
-                </button>
-                <div id="motd-status" class="mt-2 small"></div>
-            </div>
-        </div>
-
-        <%# Pass current MOTD to JS %>
-        <script id="motd-data" type="application/json"><%- JSON.stringify({ motd: currentMotd }) %></script>
-
-        <!-- Server Behavior -->
-        <div class="card mt-3">
-            <div class="card-body p-4">
-                <h6 class="mb-3">Server Behavior</h6>
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input toggle-switch" type="checkbox" id="autoRestart"
-                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
-                        data-endpoint="autorestart"
-                        <%= server.autoRestart ? 'checked' : '' %>>
-                    <label class="form-check-label" for="autoRestart">Auto-restart on crash</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input toggle-switch" type="checkbox" id="autoStart"
-                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
-                        data-endpoint="autostart"
-                        <%= server.autoStart ? 'checked' : '' %>>
-                    <label class="form-check-label" for="autoStart">Start with Craftbox</label>
-                </div>
-                <hr class="my-3">
-                <h6 class="mb-2">Status Page</h6>
-                <div class="form-check form-switch mb-1">
-                    <input class="form-check-input toggle-switch" type="checkbox" id="statusPagePublic"
-                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
-                        data-endpoint="statuspublic"
-                        <%= server.statusPagePublic ? 'checked' : '' %>>
-                    <label class="form-check-label" for="statusPagePublic">
-                        Status Page Visibility: <strong id="statusPageLabel"><%= server.statusPagePublic ? 'Public' : 'Unlisted' %></strong>
-                    </label>
-                </div>
-                <small class="text-body-secondary d-block mb-3">
-                    <strong>Public</strong>: Server appears on the <a href="/status" target="_blank">/status</a> page for anyone to see.<br>
-                    <strong>Unlisted</strong> (default): Only accessible via its <a href="/status/<%= server.id %>" target="_blank">direct link</a>.
-                </small>
-                <div>
-                    <label for="advertisedIp" class="form-label d-flex align-items-center gap-1">
-                        Advertised IP
-                        <span class="material-icons-outlined text-body-secondary" style="font-size: 1rem; cursor: help;"
-                            data-bs-toggle="tooltip" data-bs-placement="top"
-                            title="Use this if Craftbox is behind a reverse proxy, running in Docker with mapped ports, or if players connect via a domain name different from the Craftbox hostname.">
-                            help_outline
-                        </span>
-                    </label>
-                    <div class="input-group">
-                        <input type="text" class="form-control" id="advertisedIp" name="advertisedIp"
-                            value="<%= server.advertisedIp || '' %>" placeholder="e.g. play.example.com or 203.0.113.5"
-                            maxlength="253"
-                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
-                        <button type="button" class="btn btn-outline-secondary" id="save-advertised-ip"
-                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Save</button>
-                    </div>
-                    <div class="form-text">Override the IP shown on the status page. Leave blank to use the Craftbox hostname automatically.</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Update Checker -->
-        <% if ((server.serverType || 'vanilla') !== 'custom') { %>
-        <div class="card mt-3">
-            <div class="card-body p-4">
-                <div class="d-flex align-items-center justify-content-between">
-                    <div>
-                        <h6 class="mb-1">Server Jar Updates</h6>
-                        <small class="text-body-secondary" id="update-status">
-                            <% if (server.build) { %>
-                                Current build: #<%= server.build %>
-                            <% } else { %>
-                                No build number recorded.
+                        <!-- Update Checker -->
+                        <% if ((server.serverType || 'vanilla' ) !=='custom' ) { %>
+                            <div class="card mt-3">
+                                <div class="card-body p-4">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <div>
+                                            <h6 class="mb-1">Server Jar Updates</h6>
+                                            <small class="text-body-secondary" id="update-status">
+                                                <% if (server.build) { %>
+                                                    Current build: #<%= server.build %>
+                                                        <% } else { %>
+                                                            No build number recorded.
+                                                            <% } %>
+                                            </small>
+                                        </div>
+                                        <div class="d-flex gap-2" id="update-actions">
+                                            <button type="button"
+                                                class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                                                id="check-update-btn" data-server-id="<%= server.id %>">
+                                                <span class="material-icons-outlined"
+                                                    style="font-size: 1rem;">refresh</span>
+                                                Check for Updates
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="update-result" class="d-none mt-2"></div>
+                                </div>
+                            </div>
                             <% } %>
-                        </small>
-                    </div>
-                    <div class="d-flex gap-2" id="update-actions">
-                        <button type="button" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
-                            id="check-update-btn" data-server-id="<%= server.id %>">
-                            <span class="material-icons-outlined" style="font-size: 1rem;">refresh</span>
-                            Check for Updates
-                        </button>
-                    </div>
-                </div>
-                <div id="update-result" class="d-none mt-2"></div>
-            </div>
-        </div>
-        <% } %>
-        <% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
+                                <% const _serverStopped=['stopped', 'crashed' ].includes(server.state); %>
 
-        <!-- Duplicate Server -->
-        <div class="card mt-3">
-            <div class="card-body p-4">
-                <h6 class="mb-3 d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined" style="font-size: 1.2rem;">content_copy</span>
-                    Duplicate Server
-                </h6>
-                <form id="duplicate-form" method="POST" action="/servers/<%= server.id %>/duplicate">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="stopFirst" id="dup-stop-first" value="false">
-                    <input type="hidden" name="startAfter" id="dup-start-after" value="true">
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label for="dup-name" class="form-label required-star">New Server Name</label>
-                            <input type="text" class="form-control" id="dup-name" name="name"
-                                value="<%= server.name %> - Copy" minlength="1" maxlength="50"
-                                pattern="[a-zA-Z0-9 _\-]+" required>
-                            <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+                                    <!-- Duplicate Server -->
+                                    <div class="card mt-3">
+                                        <div class="card-body p-4">
+                                            <h6 class="mb-3 d-flex align-items-center gap-2">
+                                                <span class="material-icons-outlined"
+                                                    style="font-size: 1.2rem;">content_copy</span>
+                                                Duplicate Server
+                                            </h6>
+                                            <form id="duplicate-form" method="POST"
+                                                action="/servers/<%= server.id %>/duplicate">
+                                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                <input type="hidden" name="stopFirst" id="dup-stop-first" value="false">
+                                                <input type="hidden" name="startAfter" id="dup-start-after"
+                                                    value="true">
+                                                <div class="row mb-3">
+                                                    <div class="col-md-6">
+                                                        <label for="dup-name" class="form-label required-star">New
+                                                            Server Name</label>
+                                                        <input type="text" class="form-control" id="dup-name"
+                                                            name="name" value="<%= server.name %> - Copy" minlength="1"
+                                                            maxlength="50" pattern="[a-zA-Z0-9 _\-]+" required>
+                                                        <div class="form-text">1-50 characters. Letters, numbers,
+                                                            spaces, hyphens, underscores.</div>
+                                                    </div>
+                                                    <div class="col-md-6 mt-3 mt-md-0">
+                                                        <label for="dup-port" class="form-label required-star">New
+                                                            Port</label>
+                                                        <input type="number" class="form-control" id="dup-port"
+                                                            name="port" value="<%= server.port + 1 %>" min="1024"
+                                                            max="65535" required>
+                                                    </div>
+                                                </div>
+                                                <div class="form-check mb-3">
+                                                    <input class="form-check-input" type="checkbox" id="includeWorld"
+                                                        name="includeWorld" value="true" checked>
+                                                    <label class="form-check-label" for="includeWorld">Include world
+                                                        data</label>
+                                                    <div class="form-text">Uncheck to copy only configuration and
+                                                        mods/plugins (no world data).</div>
+                                                </div>
+                                                <% if (_serverStopped) { %>
+                                                    <button type="submit"
+                                                        class="btn btn-outline-secondary d-flex align-items-center gap-1">
+                                                        <span class="material-icons-outlined"
+                                                            style="font-size: 1rem;">content_copy</span>
+                                                        Duplicate
+                                                    </button>
+                                                    <% } else { %>
+                                                        <button type="button"
+                                                            class="btn btn-outline-secondary d-flex align-items-center gap-1"
+                                                            id="duplicate-running-btn">
+                                                            <span class="material-icons-outlined"
+                                                                style="font-size: 1rem;">content_copy</span>
+                                                            Duplicate
+                                                        </button>
+                                                        <% } %>
+                                            </form>
+                                        </div>
+                                    </div>
+
+                                    <!-- Save as Template -->
+                                    <div class="card mt-3">
+                                        <div class="card-body p-4">
+                                            <h6 class="mb-3 d-flex align-items-center gap-2">
+                                                <span class="material-icons-outlined"
+                                                    style="font-size: 1.2rem;">bookmark_add</span>
+                                                Save as Template
+                                            </h6>
+                                            <p class="text-body-secondary mb-2" style="font-size: 0.85rem;">
+                                                Save this server's settings as a reusable template for creating new
+                                                servers.
+                                            </p>
+                                            <div class="mb-3 text-body-secondary" style="font-size: 0.8rem;">
+                                                <div class="mb-2">
+                                                    <span class="material-icons-outlined align-middle text-success"
+                                                        style="font-size: 0.9rem;">check_circle</span>
+                                                    <strong class="fw-semibold">Included:</strong>
+                                                    Server type & version, memory & JVM args, game mode & difficulty,
+                                                    port & behavior flags
+                                                </div>
+                                                <div>
+                                                    <span class="material-icons-outlined align-middle text-danger"
+                                                        style="font-size: 0.9rem;">cancel</span>
+                                                    <strong class="fw-semibold">Not included:</strong>
+                                                    World data & files, mods & plugins, server.properties, backup
+                                                    schedules
+                                                </div>
+                                            </div>
+                                            <form id="template-form" method="POST" action="/templates/create">
+                                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                <input type="hidden" name="serverId" value="<%= server.id %>">
+                                                <input type="hidden" name="stopFirst" id="tmpl-stop-first"
+                                                    value="false">
+                                                <input type="hidden" name="startAfter" id="tmpl-start-after"
+                                                    value="true">
+                                                <div class="mb-3">
+                                                    <label for="template-name" class="form-label required-star">Template
+                                                        Name</label>
+                                                    <input type="text" class="form-control" id="template-name"
+                                                        name="name" value="<%= server.name %>" minlength="1"
+                                                        maxlength="50" pattern="[a-zA-Z0-9 _\-]+" required>
+                                                    <div class="form-text">1-50 characters. Letters, numbers, spaces,
+                                                        hyphens, underscores.</div>
+                                                </div>
+                                                <% if (_serverStopped) { %>
+                                                    <button type="submit"
+                                                        class="btn btn-outline-secondary d-flex align-items-center gap-1">
+                                                        <span class="material-icons-outlined"
+                                                            style="font-size: 1rem;">bookmark_add</span>
+                                                        Save Template
+                                                    </button>
+                                                    <% } else { %>
+                                                        <button type="button"
+                                                            class="btn btn-outline-secondary d-flex align-items-center gap-1"
+                                                            id="template-running-btn">
+                                                            <span class="material-icons-outlined"
+                                                                style="font-size: 1rem;">bookmark_add</span>
+                                                            Save Template
+                                                        </button>
+                                                        <% } %>
+                                            </form>
+                                        </div>
+                                    </div>
+                </div>
+            </div>
+
+            <!-- Stop & Duplicate Modal -->
+            <div class="modal fade" id="stopDuplicateModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-warning">warning</span>
+                                Server Running
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
-                        <div class="col-md-6 mt-3 mt-md-0">
-                            <label for="dup-port" class="form-label required-star">New Port</label>
-                            <input type="number" class="form-control" id="dup-port" name="port"
-                                value="<%= server.port + 1 %>" min="1024" max="65535" required>
+                        <div class="modal-body">
+                            <p>The server must be stopped to duplicate. Stop the server and duplicate?</p>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="dupStartAfter" checked>
+                                <label class="form-check-label" for="dupStartAfter">Start server after duplicate</label>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-warning btn-sm" id="confirm-stop-duplicate-btn">Stop &
+                                Duplicate</button>
                         </div>
                     </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" id="includeWorld" name="includeWorld" value="true" checked>
-                        <label class="form-check-label" for="includeWorld">Include world data</label>
-                        <div class="form-text">Uncheck to copy only configuration and mods/plugins (no world data).</div>
-                    </div>
-                    <% if (_serverStopped) { %>
-                    <button type="submit" class="btn btn-outline-secondary d-flex align-items-center gap-1">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">content_copy</span>
-                        Duplicate
-                    </button>
-                    <% } else { %>
-                    <button type="button" class="btn btn-outline-secondary d-flex align-items-center gap-1" id="duplicate-running-btn">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">content_copy</span>
-                        Duplicate
-                    </button>
-                    <% } %>
-                </form>
-            </div>
-        </div>
-
-        <!-- Save as Template -->
-        <div class="card mt-3">
-            <div class="card-body p-4">
-                <h6 class="mb-3 d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined" style="font-size: 1.2rem;">bookmark_add</span>
-                    Save as Template
-                </h6>
-                <p class="text-body-secondary mb-2" style="font-size: 0.85rem;">
-                    Save this server's settings as a reusable template for creating new servers.
-                </p>
-                <div class="mb-3 text-body-secondary" style="font-size: 0.8rem;">
-                    <div class="mb-2">
-                        <span class="material-icons-outlined align-middle text-success" style="font-size: 0.9rem;">check_circle</span>
-                        <strong class="fw-semibold">Included:</strong>
-                        Server type & version, memory & JVM args, game mode & difficulty, port & behavior flags
-                    </div>
-                    <div>
-                        <span class="material-icons-outlined align-middle text-danger" style="font-size: 0.9rem;">cancel</span>
-                        <strong class="fw-semibold">Not included:</strong>
-                        World data & files, mods & plugins, server.properties, backup schedules
-                    </div>
-                </div>
-                <form id="template-form" method="POST" action="/templates/create">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="serverId" value="<%= server.id %>">
-                    <input type="hidden" name="stopFirst" id="tmpl-stop-first" value="false">
-                    <input type="hidden" name="startAfter" id="tmpl-start-after" value="true">
-                    <div class="mb-3">
-                        <label for="template-name" class="form-label required-star">Template Name</label>
-                        <input type="text" class="form-control" id="template-name" name="name"
-                            value="<%= server.name %>" minlength="1" maxlength="50"
-                            pattern="[a-zA-Z0-9 _\-]+" required>
-                        <div class="form-text">1–50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
-                    </div>
-                    <% if (_serverStopped) { %>
-                    <button type="submit" class="btn btn-outline-secondary d-flex align-items-center gap-1">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">bookmark_add</span>
-                        Save Template
-                    </button>
-                    <% } else { %>
-                    <button type="button" class="btn btn-outline-secondary d-flex align-items-center gap-1" id="template-running-btn">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">bookmark_add</span>
-                        Save Template
-                    </button>
-                    <% } %>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Stop & Duplicate Modal -->
-<div class="modal fade" id="stopDuplicateModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-warning">warning</span>
-                    Server Running
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>The server must be stopped to duplicate. Stop the server and duplicate?</p>
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="dupStartAfter" checked>
-                    <label class="form-check-label" for="dupStartAfter">Start server after duplicate</label>
                 </div>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-warning btn-sm" id="confirm-stop-duplicate-btn">Stop & Duplicate</button>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Stop & Save Template Modal -->
-<div class="modal fade" id="stopTemplateModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-warning">warning</span>
-                    Server Running
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>The server must be stopped to save a template. Stop the server and save the template?</p>
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="tmplStartAfter" checked>
-                    <label class="form-check-label" for="tmplStartAfter">Start server after saving</label>
+            <!-- Stop & Save Template Modal -->
+            <div class="modal fade" id="stopTemplateModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-warning">warning</span>
+                                Server Running
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>The server must be stopped to save a template. Stop the server and save the template?</p>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="tmplStartAfter" checked>
+                                <label class="form-check-label" for="tmplStartAfter">Start server after saving</label>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-warning btn-sm" id="confirm-stop-template-btn">Stop &
+                                Save</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-warning btn-sm" id="confirm-stop-template-btn">Stop & Save</button>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Version Upgrade Warning Modal -->
-<div class="modal fade" id="versionUpgradeModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-warning">warning</span>
-                    Upgrade Version?
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>You are about to upgrade from <strong id="upgrade-from"></strong> to <strong id="upgrade-to"></strong>.</p>
-                <p class="mb-0 text-warning small">
-                    This will download a new server jar. World data may not be compatible with the new version.
-                    It is strongly recommended to create a backup before upgrading. This action cannot be reversed.
-                </p>
-            </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" id="revert-version-btn">Revert</button>
-                <button type="button" class="btn btn-warning btn-sm" id="accept-version-btn">Accept Risk</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- JAR URL Change Warning Modal -->
-<div class="modal fade" id="jarUrlChangeModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-warning">warning</span>
-                    Replace Server Jar?
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>You are about to replace the server jar with a new download.</p>
-                <p class="mb-0 text-warning small">
-                    The current jar will be deleted and replaced with the file from the new URL.
-                    It is strongly recommended to create a backup before proceeding. This action cannot be reversed.
-                </p>
-            </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" id="revert-jar-url-btn">Revert</button>
-                <button type="button" class="btn btn-warning btn-sm" id="accept-jar-url-btn">Accept Risk</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Restart Required Modal -->
-<div class="modal fade" id="restartModal" tabindex="-1" data-server-state="<%= server.state %>">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-info">restart_alt</span>
-                    Restart Required
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                Settings have been saved. The server must be restarted for changes to take effect.
-                <div class="form-check mt-3">
-                    <input class="form-check-input" type="checkbox" id="restartBackup">
-                    <label class="form-check-label" for="restartBackup">Create backup before restarting</label>
+            <!-- Version Upgrade Warning Modal -->
+            <div class="modal fade" id="versionUpgradeModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-warning">warning</span>
+                                Upgrade Version?
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>You are about to upgrade from <strong id="upgrade-from"></strong> to <strong
+                                    id="upgrade-to"></strong>.</p>
+                            <p class="mb-0 text-warning small">
+                                This will download a new server jar. World data may not be compatible with the new
+                                version.
+                                It is strongly recommended to create a backup before upgrading. This action cannot be
+                                reversed.
+                            </p>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                id="revert-version-btn">Revert</button>
+                            <button type="button" class="btn btn-warning btn-sm" id="accept-version-btn">Accept
+                                Risk</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Later</button>
-                <button type="button" class="btn btn-info btn-sm" id="restart-now-btn"
-                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Restart Now</button>
+
+            <!-- JAR URL Change Warning Modal -->
+            <div class="modal fade" id="jarUrlChangeModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-warning">warning</span>
+                                Replace Server Jar?
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>You are about to replace the server jar with a new download.</p>
+                            <p class="mb-0 text-warning small">
+                                The current jar will be deleted and replaced with the file from the new URL.
+                                It is strongly recommended to create a backup before proceeding. This action cannot be
+                                reversed.
+                            </p>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                id="revert-jar-url-btn">Revert</button>
+                            <button type="button" class="btn btn-warning btn-sm" id="accept-jar-url-btn">Accept
+                                Risk</button>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-</div>
+
+            <!-- Restart Required Modal -->
+            <div class="modal fade" id="restartModal" tabindex="-1" data-server-state="<%= server.state %>">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-info">restart_alt</span>
+                                Restart Required
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            Settings have been saved. The server must be restarted for changes to take effect.
+                            <div class="form-check mt-3">
+                                <input class="form-check-input" type="checkbox" id="restartBackup">
+                                <label class="form-check-label" for="restartBackup">Create backup before
+                                    restarting</label>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                data-bs-dismiss="modal">Later</button>
+                            <button type="button" class="btn btn-info btn-sm" id="restart-now-btn"
+                                data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Restart Now</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
 
-<%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/edit.js', '/js/motd.js', '/js/restart-modal.js'] }) %>
+            <%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/edit.js' , '/js/motd.js'
+                , '/js/restart-modal.js' ] }) %>

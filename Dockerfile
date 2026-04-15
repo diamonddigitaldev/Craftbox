@@ -5,13 +5,13 @@ RUN apt-get update && \
     apt-get install -y curl gnupg software-properties-common && \
     # Add Adoptium repository for Temurin JREs
     curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | \
-        gpg --dearmor -o /usr/share/keyrings/adoptium.gpg && \
+    gpg --dearmor -o /usr/share/keyrings/adoptium.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb noble main" \
-        > /etc/apt/sources.list.d/adoptium.list && \
+    > /etc/apt/sources.list.d/adoptium.list && \
     apt-get update && \
-    # Java 8  — MC 1.7–1.16
+    # Java 8  — MC 1.7-1.16
     apt-get install -y temurin-8-jre && \
-    # Java 17 — MC 1.17–1.20.4
+    # Java 17 — MC 1.17-1.20.4
     apt-get install -y temurin-17-jre && \
     # Java 21 — MC 1.20.5+
     apt-get install -y temurin-21-jre && \

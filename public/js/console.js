@@ -439,6 +439,8 @@
             ramChartInstance.data.labels = ramLabels;
             ramChartInstance.data.datasets[0].data = ramData;
             ramBytesHistory = ramBytes;
+            var ramPeak = Math.max.apply(null, ramData);
+            ramChartInstance.options.scales.y.max = ramPeak > 100 ? Math.ceil(ramPeak * 1.1) : 100;
             ramChartInstance.update('none');
         }
         chartsInitialized = true;
@@ -473,7 +475,11 @@
             cpuChartInstance.options.scales.y.max = cpuPeak > 100 ? Math.ceil(cpuPeak * 1.1) : 100;
             cpuChartInstance.update();
         }
-        if (ramChartInstance) ramChartInstance.update();
+        if (ramChartInstance) {
+            var ramPeak = Math.max.apply(null, ramChartInstance.data.datasets[0].data);
+            ramChartInstance.options.scales.y.max = ramPeak > 100 ? Math.ceil(ramPeak * 1.1) : 100;
+            ramChartInstance.update();
+        }
 
         if (cpuLabel) cpuLabel.textContent = cpu != null ? cpu.toFixed(1) + '%' : '--';
         if (ramLabel) {
