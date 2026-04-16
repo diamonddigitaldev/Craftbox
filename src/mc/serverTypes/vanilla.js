@@ -4,6 +4,19 @@ const { log } = require('../../utils/log');
 
 const VERSION_MANIFEST_URL = 'https://launchermeta.mojang.com/mc/game/version_manifest.json';
 
+// Mojang began hosting official server jars with release 1.2.5 (March 2012).
+// Older releases appear in the manifest but have no `downloads.server` entry.
+function hasServerJar(id) {
+    const parts = id.split('.').map(Number);
+    if (parts.some(Number.isNaN)) return false;
+    const [maj, min = 0, patch = 0] = parts;
+    if (maj > 1) return true;
+    if (maj < 1) return false;
+    if (min > 2) return true;
+    if (min < 2) return false;
+    return patch >= 5;
+}
+
 module.exports = {
     id: 'vanilla',
     name: 'Vanilla',
@@ -18,7 +31,7 @@ module.exports = {
 
         return {
             versions: manifest.versions
-                .filter(v => v.type === 'release')
+                .filter(v => v.type === 'release' && hasServerJar(v.id))
                 .map(v => ({ id: v.id })),
             latest: manifest.latest.release
         };

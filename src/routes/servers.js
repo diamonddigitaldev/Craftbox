@@ -15,6 +15,7 @@ const { logEvent, deleteServerEvents } = require('../utils/eventLogger');
 const { syncServerConfig } = require('../mc/syncServerConfig');
 const { clearStatsHistory } = require('../utils/statsHistory');
 const { getContentType } = require('../utils/contentType');
+const { copyModEnvMap, clearAllModEnv } = require('../utils/modEnvironment');
 const { copyDefaultIcon, hasIcon } = require('../utils/serverIcon');
 const { STATES } = require('../mc/stateMachine');
 
@@ -409,6 +410,7 @@ router.post('/servers/:id/duplicate', ensureAuth, async (req, res) => {
         };
 
         await serversDb.set(`server_${newId}`, newServer);
+        await copyModEnvMap(id, newId);
         log('info', `Server "${trimmedName}" (${newId}) duplicated from "${server.name}" (${id}).`);
 
         // Start backup schedule for duplicated server if enabled
@@ -470,6 +472,7 @@ router.post('/servers/:id/delete', ensureAuth, async (req, res) => {
         // Delete server events and stats history
         await deleteServerEvents(id);
         await clearStatsHistory(id);
+        await clearAllModEnv(id);
 
         // Delete server directory
         const serverDir = path.join(SERVERS_DIR, id);

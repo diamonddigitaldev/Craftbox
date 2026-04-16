@@ -7,6 +7,22 @@ const { getJavaForVersion } = require('../../utils/javaVersion');
 const PROMOTIONS_URL = 'https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json';
 const MAVEN_BASE = 'https://maven.minecraftforge.net/net/minecraftforge/forge';
 
+// Forge pre-1.6.0 was universal-jar-only — no installer was ever published.
+// Additionally, the promotions file lists a few MC versions whose jars are
+// genuinely missing from maven (both the plain and suffixed naming formats).
+// These will never produce a working server, so hide them from the UI.
+const UNSUPPORTED_MC_VERSIONS = new Set(['1.7.2', '1.10']);
+
+function isSupportedMcVersion(v) {
+    if (UNSUPPORTED_MC_VERSIONS.has(v)) return false;
+    const parts = v.split('.').map(Number);
+    if (parts.some(Number.isNaN)) return false;
+    const [maj, min = 0] = parts;
+    if (maj > 1) return true;
+    if (maj < 1) return false;
+    return min >= 6;
+}
+
 module.exports = {
     id: 'forge',
     name: 'Forge',
@@ -23,7 +39,7 @@ module.exports = {
         const mcVersions = new Set();
         for (const key of Object.keys(data.promos || {})) {
             const mcVer = key.replace(/-(?:latest|recommended)$/, '');
-            mcVersions.add(mcVer);
+            if (isSupportedMcVersion(mcVer)) mcVersions.add(mcVer);
         }
 
         // Sort versions descending
@@ -75,12 +91,22 @@ module.exports = {
         }
 
         const forgeVersion = `${version}-${build}`;
-        const installerUrl = `${MAVEN_BASE}/${forgeVersion}/forge-${forgeVersion}-installer.jar`;
         const serverDir = path.dirname(destPath);
         const installerPath = path.join(serverDir, 'forge-installer.jar');
 
+        // Most Forge versions live at `{mc}-{build}/forge-{mc}-{build}-installer.jar`,
+        // but 1.7.10 / 1.8.9 / 1.9.4 (and a few other legacy builds) use a historical
+        // "MC-suffixed" layout: `{mc}-{build}-{mc}/forge-{mc}-{build}-{mc}-installer.jar`.
+        // Try the standard URL first, fall back to the suffixed one on 404.
+        const standardUrl = `${MAVEN_BASE}/${forgeVersion}/forge-${forgeVersion}-installer.jar`;
+        const suffixedUrl = `${MAVEN_BASE}/${forgeVersion}-${version}/forge-${forgeVersion}-${version}-installer.jar`;
+
         log('info', `Downloading Forge installer ${forgeVersion}...`);
-        const installerRes = await fetch(installerUrl);
+        let installerRes = await fetch(standardUrl);
+        if (!installerRes.ok && installerRes.status === 404) {
+            log('info', `Standard installer URL 404'd; trying legacy suffixed URL for ${forgeVersion}...`);
+            installerRes = await fetch(suffixedUrl);
+        }
         if (!installerRes.ok) throw new Error(`Failed to download Forge installer: HTTP ${installerRes.status}`);
 
         fs.mkdirSync(serverDir, { recursive: true });

@@ -9,6 +9,15 @@ const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, SERVERS_DIR } = require('../db');
 const { log } = require('../utils/log');
 const { getContentType } = require('../utils/contentType');
+const {
+    VALID_ENVS,
+    DISABLED_SUFFIX,
+    getModEnvMap,
+    setModEnv,
+    clearModEnv,
+    clearAllModEnv,
+    listModFiles
+} = require('../utils/modEnvironment');
 
 /**
  * Load server with live state from ServerManager.
@@ -80,30 +89,32 @@ router.get('/servers/:id/plugins', ensureAuth, async (req, res) => {
     // Ensure the directory exists
     fs.mkdirSync(contentDir, { recursive: true });
 
-    // List .jar files
-    let entries;
-    try {
-        entries = fs.readdirSync(contentDir, { withFileTypes: true });
-    } catch {
-        entries = [];
+    const isMods = contentType.label === 'Mods';
+    const modFiles = listModFiles(contentDir);
+
+    let envMap = {};
+    if (isMods) {
+        envMap = await getModEnvMap(server.id);
     }
 
-    const files = entries
-        .filter(e => !e.isDirectory() && e.name.toLowerCase().endsWith('.jar'))
-        .map(entry => {
-            const entryPath = path.join(contentDir, entry.name);
-            let stat;
-            try { stat = fs.statSync(entryPath); } catch { return null; }
-            return {
-                name: entry.name,
-                size: stat.size,
-                sizeFormatted: formatSize(stat.size),
-                modified: stat.mtime,
-                modifiedISO: stat.mtime.toISOString()
-            };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.name.localeCompare(b.name));
+    const files = modFiles.map(entry => {
+        let environment = 'both';
+        if (isMods) {
+            if (entry.isDisabled) {
+                environment = 'client';
+            } else {
+                environment = envMap[entry.displayName] || 'both';
+            }
+        }
+        return {
+            name: entry.displayName,
+            size: entry.size,
+            sizeFormatted: formatSize(entry.size),
+            modified: entry.modified,
+            modifiedISO: entry.modified.toISOString(),
+            environment
+        };
+    });
 
     res.render('servers/plugins', {
         title: server.name + ' ' + contentType.label,
@@ -214,12 +225,20 @@ router.post('/servers/:id/plugins/delete', ensureAuth, async (req, res) => {
         return res.status(403).json({ error: 'Access denied.' });
     }
 
-    if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+    const disabledPath = targetPath + DISABLED_SUFFIX;
+    const existingPath = fs.existsSync(targetPath) && !fs.statSync(targetPath).isDirectory()
+        ? targetPath
+        : (fs.existsSync(disabledPath) && !fs.statSync(disabledPath).isDirectory() ? disabledPath : null);
+
+    if (!existingPath) {
         return res.status(404).json({ error: 'File not found.' });
     }
 
     try {
-        fs.unlinkSync(targetPath);
+        fs.unlinkSync(existingPath);
+        if (contentType.label === 'Mods') {
+            await clearModEnv(server.id, safeName);
+        }
         log('info', `Deleted ${contentType.label.toLowerCase().slice(0, -1)} "${safeName}" from server ${server.name} (${server.id})`);
         res.json({ success: true });
     } catch (err) {
@@ -256,7 +275,9 @@ router.post('/servers/:id/plugins/delete-all', ensureAuth, async (req, res) => {
     try {
         const entries = fs.readdirSync(contentDir, { withFileTypes: true });
         for (const entry of entries) {
-            if (!entry.isDirectory() && entry.name.toLowerCase().endsWith('.jar')) {
+            if (entry.isDirectory()) continue;
+            const lower = entry.name.toLowerCase();
+            if (lower.endsWith('.jar') || lower.endsWith('.jar' + DISABLED_SUFFIX)) {
                 fs.unlinkSync(path.join(contentDir, entry.name));
                 deleted++;
             }
@@ -264,6 +285,10 @@ router.post('/servers/:id/plugins/delete-all', ensureAuth, async (req, res) => {
     } catch (err) {
         log('error', `Failed to delete all ${contentType.label.toLowerCase()}: ${err.message}`);
         return res.status(500).json({ error: 'Failed to delete some files.' });
+    }
+
+    if (contentType.label === 'Mods') {
+        await clearAllModEnv(server.id);
     }
 
     log('info', `Deleted all ${deleted} ${contentType.label.toLowerCase()} from server ${server.name} (${server.id})`);
@@ -293,14 +318,22 @@ router.get('/servers/:id/plugins/download', ensureAuth, async (req, res) => {
         return res.status(403).json({ error: 'Access denied.' });
     }
 
-    if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+    const disabledPath = targetPath + DISABLED_SUFFIX;
+    let sourcePath = null;
+    if (fs.existsSync(targetPath) && !fs.statSync(targetPath).isDirectory()) {
+        sourcePath = targetPath;
+    } else if (fs.existsSync(disabledPath) && !fs.statSync(disabledPath).isDirectory()) {
+        sourcePath = disabledPath;
+    }
+
+    if (!sourcePath) {
         return res.status(404).json({ error: 'File not found.' });
     }
 
     res.setHeader('Content-Disposition', contentDisposition(safeName));
     res.setHeader('Content-Type', 'application/octet-stream');
 
-    const stream = fs.createReadStream(targetPath);
+    const stream = fs.createReadStream(sourcePath);
     stream.on('error', (err) => {
         if (!res.headersSent) {
             if (err.code === 'EBUSY') {
@@ -343,6 +376,58 @@ router.get('/servers/:id/plugins/download-all', ensureAuth, async (req, res) => 
     archive.pipe(res);
     archive.directory(contentDir, contentType.folder);
     archive.finalize();
+});
+
+// ── POST /servers/:id/plugins/environment — Set a mod's environment tag ──
+
+router.post('/servers/:id/plugins/environment', ensureAuth, async (req, res) => {
+    const server = await getServerWithState(req);
+    if (!server) {
+        return res.status(404).json({ error: 'Server not found.' });
+    }
+
+    const contentType = getContentType(server.serverType);
+    if (!contentType || contentType.label !== 'Mods') {
+        return res.status(400).json({ error: 'This server type does not support mod environments.' });
+    }
+
+    if (!['stopped', 'crashed'].includes(server.state)) {
+        return res.status(400).json({ error: 'Stop the server before changing mod environments.' });
+    }
+
+    const { filename, environment } = req.body || {};
+    if (!filename || typeof filename !== 'string') {
+        return res.status(400).json({ error: 'No filename specified.' });
+    }
+    if (!VALID_ENVS.includes(environment)) {
+        return res.status(400).json({ error: 'Invalid environment value.' });
+    }
+
+    const safeName = path.basename(filename);
+    if (!safeName.toLowerCase().endsWith('.jar')) {
+        return res.status(400).json({ error: 'Invalid filename.' });
+    }
+
+    const serverDir = path.resolve(SERVERS_DIR, server.id);
+    const contentDir = path.join(serverDir, contentType.folder);
+
+    const enabledPath = path.resolve(contentDir, safeName);
+    if (!enabledPath.startsWith(path.resolve(contentDir))) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+    const disabledPath = enabledPath + DISABLED_SUFFIX;
+    if (!fs.existsSync(enabledPath) && !fs.existsSync(disabledPath)) {
+        return res.status(404).json({ error: 'File not found.' });
+    }
+
+    try {
+        await setModEnv(server.id, safeName, environment, contentDir);
+        log('info', `Set mod "${safeName}" environment to ${environment} on server ${server.name} (${server.id})`);
+        res.json({ success: true });
+    } catch (err) {
+        log('error', `Failed to set mod environment for ${safeName}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to update environment.' });
+    }
 });
 
 module.exports = router;

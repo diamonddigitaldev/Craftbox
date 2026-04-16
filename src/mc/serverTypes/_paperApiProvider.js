@@ -38,14 +38,34 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
                 return 0;
             });
 
-            // Flatten into a single newest-first array, excluding pre-release/RC builds
-            const allVersions = [];
+            // Build stable sub-version lists per major (pre/rc filtered out).
+            // v3 API returns sub-versions newest-first, which is what we want.
+            const stableSubsByMajor = {};
             for (const major of majorKeys) {
-                // Sub-versions within each group: reverse for newest-first
-                const subVersions = [...grouped[major]]
-                    .filter(v => !/pre|rc/i.test(v))
-                    .reverse();
-                allVersions.push(...subVersions);
+                stableSubsByMajor[major] = grouped[major].filter(v => !/pre|rc/i.test(v));
+            }
+
+            // Drop major groups whose newest sub-version has no STABLE builds.
+            // Minecraft's new "Copper Age" versions (e.g. 26.1.x) appear in the v3
+            // listing but only ship ALPHA builds, which would 404 on download.
+            const majorHasStable = await Promise.all(majorKeys.map(async major => {
+                const newest = stableSubsByMajor[major][0];
+                if (!newest) return false;
+                try {
+                    const r = await fetch(`${BASE}/versions/${newest}/builds?channel=STABLE`);
+                    if (!r.ok) return false;
+                    const builds = await r.json();
+                    return Array.isArray(builds) && builds.length > 0;
+                } catch {
+                    return false;
+                }
+            }));
+
+            // Flatten into a single newest-first array
+            const allVersions = [];
+            for (let i = 0; i < majorKeys.length; i++) {
+                if (!majorHasStable[i]) continue;
+                allVersions.push(...stableSubsByMajor[majorKeys[i]]);
             }
 
             return {
