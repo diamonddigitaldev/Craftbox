@@ -9,6 +9,7 @@ const { getEvents } = require('../utils/eventLogger');
 const { getUptime, formatUptime } = require('../utils/resourceStats');
 const { log } = require('../utils/log');
 const ServerProcess = require('../mc/ServerProcess');
+const { getModEnvMap, listModFiles } = require('../utils/modEnvironment');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -111,7 +112,12 @@ router.get('/status/:id', async (req, res) => {
         let modsCount = 0;
         if (hasMods) {
             try {
-                modsCount = fs.readdirSync(modsDir).filter(f => f.endsWith('.jar')).length;
+                const envMap = await getModEnvMap(server.id);
+                const modFiles = listModFiles(modsDir);
+                modsCount = modFiles.filter(f => {
+                    const env = f.isDisabled ? 'client' : (envMap[f.displayName] || 'both');
+                    return env !== 'server';
+                }).length;
             } catch { /* ignore */ }
         }
 
@@ -150,6 +156,17 @@ router.get('/status/:id/mods', async (req, res) => {
             return res.status(404).json({ error: 'No mods folder found.' });
         }
 
+        const envMap = await getModEnvMap(server.id);
+        const modFiles = listModFiles(modsDir);
+        const includedFiles = modFiles.filter(f => {
+            const env = f.isDisabled ? 'client' : (envMap[f.displayName] || 'both');
+            return env !== 'server';
+        });
+
+        if (includedFiles.length === 0) {
+            return res.status(404).json({ error: 'No client-facing mods to download.' });
+        }
+
         const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
         res.setHeader('Content-Type', 'application/zip');
@@ -161,7 +178,10 @@ router.get('/status/:id/mods', async (req, res) => {
             if (!res.headersSent) res.status(500).json({ error: 'Archive failed.' });
         });
         archive.pipe(res);
-        archive.directory(modsDir, 'mods');
+        for (const file of includedFiles) {
+            // Always write the clean .jar filename so the player's mod loader will pick it up.
+            archive.file(path.join(modsDir, file.onDiskName), { name: 'mods/' + file.displayName });
+        }
         archive.finalize();
     } catch (err) {
         log('error', `Mods download error: ${err.message}`);

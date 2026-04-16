@@ -38,9 +38,22 @@
 </div>
 
 <% if (files.length > 0) { %>
-<div class="input-group input-group-sm mb-3" style="max-width: 350px;">
-    <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
-    <input type="text" class="form-control" id="search-input" placeholder="Search <%= contentType.label.toLowerCase() %>...">
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <div class="input-group input-group-sm" style="max-width: 350px;">
+        <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
+        <input type="text" class="form-control" id="search-input" placeholder="Search <%= contentType.label.toLowerCase() %>...">
+    </div>
+    <% if (contentType.label === 'Mods') { %>
+    <div class="d-flex align-items-center gap-2">
+        <label class="text-body-secondary" style="font-size: 0.85rem;" for="env-filter">Filter:</label>
+        <select class="form-select form-select-sm" id="env-filter" style="width: auto;">
+            <option value="">All Environments</option>
+            <option value="both">Client and Server</option>
+            <option value="client">Client Only</option>
+            <option value="server">Server Only</option>
+        </select>
+    </div>
+    <% } %>
 </div>
 <% } %>
 
@@ -74,18 +87,33 @@
                     <th>Name</th>
                     <th style="width: 120px;">Size</th>
                     <th style="width: 180px;">Modified</th>
+                    <% if (contentType.label === 'Mods') { %>
+                    <th style="width: 200px;">Environment</th>
+                    <% } %>
                     <th style="width: 90px;"></th>
                 </tr>
             </thead>
             <tbody>
                 <% files.forEach(function(file) { %>
-                <tr data-filename="<%= file.name %>">
+                <tr data-filename="<%= file.name %>" data-env="<%= file.environment %>">
                     <td>
                         <span class="material-icons-outlined text-body-secondary" style="font-size: 1.2rem;"><%= contentType.icon %></span>
                     </td>
                     <td><%= file.name %></td>
                     <td class="text-body-secondary small"><%= file.sizeFormatted %></td>
                     <td class="text-body-secondary small"><span class="format-date" data-iso="<%= file.modifiedISO %>"></span></td>
+                    <% if (contentType.label === 'Mods') { %>
+                    <td>
+                        <select class="form-select form-select-sm env-select"
+                                data-filename="<%= file.name %>"
+                                <%= _serverStopped ? '' : 'disabled' %>
+                                title="<%= _serverStopped ? 'Change environment' : 'Stop the server to change' %>">
+                            <option value="both"   <%= file.environment === 'both'   ? 'selected' : '' %>>Client and Server</option>
+                            <option value="client" <%= file.environment === 'client' ? 'selected' : '' %>>Client Only</option>
+                            <option value="server" <%= file.environment === 'server' ? 'selected' : '' %>>Server Only</option>
+                        </select>
+                    </td>
+                    <% } %>
                     <td class="text-center">
                         <div class="d-inline-flex gap-1">
                             <a href="/servers/<%= server.id %>/plugins/download?file=<%= encodeURIComponent(file.name) %>"
@@ -112,7 +140,7 @@
                 <% }) %>
                 <% if (files.length === 0) { %>
                 <tr>
-                    <td colspan="5" class="text-center text-body-secondary py-4">No <%= contentType.label.toLowerCase() %> installed. Upload some <code>.jar</code> files!</td>
+                    <td colspan="<%= contentType.label === 'Mods' ? 6 : 5 %>" class="text-center text-body-secondary py-4">No <%= contentType.label.toLowerCase() %> installed. Upload some <code>.jar</code> files!</td>
                 </tr>
                 <% } %>
             </tbody>

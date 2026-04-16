@@ -10,6 +10,7 @@ const { getJavaForVersion, getDefaultJava } = require('../utils/javaVersion');
 const { logEvent, pruneEvents } = require('../utils/eventLogger');
 const { getProvider } = require('./serverTypes');
 const { clearCpuTracking } = require('../utils/resourceStats');
+const { reconcileModFiles } = require('../utils/modEnvironment');
 
 // Pattern that indicates the server is done starting
 const DONE_PATTERN = /\]: Done \(/;
@@ -134,6 +135,14 @@ class ServerProcess extends EventEmitter {
         this._stopRequested = false;
         this._crashDetected = false;
         this._oomKillInProgress = false;
+
+        // Reconcile mod environment state on disk before the mod loader scans the mods folder.
+        // Ensures client-only mods are renamed to .jar.disabled even if the filesystem was manually edited.
+        try {
+            await reconcileModFiles(this.id, this.serverDir, this.config.serverType);
+        } catch (err) {
+            log('warn', `[${this.config.name}] Mod environment reconcile failed: ${err.message}`);
+        }
 
         // Forge/NeoForge: remove 0-byte .jar files left by the installer
         if (this.config.serverType === 'forge' || this.config.serverType === 'neoforge') {

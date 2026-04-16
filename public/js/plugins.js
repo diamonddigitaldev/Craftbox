@@ -7,16 +7,70 @@
 
     // ── Search / Filter ──
 
+    var searchQuery = '';
+    var envFilter = '';
+
+    function applyFilters() {
+        document.querySelectorAll('table tbody tr[data-filename]').forEach(function (row) {
+            var name = row.getAttribute('data-filename').toLowerCase();
+            var env = row.getAttribute('data-env') || 'both';
+            var matchSearch = !searchQuery || name.includes(searchQuery);
+            var matchEnv = !envFilter || env === envFilter;
+            row.style.display = (matchSearch && matchEnv) ? '' : 'none';
+        });
+    }
+
     var searchInput = document.getElementById('search-input');
     if (searchInput) {
         searchInput.addEventListener('input', function () {
-            var query = searchInput.value.toLowerCase();
-            document.querySelectorAll('table tbody tr[data-filename]').forEach(function (row) {
-                var name = row.getAttribute('data-filename').toLowerCase();
-                row.style.display = name.includes(query) ? '' : 'none';
-            });
+            searchQuery = searchInput.value.toLowerCase();
+            applyFilters();
         });
     }
+
+    var envFilterSelect = document.getElementById('env-filter');
+    if (envFilterSelect) {
+        envFilterSelect.addEventListener('change', function () {
+            envFilter = envFilterSelect.value;
+            applyFilters();
+        });
+    }
+
+    // ── Environment change ──
+
+    document.querySelectorAll('.env-select').forEach(function (sel) {
+        var previousValue = sel.value;
+        sel.addEventListener('change', async function () {
+            var filename = sel.getAttribute('data-filename');
+            var newValue = sel.value;
+            sel.disabled = true;
+            try {
+                var res = await fetch('/servers/' + serverId + '/plugins/environment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrf
+                    },
+                    body: JSON.stringify({ filename: filename, environment: newValue })
+                });
+                var data = await res.json();
+                if (res.ok && data.success) {
+                    var row = sel.closest('tr[data-filename]');
+                    if (row) row.setAttribute('data-env', newValue);
+                    previousValue = newValue;
+                    applyFilters();
+                } else {
+                    showToast(data.error || 'Failed to update environment.', 'danger');
+                    sel.value = previousValue;
+                }
+            } catch {
+                showToast('Failed to update environment.', 'danger');
+                sel.value = previousValue;
+            } finally {
+                sel.disabled = false;
+            }
+        });
+    });
 
     /**
      * Show a Bootstrap toast notification (matches flash.ejs style).
