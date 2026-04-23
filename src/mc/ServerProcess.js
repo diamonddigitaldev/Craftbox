@@ -213,7 +213,10 @@ class ServerProcess extends EventEmitter {
         this.child = spawn(javaPath, args, {
             cwd: this.serverDir,
             stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true
+            windowsHide: true,
+            // On POSIX, make the JVM its own process-group leader so _killTree()
+            // can signal every descendant at once and avoid orphaned zombies.
+            detached: process.platform !== 'win32'
         });
 
         // Display server type, version, and Java info in console
@@ -352,6 +355,9 @@ class ServerProcess extends EventEmitter {
      * Kill the entire process tree (Java spawns child processes).
      * On Windows, child.kill() only terminates the direct child,
      * so we use taskkill /T to kill the whole tree.
+     * On POSIX, the child was spawned detached so it heads its own process
+     * group; signalling the negative PID delivers SIGKILL to the JVM and all
+     * descendants, preventing orphaned grandchildren from becoming zombies.
      */
     _killTree() {
         if (!this.child) return;
@@ -365,7 +371,12 @@ class ServerProcess extends EventEmitter {
                 // Process may have already exited
             }
         } else {
-            this.child.kill('SIGKILL');
+            try {
+                process.kill(-this.child.pid, 'SIGKILL');
+            } catch {
+                // Group may already be gone — fall back to the direct child.
+                try { this.child.kill('SIGKILL'); } catch {}
+            }
         }
     }
 

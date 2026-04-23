@@ -206,7 +206,10 @@ function runNeoForgeInstaller(javaPath, installerPath, serverDir, timeoutMs) {
         const child = spawn(javaPath, args, {
             cwd: serverDir,
             stdio: ['ignore', 'pipe', 'pipe'],
-            windowsHide: true
+            windowsHide: true,
+            // Head a process group on POSIX so the timeout path can kill every
+            // descendant the installer forks (e.g. javac, unpackers).
+            detached: process.platform !== 'win32'
         });
 
         let stdoutTail = '';
@@ -214,7 +217,15 @@ function runNeoForgeInstaller(javaPath, installerPath, serverDir, timeoutMs) {
         const tailLimit = 64 * 1024;
 
         const timer = setTimeout(() => {
-            try { child.kill('SIGKILL'); } catch {}
+            try {
+                if (process.platform === 'win32') {
+                    child.kill('SIGKILL');
+                } else {
+                    process.kill(-child.pid, 'SIGKILL');
+                }
+            } catch {
+                try { child.kill('SIGKILL'); } catch {}
+            }
             reject(new Error(`Timed out after ${Math.ceil(timeoutMs / 1000)}s`));
         }, timeoutMs);
         timer.unref?.();
