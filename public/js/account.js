@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             confirmCreateBtn.disabled = true;
             createKeyModal.hide();
-            showOverlay('Generating key...', 'Please wait.');
+            showOverlay('Generating key...', 'Please wait while the key is created.');
 
             try {
                 var res = await fetch('/api/v1/account/apikeys', {

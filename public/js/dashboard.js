@@ -79,7 +79,7 @@
             setTimeout(connect, delay);
         };
 
-        ws.onerror = () => {};
+        ws.onerror = () => { };
     }
 
     function updateCard(serverId, state) {
@@ -176,9 +176,9 @@
         if (!serverId || !action) return;
 
         var labels = {
-            start: { title: 'Starting server...', desc: 'Please wait.' },
-            stop: { title: 'Stopping server...', desc: 'Please wait while the server shuts down.' },
-            restart: { title: 'Restarting server...', desc: 'Please wait.' }
+            start: { title: 'Starting server...', desc: 'Please wait while the command is sent.' },
+            stop: { title: 'Stopping server...', desc: 'Please wait while the command is sent.' },
+            restart: { title: 'Restarting server...', desc: 'Please wait while the command is sent.' }
         };
         showOverlay(labels[action].title, labels[action].desc);
 

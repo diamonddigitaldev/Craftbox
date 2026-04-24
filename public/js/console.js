@@ -257,10 +257,10 @@
     // ── Server action buttons (start/stop/restart/kill/delete) ──
     async function doAction(action, body) {
         var labels = {
-            start:   { title: 'Starting server...',  desc: 'Please wait.' },
-            stop:    { title: 'Stopping server...',  desc: 'Please wait while the server shuts down.' },
-            restart: { title: 'Restarting server...', desc: 'Please wait.' },
-            kill:    { title: 'Killing server...',   desc: 'Please wait.' }
+            start: { title: 'Starting server...', desc: 'Please wait while the command is sent.' },
+            stop: { title: 'Stopping server...', desc: 'Please wait while the command is sent.' },
+            restart: { title: 'Restarting server...', desc: 'Please wait while the command is sent.' },
+            kill: { title: 'Killing server...', desc: 'Please wait while the command is sent.' }
         };
         if (labels[action]) showOverlay(labels[action].title, labels[action].desc);
 
