@@ -1,15 +1,450 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Grass block - iconic Minecraft symbol -->
-  <rect x="4" y="4" width="56" height="56" rx="4" fill="#8B6914"/>
-  <rect x="4" y="4" width="56" height="24" rx="4" fill="#5D8C2E"/>
-  <rect x="4" y="24" width="56" height="4" fill="#5D8C2E"/>
-  <!-- Dirt texture dots -->
-  <rect x="12" y="32" width="8" height="8" rx="1" fill="#7A5C10" opacity="0.5"/>
-  <rect x="28" y="40" width="8" height="8" rx="1" fill="#7A5C10" opacity="0.5"/>
-  <rect x="44" y="34" width="8" height="8" rx="1" fill="#7A5C10" opacity="0.5"/>
-  <rect x="20" y="46" width="8" height="8" rx="1" fill="#7A5C10" opacity="0.5"/>
-  <!-- Grass texture -->
-  <rect x="10" y="10" width="6" height="6" rx="1" fill="#6EA834" opacity="0.6"/>
-  <rect x="24" y="8" width="6" height="6" rx="1" fill="#6EA834" opacity="0.6"/>
-  <rect x="40" y="12" width="6" height="6" rx="1" fill="#6EA834" opacity="0.6"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 64 64"
+   fill="none"
+   version="1.1"
+   id="svg10"
+   sodipodi:docname="vanilla.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs10">
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter190"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer190">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR190" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG190" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB190" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter191"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer191">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR191" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG191" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB191" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter192"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer192">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR192" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG192" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB192" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter193"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer193">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR193" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG193" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB193" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter194"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer194">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR194" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG194" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB194" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter195"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer195">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR195" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG195" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB195" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter196"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer196">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR196" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG196" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB196" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter197"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer197">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR197" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG197" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB197" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter198"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer198">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR198" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG198" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB198" />
+      </feComponentTransfer>
+    </filter>
+    <filter
+       style="color-interpolation-filters:sRGB;"
+       inkscape:label="Lighting"
+       id="filter199"
+       x="0"
+       y="0"
+       width="1"
+       height="1">
+      <feComponentTransfer
+         in="blur"
+         result="component"
+         id="feComponentTransfer199">
+        <feFuncR
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncR199" />
+        <feFuncG
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncG199" />
+        <feFuncB
+           type="gamma"
+           amplitude="1.34"
+           exponent="1"
+           offset="-0.05"
+           id="feFuncB199" />
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <sodipodi:namedview
+     id="namedview10"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="12.21875"
+     inkscape:cx="32"
+     inkscape:cy="32"
+     inkscape:window-width="1920"
+     inkscape:window-height="995"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg10" />
+  <rect
+     x="4"
+     y="4"
+     width="56"
+     height="56"
+     rx="4"
+     fill="#8B6914"
+     id="rect1"
+     style="filter:url(#filter199)" />
+  <rect
+     x="4"
+     y="4"
+     width="56"
+     height="24"
+     rx="4"
+     fill="#5D8C2E"
+     id="rect2"
+     style="filter:url(#filter198)" />
+  <rect
+     x="4"
+     y="24"
+     width="56"
+     height="4"
+     fill="#5D8C2E"
+     id="rect3"
+     style="filter:url(#filter197)" />
+  <rect
+     x="12"
+     y="32"
+     width="8"
+     height="8"
+     rx="1"
+     fill="#7A5C10"
+     opacity="0.5"
+     id="rect4"
+     style="filter:url(#filter196)" />
+  <rect
+     x="28"
+     y="40"
+     width="8"
+     height="8"
+     rx="1"
+     fill="#7A5C10"
+     opacity="0.5"
+     id="rect5"
+     style="filter:url(#filter195)" />
+  <rect
+     x="44"
+     y="34"
+     width="8"
+     height="8"
+     rx="1"
+     fill="#7A5C10"
+     opacity="0.5"
+     id="rect6"
+     style="filter:url(#filter194)" />
+  <rect
+     x="20"
+     y="46"
+     width="8"
+     height="8"
+     rx="1"
+     fill="#7A5C10"
+     opacity="0.5"
+     id="rect7"
+     style="filter:url(#filter193)" />
+  <rect
+     x="10"
+     y="10"
+     width="6"
+     height="6"
+     rx="1"
+     fill="#6EA834"
+     opacity="0.6"
+     id="rect8"
+     style="filter:url(#filter192)" />
+  <rect
+     x="24"
+     y="8"
+     width="6"
+     height="6"
+     rx="1"
+     fill="#6EA834"
+     opacity="0.6"
+     id="rect9"
+     style="filter:url(#filter191)" />
+  <rect
+     x="40"
+     y="12"
+     width="6"
+     height="6"
+     rx="1"
+     fill="#6EA834"
+     opacity="0.6"
+     id="rect10"
+     style="filter:url(#filter190)" />
 </svg>

@@ -11,6 +11,9 @@ module.exports = async function ensureSetup(req, res, next) {
     try {
         const setupComplete = await configDb.get('setup.complete');
         if (!setupComplete) {
+            if (req.path.startsWith('/api/')) {
+                return res.status(503).json({ error: 'setup_required' });
+            }
             return res.redirect('/setup');
         }
         next();

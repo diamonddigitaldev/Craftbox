@@ -5,7 +5,7 @@ const backupRoutes = require('./backups');
 const eventRoutes = require('./events');
 const pluginRoutes = require('./plugins');
 const templateRoutes = require('./templates');
-const apiRoutes = require('./api');
+const apiV1Routes = require('./api-v1');
 
 module.exports = function mountRoutes(app) {
     app.use(authRoutes);
@@ -15,5 +15,5 @@ module.exports = function mountRoutes(app) {
     app.use(eventRoutes);
     app.use(pluginRoutes);
     app.use(templateRoutes);
-    app.use(apiRoutes);
+    app.use('/api/v1', apiV1Routes);
 };

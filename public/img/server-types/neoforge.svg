@@ -1,29 +1,152 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- NeoForge - pixelated fox mascot -->
-  <!-- Ears -->
-  <polygon points="12,10 22,10 22,26 12,26" fill="#D4762C"/>
-  <polygon points="42,10 52,10 52,26 42,26" fill="#D4762C"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 64 64"
+   fill="none"
+   version="1.1"
+   id="svg16"
+   sodipodi:docname="neoforge.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs16" />
+  <sodipodi:namedview
+     id="namedview16"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="12.21875"
+     inkscape:cx="32"
+     inkscape:cy="32"
+     inkscape:window-width="1920"
+     inkscape:window-height="995"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg16" />
+  <polygon
+     points="12,10 22,10 22,26 12,26"
+     fill="#D4762C"
+     id="polygon1" />
+  <polygon
+     points="42,10 52,10 52,26 42,26"
+     fill="#D4762C"
+     id="polygon2" />
   <!-- Inner ears -->
-  <polygon points="16,14 20,14 20,24 16,24" fill="#E8944A"/>
-  <polygon points="44,14 48,14 48,24 44,24" fill="#E8944A"/>
-  <!-- Head -->
-  <rect x="10" y="22" width="44" height="28" rx="2" fill="#D4762C"/>
-  <!-- Face center (lighter) -->
-  <rect x="18" y="28" width="28" height="22" rx="2" fill="#E8A050"/>
-  <!-- Muzzle (white) -->
-  <rect x="22" y="36" width="20" height="14" rx="2" fill="#F5F0E0"/>
-  <!-- Eyes -->
-  <rect x="18" y="30" width="8" height="8" rx="1" fill="#FFFFFF"/>
-  <rect x="38" y="30" width="8" height="8" rx="1" fill="#FFFFFF"/>
-  <rect x="21" y="32" width="4" height="5" rx="1" fill="#3E2723"/>
-  <rect x="40" y="32" width="4" height="5" rx="1" fill="#3E2723"/>
-  <!-- Eye shine -->
-  <rect x="22" y="33" width="2" height="2" fill="#FFFFFF"/>
-  <rect x="41" y="33" width="2" height="2" fill="#FFFFFF"/>
-  <!-- Nose -->
-  <rect x="28" y="38" width="8" height="5" rx="1" fill="#3E2723"/>
-  <!-- Mouth -->
-  <rect x="31" y="43" width="2" height="4" fill="#3E2723"/>
-  <rect x="27" y="47" width="4" height="2" rx="1" fill="#3E2723"/>
-  <rect x="33" y="47" width="4" height="2" rx="1" fill="#3E2723"/>
+  <polygon
+     points="16,14 20,14 20,24 16,24"
+     fill="#E8944A"
+     id="polygon3" />
+  <polygon
+     points="44,14 48,14 48,24 44,24"
+     fill="#E8944A"
+     id="polygon4" />
+  <rect
+     x="10"
+     y="22"
+     width="44"
+     height="28"
+     rx="2"
+     fill="#D4762C"
+     id="rect4" />
+  <rect
+     x="18"
+     y="28"
+     width="28"
+     height="22"
+     rx="2"
+     fill="#E8A050"
+     id="rect5" />
+  <rect
+     x="22"
+     y="36"
+     width="20"
+     height="14"
+     rx="2"
+     fill="#F5F0E0"
+     id="rect6" />
+  <rect
+     x="18"
+     y="30"
+     width="8"
+     height="8"
+     rx="1"
+     fill="#FFFFFF"
+     id="rect7" />
+  <rect
+     x="38"
+     y="30"
+     width="8"
+     height="8"
+     rx="1"
+     fill="#FFFFFF"
+     id="rect8" />
+  <rect
+     x="21"
+     y="32"
+     width="4"
+     height="5"
+     rx="1"
+     fill="#3E2723"
+     id="rect9" />
+  <rect
+     x="40"
+     y="32"
+     width="4"
+     height="5"
+     rx="1"
+     fill="#3E2723"
+     id="rect10" />
+  <rect
+     x="22"
+     y="33"
+     width="2"
+     height="2"
+     fill="#FFFFFF"
+     id="rect11" />
+  <rect
+     x="41"
+     y="33"
+     width="2"
+     height="2"
+     fill="#FFFFFF"
+     id="rect12" />
+  <rect
+     x="28"
+     y="38"
+     width="8"
+     height="5"
+     rx="1"
+     fill="#3E2723"
+     id="rect13" />
+  <rect
+     x="31"
+     y="42.345268"
+     width="2"
+     height="4.6547313"
+     fill="#3e2723"
+     id="rect14"
+     style="stroke-width:1.07874" />
+  <rect
+     x="27"
+     y="47"
+     width="4"
+     height="2"
+     rx="1"
+     fill="#3E2723"
+     id="rect15" />
+  <rect
+     x="33"
+     y="47"
+     width="4"
+     height="2"
+     rx="1"
+     fill="#3E2723"
+     id="rect16" />
 </svg>

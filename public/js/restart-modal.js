@@ -3,8 +3,6 @@
     const modalEl = document.getElementById('restartModal');
     if (!modalEl) return;
 
-    // Always wire up the restart button so it works whether the modal
-    // was triggered by a ?saved page load OR by AJAX (MOTD save, icon upload, etc.)
     const restartBtn = document.getElementById('restart-now-btn');
     const backupCheckbox = document.getElementById('restartBackup');
 
@@ -24,29 +22,20 @@
             );
 
             const serverId = restartBtn.dataset.serverId;
-            const csrf = restartBtn.dataset.csrf;
 
-            try {
-                const bodyParts = ['_csrf=' + encodeURIComponent(csrf)];
-                if (wantBackup) bodyParts.push('backup=true');
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/restart', {
+                method: 'POST',
+                body: wantBackup ? { backup: true } : {}
+            });
 
-                const res = await fetch('/servers/' + serverId + '/restart', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'X-CSRF-Token': csrf
-                    },
-                    body: bodyParts.join('&')
-                });
-
-                if (res.redirected) {
-                    window.location.href = res.url;
-                } else {
-                    window.location.href = '/servers/' + serverId;
-                }
-            } catch {
-                window.location.href = '/servers/' + serverId;
+            if (!res.ok) {
+                hideOverlay();
+                alert((res.data && (res.data.message || res.data.error)) || 'Failed to restart server.');
+                restartBtn.disabled = false;
+                restartBtn.textContent = 'Restart Now';
+                return;
             }
+            window.location.href = '/servers/' + serverId;
         });
     }
 
@@ -54,10 +43,8 @@
     const params = new URLSearchParams(window.location.search);
     if (!params.has('saved')) return;
 
-    // Clean URL without reloading
     window.history.replaceState({}, '', window.location.pathname);
 
-    // Only show restart modal if server is not already stopped
     var serverState = modalEl.dataset.serverState;
     if (serverState === 'stopped' || serverState === 'crashed') return;
 

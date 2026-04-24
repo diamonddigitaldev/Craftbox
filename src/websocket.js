@@ -1,6 +1,5 @@
 const WebSocket = require('ws');
 const { log } = require('./utils/log');
-const { serversDb } = require('./db');
 
 /**
  * Initialize WebSocket server on the given HTTP server.
@@ -116,50 +115,33 @@ async function handleMessage(ws, msg, serverManager) {
                 return;
             }
 
-            const proc = serverManager.getProcess(serverId);
+            // Lazy-create a ServerProcess on subscribe so the ws is registered
+            // as a subscriber BEFORE any state changes. Without this, subscribes
+            // before first start() never see lifecycle broadcasts (the proc
+            // created by startServer has an empty subscribers set).
+            let proc;
+            try {
+                proc = await serverManager.getOrCreateProcess(serverId);
+            } catch (err) {
+                log('warn', `WebSocket subscribe: failed to load server ${serverId}: ${err.message}`);
+            }
+
             if (proc) {
                 proc.subscribe(ws);
             } else {
-                // No in-memory process — hydrate from DB so the crash banner
-                // and state badge stay accurate after a Craftbox restart.
-                let dbState = 'stopped';
-                let dbExitCode = null;
-                let dbCrashReason = null;
-                let dbLastStarted = null;
-                try {
-                    const server = await serversDb.get(`server_${serverId}`);
-                    if (server) {
-                        dbState = server.state === 'crashed' ? 'crashed' : 'stopped';
-                        dbExitCode = server.exitCode != null ? server.exitCode : null;
-                        dbCrashReason = server.crashReason || null;
-                        dbLastStarted = server.lastStarted || null;
-                    }
-                } catch (err) {
-                    log('warn', `WebSocket subscribe: failed to read server ${serverId} from DB: ${err.message}`);
-                }
-
-                if (ws.isPublic) {
-                    ws.send(JSON.stringify({
-                        type: 'subscribed',
-                        serverId,
-                        state: dbState,
-                        lastStarted: dbLastStarted,
-                        players: [],
-                        playerCount: 0
-                    }));
-                } else {
-                    ws.send(JSON.stringify({
-                        type: 'subscribed',
-                        serverId,
-                        state: dbState,
-                        lastStarted: dbLastStarted,
-                        history: [],
-                        players: [],
-                        playerCount: 0,
-                        exitCode: dbExitCode,
-                        crashReason: dbCrashReason
-                    }));
-                }
+                // Server doesn't exist in DB — send a minimal "subscribed" stub
+                // so the client's UI still renders something.
+                ws.send(JSON.stringify({
+                    type: 'subscribed',
+                    serverId,
+                    state: 'stopped',
+                    lastStarted: null,
+                    history: [],
+                    players: [],
+                    playerCount: 0,
+                    exitCode: null,
+                    crashReason: null
+                }));
             }
             ws.subscribedServers.add(serverId);
             break;

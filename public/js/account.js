@@ -1,4 +1,10 @@
 document.addEventListener('DOMContentLoaded', function () {
+    var csrfToken = document.querySelector('input[name="_csrf"]').value;
+
+    // ═══════════════════════════════════════════
+    // Change Username / Password
+    // ═══════════════════════════════════════════
+
     var confirmSaveBtn = document.getElementById('confirmSaveBtn');
     var saveBtn = document.getElementById('saveBtn');
     var form = document.getElementById('accountForm');
@@ -7,8 +13,6 @@ document.addEventListener('DOMContentLoaded', function () {
     var newPasswordField = document.getElementById('newPassword');
     var confirmPwField = document.getElementById('confirmNewPassword');
 
-    // Enable the save button only when current password is filled
-    // AND at least one change (username or password) is provided
     function checkForm() {
         var hasCurrent = currentPwField.value.length > 0;
         var hasChange = newUsernameField.value.trim().length > 0 || newPasswordField.value.length > 0;
@@ -19,7 +23,6 @@ document.addEventListener('DOMContentLoaded', function () {
     form.addEventListener('change', checkForm);
     checkForm();
 
-    // Submit the form from the modal confirmation button
     confirmSaveBtn.addEventListener('click', function () {
         confirmSaveBtn.disabled = true;
         confirmSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
@@ -30,7 +33,6 @@ document.addEventListener('DOMContentLoaded', function () {
         form.submit();
     });
 
-    // Enter key triggers save button
     form.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -38,7 +40,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Final validation before showing the modal
     var confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
     saveBtn.addEventListener('click', function () {
         if (!form.reportValidity()) return;
@@ -55,4 +56,147 @@ document.addEventListener('DOMContentLoaded', function () {
 
         confirmModal.show();
     });
+
+    // ═══════════════════════════════════════════
+    // API Keys — Create
+    // ═══════════════════════════════════════════
+
+    var createKeyModal = new bootstrap.Modal(document.getElementById('createKeyModal'));
+    var showKeyModal = new bootstrap.Modal(document.getElementById('showKeyModal'));
+    var deleteKeyModal = new bootstrap.Modal(document.getElementById('deleteKeyModal'));
+
+    var createKeyBtn = document.getElementById('create-key-btn');
+    var createKeyForm = document.getElementById('create-key-form');
+    var keyNameInput = document.getElementById('keyName');
+    var confirmCreateBtn = document.getElementById('confirm-create-key-btn');
+
+    if (createKeyBtn) {
+        createKeyBtn.addEventListener('click', function () {
+            keyNameInput.value = '';
+            keyNameInput.setCustomValidity('');
+            createKeyModal.show();
+        });
+    }
+
+    // Bootstrap's shown.bs.modal fires after its own focus logic has settled,
+    // so focusing here sticks (setTimeout races and loses).
+    document.getElementById('createKeyModal').addEventListener('shown.bs.modal', function () {
+        keyNameInput.focus();
+    });
+
+    if (createKeyForm) {
+        createKeyForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            if (!createKeyForm.reportValidity()) return;
+
+            var name = keyNameInput.value.trim();
+            if (!name) return;
+
+            confirmCreateBtn.disabled = true;
+            createKeyModal.hide();
+            showOverlay('Generating key...', 'Please wait while the key is created.');
+
+            try {
+                var res = await fetch('/api/v1/account/apikeys', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ name: name })
+                });
+                var data = await res.json().catch(function () { return {}; });
+                if (!res.ok) {
+                    hideOverlay();
+                    confirmCreateBtn.disabled = false;
+                    alert(data.message || data.error || 'Failed to generate key.');
+                    return;
+                }
+
+                hideOverlay();
+                confirmCreateBtn.disabled = false;
+                document.getElementById('generatedKeyValue').value = data.key;
+                showKeyModal.show();
+            } catch (err) {
+                hideOverlay();
+                confirmCreateBtn.disabled = false;
+                alert('Network error: ' + err.message);
+            }
+        });
+    }
+
+    // Copy the generated key to the clipboard
+    var copyKeyBtn = document.getElementById('copy-key-btn');
+    if (copyKeyBtn) {
+        copyKeyBtn.addEventListener('click', async function () {
+            var input = document.getElementById('generatedKeyValue');
+            try {
+                await navigator.clipboard.writeText(input.value);
+                copyKeyBtn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1.1rem;">check</span>';
+                setTimeout(function () {
+                    copyKeyBtn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1.1rem;">content_copy</span>';
+                }, 1500);
+            } catch (err) {
+                // Fallback: select the input
+                input.select();
+                try { document.execCommand('copy'); } catch (_) {}
+            }
+        });
+    }
+
+    // "I've saved it" closes the show-key modal and reloads so the new key appears in the table
+    var savedKeyBtn = document.getElementById('saved-key-btn');
+    if (savedKeyBtn) {
+        savedKeyBtn.addEventListener('click', function () {
+            showKeyModal.hide();
+            window.location.reload();
+        });
+    }
+
+    // ═══════════════════════════════════════════
+    // API Keys — Delete
+    // ═══════════════════════════════════════════
+
+    var pendingDeleteId = null;
+
+    document.querySelectorAll('.delete-key-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            pendingDeleteId = btn.getAttribute('data-key-id');
+            document.getElementById('deleteKeyName').textContent = btn.getAttribute('data-key-name') || '';
+            document.getElementById('deleteKeyPrefix').textContent = btn.getAttribute('data-key-prefix') || '';
+            deleteKeyModal.show();
+        });
+    });
+
+    var confirmDeleteBtn = document.getElementById('confirm-delete-key-btn');
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', async function () {
+            if (!pendingDeleteId) return;
+
+            confirmDeleteBtn.disabled = true;
+            deleteKeyModal.hide();
+            showOverlay('Deleting key...', 'Please wait while the key is removed.');
+
+            try {
+                var res = await fetch('/api/v1/account/apikeys/' + encodeURIComponent(pendingDeleteId), {
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-Token': csrfToken }
+                });
+
+                if (!res.ok && res.status !== 204) {
+                    var data = await res.json().catch(function () { return {}; });
+                    hideOverlay();
+                    confirmDeleteBtn.disabled = false;
+                    alert(data.message || data.error || 'Failed to delete key.');
+                    return;
+                }
+
+                window.location.reload();
+            } catch (err) {
+                hideOverlay();
+                confirmDeleteBtn.disabled = false;
+                alert('Network error: ' + err.message);
+            }
+        });
+    }
 });

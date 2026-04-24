@@ -213,7 +213,7 @@
                             </h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
-                        <form method="POST" action="/servers/<%= server.id %>/backups/create" id="backup-form">
+                        <form id="backup-form">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                             <input type="hidden" name="stopFirst" id="backupStopFirst"
                                 value="<%= _serverStopped ? 'false' : 'true' %>">
@@ -284,7 +284,7 @@
                         <div class="modal-footer border-0 pt-0">
                             <button type="button" class="btn btn-secondary btn-sm"
                                 data-bs-dismiss="modal">Cancel</button>
-                            <form method="POST" id="restore-form" action="" style="display:inline;">
+                            <form id="restore-form" style="display:inline;">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                 <input type="hidden" name="startAfter" id="startAfterInput" value="true">
                                 <button type="submit" class="btn btn-primary btn-sm"
@@ -312,7 +312,7 @@
                         <div class="modal-footer border-0 pt-0">
                             <button type="button" class="btn btn-secondary btn-sm"
                                 data-bs-dismiss="modal">Cancel</button>
-                            <form method="POST" id="delete-form" action="" style="display:inline;">
+                            <form id="delete-form" style="display:inline;">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                 <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                             </form>

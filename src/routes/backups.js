@@ -5,26 +5,17 @@ const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb, backupsDb } = require('../db');
 const { log } = require('../utils/log');
-const { logEvent } = require('../utils/eventLogger');
 const {
-    createBackup,
-    restoreBackup,
-    deleteBackup,
     listBackups,
-    applyRetention,
     formatSize,
     resolveBackupPath
 } = require('../mc/BackupManager');
-const { STATES } = require('../mc/stateMachine');
-const { syncServerConfig } = require('../mc/syncServerConfig');
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * Load server with live state from ServerManager.
- */
 async function getServerWithState(req) {
     const id = req.params.id;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+    if (!UUID_RE.test(id)) return null;
     const server = await serversDb.get(`server_${id}`);
     if (!server) return null;
     const serverManager = req.app.get('serverManager');
@@ -35,10 +26,7 @@ async function getServerWithState(req) {
     return server;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// ── GET /servers/:id/backups — Backups page ──
-
+// GET /servers/:id/backups — Backups page (view only; mutations live on /api/v1)
 router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
@@ -79,133 +67,7 @@ router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
     delete req.session.flash;
 });
 
-// ── POST /servers/:id/backups/create — Create a manual backup ──
-
-router.post('/servers/:id/backups/create', ensureAuth, async (req, res) => {
-    const server = await getServerWithState(req);
-    if (!server) {
-        req.session.flash = { error: 'Server not found.' };
-        return res.redirect('/dashboard');
-    }
-
-    const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(server.id);
-    const stopFirst = req.body.stopFirst === 'true' || req.body.stopFirst === true;
-    const startAfter = req.body.startAfter === 'true' || req.body.startAfter === true;
-    let backupName = (req.body.name && req.body.name.trim()) || 'Manual Backup';
-    if (backupName.length > 50 || !/^[A-Za-z0-9 _\-]+$/.test(backupName)) {
-        backupName = 'Manual Backup';
-    }
-
-    try {
-        // If server is running and user requested stop-first
-        if (proc && ![STATES.STOPPED, STATES.CRASHED].includes(proc.state)) {
-            if (!stopFirst) {
-                req.session.flash = { error: 'Server must be stopped to create a backup.' };
-                return res.redirect(`/servers/${server.id}/backups`);
-            }
-
-            // Stop the server and wait
-            if (proc.state === STATES.RUNNING || proc.state === STATES.STARTING) {
-                await serverManager.stopServer(server.id, { initiatedBy: req.user.username });
-                await proc.waitForState(STATES.STOPPED, 60000);
-            }
-        }
-
-        await serverManager.setOperationalState(server.id, STATES.BACKING_UP);
-        try {
-            const backup = await createBackup(server.id, backupName, 'manual');
-
-            // Apply retention policy after backup
-            const schedule = server.backupSchedule || {};
-            await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
-
-            logEvent(server.id, 'backup_create', `Manual backup created (${formatSize(backup.size)})`, { initiatedBy: req.user.username }).catch(() => {});
-            req.session.flash = { success: `Backup created: ${formatSize(backup.size)}` };
-        } finally {
-            await serverManager.setOperationalState(server.id, STATES.STOPPED);
-        }
-
-        // Start server after backup if requested
-        if (startAfter) {
-            try {
-                await serverManager.startServer(server.id, { initiatedBy: req.user.username });
-            } catch (err) {
-                log('error', `Failed to start server after backup: ${err.message}`);
-                req.session.flash = { warning: 'Backup created, but server failed to start: ' + err.message };
-            }
-        }
-    } catch (err) {
-        log('error', `Backup creation failed for ${server.name}: ${err.message}`);
-        logEvent(server.id, 'backup_create_fail', `Manual backup failed: ${err.message}`, { initiatedBy: req.user.username }).catch(() => {});
-        req.session.flash = { error: `Backup failed: ${err.message}` };
-    }
-
-    return res.redirect(`/servers/${server.id}/backups`);
-});
-
-// ── POST /servers/:id/backups/:backupId/restore — Restore a backup ──
-
-router.post('/servers/:id/backups/:backupId/restore', ensureAuth, async (req, res) => {
-    if (!UUID_RE.test(req.params.backupId)) {
-        return res.status(400).redirect('/dashboard');
-    }
-    const server = await getServerWithState(req);
-    if (!server) {
-        req.session.flash = { error: 'Server not found.' };
-        return res.redirect('/dashboard');
-    }
-
-    const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(server.id);
-    const startAfter = req.body.startAfter === 'true' || req.body.startAfter === true;
-
-    try {
-        // Stop server if running
-        if (proc && ![STATES.STOPPED, STATES.CRASHED].includes(proc.state)) {
-            if (proc.state === STATES.RUNNING || proc.state === STATES.STARTING) {
-                await serverManager.stopServer(server.id, { initiatedBy: req.user.username });
-                await proc.waitForState(STATES.STOPPED, 60000);
-            }
-        }
-
-        await serverManager.setOperationalState(server.id, STATES.RESTORING);
-        try {
-            const backup = await backupsDb.get(`backup_${req.params.backupId}`);
-            await restoreBackup(server.id, req.params.backupId);
-
-            // Sync DB fields from the restored server.properties
-            await syncServerConfig(server.id);
-
-            const restoreDetail = backup?.createdAt
-                ? `Restored from backup (${backup.createdAt})`
-                : 'Restored from backup';
-            logEvent(server.id, 'backup_restore', restoreDetail, { initiatedBy: req.user.username }).catch(() => {});
-            req.session.flash = { success: 'Backup restored successfully.' };
-        } finally {
-            await serverManager.setOperationalState(server.id, STATES.STOPPED);
-        }
-
-        // Start server after restore if requested
-        if (startAfter) {
-            try {
-                await serverManager.startServer(server.id, { initiatedBy: req.user.username });
-            } catch (err) {
-                log('error', `Failed to start server after restore: ${err.message}`);
-                req.session.flash = { warning: 'Backup restored, but server failed to start: ' + err.message };
-            }
-        }
-    } catch (err) {
-        log('error', `Restore failed for ${server.name}: ${err.message}`);
-        logEvent(server.id, 'backup_restore_fail', `Backup restore failed: ${err.message}`, { initiatedBy: req.user.username }).catch(() => {});
-        req.session.flash = { error: `Restore failed: ${err.message}` };
-    }
-
-    return res.redirect(`/servers/${server.id}/backups`);
-});
-
-// ── GET /servers/:id/backups/:backupId/download — Download a backup ZIP ──
-
+// GET /servers/:id/backups/:backupId/download — Download a backup ZIP (binary)
 router.get('/servers/:id/backups/:backupId/download', ensureAuth, async (req, res) => {
     if (!UUID_RE.test(req.params.backupId)) {
         return res.status(400).json({ error: 'Invalid backup ID.' });
@@ -241,30 +103,6 @@ router.get('/servers/:id/backups/:backupId/download', ensureAuth, async (req, re
         }
     });
     stream.pipe(res);
-});
-
-// ── POST /servers/:id/backups/:backupId/delete — Delete a backup ──
-
-router.post('/servers/:id/backups/:backupId/delete', ensureAuth, async (req, res) => {
-    if (!UUID_RE.test(req.params.backupId)) {
-        return res.status(400).redirect('/dashboard');
-    }
-    const server = await getServerWithState(req);
-    if (!server) {
-        req.session.flash = { error: 'Server not found.' };
-        return res.redirect('/dashboard');
-    }
-
-    try {
-        await deleteBackup(server.id, req.params.backupId);
-        logEvent(server.id, 'backup_delete', 'Backup deleted', { initiatedBy: req.user.username }).catch(() => {});
-        req.session.flash = { success: 'Backup deleted.' };
-    } catch (err) {
-        log('error', `Backup delete failed: ${err.message}`);
-        req.session.flash = { error: `Delete failed: ${err.message}` };
-    }
-
-    return res.redirect(`/servers/${server.id}/backups`);
 });
 
 module.exports = router;

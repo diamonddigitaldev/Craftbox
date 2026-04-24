@@ -41,8 +41,11 @@ eulaCheck.addEventListener('change', validateCreateForm);
 form.addEventListener('input', validateCreateForm);
 form.addEventListener('change', validateCreateForm);
 
-// ── Form submit overlay ──
-form.addEventListener('submit', () => {
+// ── Form submit — create via /api/v1/servers ──
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!form.reportValidity()) return;
+
     createBtn.disabled = true;
     createBtn.innerHTML =
         '<span class="spinner-border spinner-border-sm" role="status"></span> Creating...';
@@ -50,12 +53,32 @@ form.addEventListener('submit', () => {
     const typeName = typesData.find(t => t.id === selectedType)?.name || selectedType;
     const ver = selectedType === 'custom' ? '' : ' ' + (versionSelect.value || '');
     showOverlay(`Setting up your ${typeName}${ver} server...`, 'Getting everything ready. This may take a minute.');
+
+    var body = {};
+    new FormData(form).forEach(function (v, k) {
+        if (k === '_csrf') return;
+        // Checkboxes only appear when checked
+        body[k] = v;
+    });
+    // EULA checkbox — explicit boolean
+    body.eula = !!document.getElementById('eula').checked;
+
+    var res = await apiFetch('/api/v1/servers', { method: 'POST', body: body });
+    if (!res.ok) {
+        hideOverlay();
+        alert((res.data && (res.data.message || res.data.error)) || 'Failed to create server.');
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create Server';
+        return;
+    }
+    var newId = res.data && res.data.server && res.data.server.id;
+    window.location.href = newId ? '/servers/' + newId : '/dashboard';
 });
 
 // ── Load server types ──
 (async () => {
     try {
-        const res = await fetch('/api/server-types');
+        const res = await fetch('/api/v1/server-types');
         const data = await res.json();
         typesData = data.types || [];
         renderTypeCards(typesData);
@@ -123,7 +146,7 @@ async function loadVersions(typeId, preselect) {
     const wasEnabled = !createBtn.disabled;
     createBtn.disabled = true;
     try {
-        const res = await fetch(`/api/versions?type=${encodeURIComponent(typeId)}`);
+        const res = await fetch(`/api/v1/versions?type=${encodeURIComponent(typeId)}`);
         const data = await res.json();
 
         versionSelect.innerHTML = '';
@@ -151,7 +174,7 @@ const templateGroup = document.getElementById('template-group');
 
 (async () => {
     try {
-        const res = await fetch('/api/templates');
+        const res = await fetch('/api/v1/templates');
         const data = await res.json();
         if (data.templates && data.templates.length > 0) {
             templateGroup.classList.remove('d-none');
@@ -211,7 +234,7 @@ templateSelect.addEventListener('change', async () => {
     }
 
     try {
-        const res = await fetch(`/api/templates/${id}`);
+        const res = await fetch(`/api/v1/templates/${id}`);
         const data = await res.json();
         const t = data.template;
         if (!t) return;

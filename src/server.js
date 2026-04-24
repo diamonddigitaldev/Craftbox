@@ -128,8 +128,15 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         const ensureSetup = require('./middleware/ensureSetup');
         app.use(ensureSetup);
 
-        // CSRF token injection + validation
+        // CSRF token injection
         app.use(csrfToken);
+
+        // API v1 auth — runs BEFORE csrfValidate so bearer-authed requests can
+        // mark req.apiKeyAuth=true and have CSRF skipped for them.
+        const ensureApiAuth = require('./middleware/ensureApiAuth');
+        app.use('/api/v1', ensureApiAuth);
+
+        // CSRF validation (skips when req.apiKeyAuth is set)
         app.use(csrfValidate);
 
         // ── 6. Mount routes ──
@@ -139,6 +146,9 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
 
         // 404 handler
         app.use((req, res) => {
+            if (req.path.startsWith('/api/')) {
+                return res.status(404).json({ error: 'not_found' });
+            }
             res.status(404).render('errors/404', {
                 title: '404',
                 navbar: !!req.user,
@@ -152,6 +162,12 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
             log('error', `Unhandled error: ${err.message}`);
             if (NODE_ENV !== 'production') {
                 log('error', err.stack);
+            }
+            if (req.path.startsWith('/api/')) {
+                return res.status(500).json({
+                    error: 'internal_error',
+                    message: NODE_ENV === 'production' ? undefined : err.message
+                });
             }
             res.status(500).render('errors/500', {
                 title: 'Error',

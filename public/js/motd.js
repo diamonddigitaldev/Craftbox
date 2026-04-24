@@ -176,32 +176,21 @@
         var val2 = escapeNonAscii(lines[1] || '');
         var motd = val1 + (val2 ? '\\n' + val2 : '');
 
-        try {
-            var res = await fetch('/api/servers/' + serverId + '/motd', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrf
-                },
-                body: JSON.stringify({ motd: motd })
-            });
-
-            if (res.ok) {
-                saveBtn.textContent = 'Saved!';
-                showMotdStatus('success', 'Restart the server for changes to take effect.');
-                // Show restart modal if server is running
-                var modalEl = document.getElementById('restartModal');
-                if (modalEl) {
-                    var state = modalEl.dataset.serverState;
-                    if (state !== 'stopped' && state !== 'crashed') {
-                        new bootstrap.Modal(modalEl).show();
-                    }
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/motd', {
+            method: 'POST',
+            body: { motd: motd }
+        });
+        if (res.ok) {
+            saveBtn.textContent = 'Saved!';
+            showMotdStatus('success', 'Restart the server for changes to take effect.');
+            var modalEl = document.getElementById('restartModal');
+            if (modalEl) {
+                var state = modalEl.dataset.serverState;
+                if (state !== 'stopped' && state !== 'crashed') {
+                    new bootstrap.Modal(modalEl).show();
                 }
-            } else {
-                saveBtn.textContent = 'Error';
-                showMotdStatus('danger', 'Failed to save MOTD.');
             }
-        } catch {
+        } else {
             saveBtn.textContent = 'Error';
             showMotdStatus('danger', 'Failed to save MOTD.');
         }

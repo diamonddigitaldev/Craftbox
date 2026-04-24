@@ -1,5 +1,38 @@
 // Global Craftbox scripts — loaded on every page
 
+// ── apiFetch: shared wrapper for /api/v1 calls from the frontend ──
+// Automatically sets Content-Type + X-CSRF-Token on mutations and JSON-parses
+// the response. Returns { ok, status, data }. Never throws on HTTP errors.
+function _findCsrfToken() {
+    var el = document.querySelector('input[name="_csrf"]');
+    return el ? el.value : '';
+}
+async function apiFetch(path, options) {
+    options = options || {};
+    var method = (options.method || 'GET').toUpperCase();
+    var headers = Object.assign({}, options.headers || {});
+    if (method !== 'GET' && method !== 'HEAD') {
+        headers['X-CSRF-Token'] = headers['X-CSRF-Token'] || _findCsrfToken();
+    }
+    var body = options.body;
+    // If body is a plain object, JSON-encode it and set the content type
+    if (body && typeof body === 'object' && !(body instanceof FormData) && !(body instanceof Blob) && !(body instanceof ArrayBuffer)) {
+        body = JSON.stringify(body);
+        headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+    }
+    var res;
+    try {
+        res = await fetch(path, { method: method, headers: headers, body: body });
+    } catch (err) {
+        return { ok: false, status: 0, data: { error: 'network_error', message: err.message } };
+    }
+    var data = null;
+    if (res.status !== 204) {
+        try { data = await res.json(); } catch (_) { data = null; }
+    }
+    return { ok: res.ok, status: res.status, data: data };
+}
+
 // ── Client-side date formatting ──
 // Formats an ISO string to the user's local date/time.
 // style: 'datetime' (default) = full date+time, 'date' = date only

@@ -42,26 +42,31 @@ function csrfValidate(req, res, next) {
     // Skip for non-mutating methods
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
 
-    const token = req.body?._csrf || req.headers['x-csrf-token'];
-    if (!token || !req.session?.csrfToken) {
+    // Bearer-token auth on /api/v1/* is not CSRF-vulnerable — browsers can't
+    // forge the Authorization header cross-origin without CORS preflight.
+    if (req.apiKeyAuth) return next();
+
+    const isApi = req.path.startsWith('/api/');
+    const fail = (message) => {
+        if (isApi) return res.status(403).json({ error: 'forbidden', message });
         return res.status(403).render('errors/403', {
             title: 'Forbidden',
-            message: 'Invalid or missing CSRF token. Please try again.',
+            message,
             navbar: false,
             user: null
         });
+    };
+
+    const token = req.body?._csrf || req.headers['x-csrf-token'];
+    if (!token || !req.session?.csrfToken) {
+        return fail('Invalid or missing CSRF token. Please try again.');
     }
 
     // Constant-time comparison to prevent timing side-channel attacks
     const tokenBuf = Buffer.from(String(token));
     const expectedBuf = Buffer.from(req.session.csrfToken);
     if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
-        return res.status(403).render('errors/403', {
-            title: 'Forbidden',
-            message: 'Invalid or missing CSRF token. Please try again.',
-            navbar: false,
-            user: null
-        });
+        return fail('Invalid or missing CSRF token. Please try again.');
     }
 
     next();

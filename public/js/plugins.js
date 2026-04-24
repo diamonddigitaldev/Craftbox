@@ -45,7 +45,7 @@
             var newValue = sel.value;
             sel.disabled = true;
             try {
-                var res = await fetch('/servers/' + serverId + '/plugins/environment', {
+                var res = await fetch('/api/v1/servers/' + serverId + '/plugins/environment', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -150,7 +150,7 @@
         }
 
         try {
-            var res = await fetch('/servers/' + serverId + '/plugins/upload', {
+            var res = await fetch('/api/v1/servers/' + serverId + '/plugins/upload', {
                 method: 'POST',
                 headers: { 'X-CSRF-Token': csrf },
                 body: formData
@@ -252,7 +252,7 @@
                 confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
 
                 try {
-                    var res = await fetch('/servers/' + serverId + '/plugins/delete', {
+                    var res = await fetch('/api/v1/servers/' + serverId + '/plugins/delete', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -299,7 +299,7 @@
                 showOverlay('Deleting all ' + uploadLabel + '...', 'Please wait while all files are removed.');
 
                 try {
-                    var res = await fetch('/servers/' + serverId + '/plugins/delete-all', {
+                    var res = await fetch('/api/v1/servers/' + serverId + '/plugins/delete-all', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

@@ -2,11 +2,8 @@ const express = require('express');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const { serversDb } = require('../db');
-const { getEvents, deleteServerEvents } = require('../utils/eventLogger');
+const { getEvents } = require('../utils/eventLogger');
 
-/**
- * Load server with live state from ServerManager.
- */
 async function getServerWithState(req) {
     const id = req.params.id;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
@@ -20,8 +17,7 @@ async function getServerWithState(req) {
     return server;
 }
 
-// ── GET /servers/:id/events — Event Log page ──
-
+// GET /servers/:id/events — Event Log page (view only; clear action lives on /api/v1)
 router.get('/servers/:id/events', ensureAuth, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
@@ -46,32 +42,6 @@ router.get('/servers/:id/events', ensureAuth, async (req, res) => {
         typeFilter,
         csrfToken: res.locals.csrfToken
     });
-});
-
-// ── POST /servers/:id/events/clear — Clear all events ──
-
-router.post('/servers/:id/events/clear', ensureAuth, async (req, res) => {
-    const server = await getServerWithState(req);
-    if (!server) {
-        return res.status(404).render('errors/404', {
-            title: '404', navbar: true, user: req.user, message: 'Server not found.'
-        });
-    }
-
-    await deleteServerEvents(server.id);
-
-    // Broadcast to all WS clients subscribed to this server
-    const wss = req.app.get('wss');
-    if (wss) {
-        const msg = JSON.stringify({ type: 'events_cleared', serverId: server.id });
-        for (const client of wss.clients) {
-            if (client.readyState === 1 && client.subscribedServers && client.subscribedServers.has(server.id)) {
-                client.send(msg);
-            }
-        }
-    }
-
-    res.redirect(`/servers/${server.id}/events`);
 });
 
 module.exports = router;

@@ -1,11 +1,82 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Purpur block - purple prismarine-like pattern -->
-  <rect x="4" y="4" width="56" height="56" rx="6" fill="#9C27B0"/>
-  <!-- Purpur pillar texture pattern -->
-  <rect x="12" y="12" width="16" height="16" rx="2" fill="#AB47BC" opacity="0.6"/>
-  <rect x="36" y="12" width="16" height="16" rx="2" fill="#CE93D8" opacity="0.4"/>
-  <rect x="12" y="36" width="16" height="16" rx="2" fill="#CE93D8" opacity="0.4"/>
-  <rect x="36" y="36" width="16" height="16" rx="2" fill="#AB47BC" opacity="0.6"/>
-  <!-- Center diamond accent -->
-  <path d="M32 20l8 12-8 12-8-12z" fill="#E1BEE7" opacity="0.5"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 64 64"
+   fill="none"
+   version="1.1"
+   id="svg5"
+   sodipodi:docname="purpur.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs5" />
+  <sodipodi:namedview
+     id="namedview5"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="12.21875"
+     inkscape:cx="32"
+     inkscape:cy="32"
+     inkscape:window-width="1920"
+     inkscape:window-height="995"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg5" />
+  <rect
+     x="4"
+     y="4"
+     width="56"
+     height="56"
+     rx="6"
+     fill="#9C27B0"
+     id="rect1" />
+  <rect
+     x="12"
+     y="12"
+     width="16"
+     height="16"
+     rx="2"
+     fill="#AB47BC"
+     opacity="0.6"
+     id="rect2" />
+  <rect
+     x="36"
+     y="12"
+     width="16"
+     height="16"
+     rx="2"
+     fill="#CE93D8"
+     opacity="0.4"
+     id="rect3" />
+  <rect
+     x="12"
+     y="36"
+     width="16"
+     height="16"
+     rx="2"
+     fill="#CE93D8"
+     opacity="0.4"
+     id="rect4" />
+  <rect
+     x="36"
+     y="36"
+     width="16"
+     height="16"
+     rx="2"
+     fill="#AB47BC"
+     opacity="0.6"
+     id="rect5" />
+  <path
+     d="M32 20l8 12-8 12-8-12z"
+     fill="#E1BEE7"
+     opacity="0.5"
+     id="path5" />
 </svg>

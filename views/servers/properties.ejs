@@ -9,7 +9,7 @@
             Changes take effect on next server restart.
         </div>
 
-        <form method="POST" action="/servers/<%= server.id %>/properties" novalidate>
+        <form id="properties-form" data-server-id="<%= server.id %>" novalidate>
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
             <% groups.forEach(function(group) { %>
