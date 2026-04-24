@@ -22,6 +22,18 @@ const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Shared 404 helper — returns the server record or sends 404 JSON and returns null.
+// The caller must `return` after a null result.
+async function loadServerOr404(req, res) {
+    const server = await serversDb.get(`server_${req.params.id}`);
+    if (!server) {
+        res.status(404).json({ error: 'Server not found.' });
+        return null;
+    }
+    return server;
+}
+
 const TEXT_EXTENSIONS = new Set([
     '.txt', '.log', '.properties', '.json', '.yml', '.yaml', '.xml',
     '.cfg', '.conf', '.ini', '.toml', '.csv', '.md', '.sh', '.bat',
@@ -684,6 +696,7 @@ router.post('/servers', async (req, res) => {
 
 // POST /servers/:id/start
 router.post('/servers/:id/start', async (req, res) => {
+    if (!await loadServerOr404(req, res)) return;
     const serverManager = req.app.get('serverManager');
     try {
         await clearStatsHistory(req.params.id);
@@ -697,6 +710,7 @@ router.post('/servers/:id/start', async (req, res) => {
 
 // POST /servers/:id/stop
 router.post('/servers/:id/stop', async (req, res) => {
+    if (!await loadServerOr404(req, res)) return;
     const serverManager = req.app.get('serverManager');
     try {
         await clearStatsHistory(req.params.id);
@@ -710,6 +724,7 @@ router.post('/servers/:id/stop', async (req, res) => {
 
 // POST /servers/:id/restart
 router.post('/servers/:id/restart', async (req, res) => {
+    if (!await loadServerOr404(req, res)) return;
     const serverManager = req.app.get('serverManager');
     const id = req.params.id;
     const createBackupFirst = req.body?.backup === 'true' || req.body?.backup === true;
@@ -751,6 +766,7 @@ router.post('/servers/:id/restart', async (req, res) => {
 
 // POST /servers/:id/kill
 router.post('/servers/:id/kill', async (req, res) => {
+    if (!await loadServerOr404(req, res)) return;
     const serverManager = req.app.get('serverManager');
     try {
         await clearStatsHistory(req.params.id);
