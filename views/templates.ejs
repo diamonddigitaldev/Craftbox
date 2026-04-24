@@ -1,5 +1,7 @@
 <%- include('partials/head', { title: 'Templates', navbar: true, fluid: true }) %>
 
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4 class="mb-0 d-flex align-items-center gap-2">
         <span class="material-icons-outlined">bookmark</span>

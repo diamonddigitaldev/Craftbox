@@ -166,4 +166,27 @@
     }
 
     connect();
+
+    // ── Server action buttons (start/stop/restart) on each card ──
+    grid.addEventListener('click', async function (e) {
+        var btn = e.target.closest('.server-action-btn');
+        if (!btn) return;
+        var serverId = btn.closest('.server-actions')?.dataset.serverId;
+        var action = btn.dataset.action;
+        if (!serverId || !action) return;
+
+        var labels = {
+            start: { title: 'Starting server...', desc: 'Please wait.' },
+            stop: { title: 'Stopping server...', desc: 'Please wait while the server shuts down.' },
+            restart: { title: 'Restarting server...', desc: 'Please wait.' }
+        };
+        showOverlay(labels[action].title, labels[action].desc);
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/' + action, { method: 'POST', body: {} });
+        hideOverlay();
+        if (!res.ok) {
+            alert((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + ' server.'));
+        }
+        // State updates arrive via WebSocket — no page reload needed.
+    });
 })();

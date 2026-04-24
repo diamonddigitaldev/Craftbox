@@ -169,11 +169,12 @@
         }
 
         // Update button states
-        document.querySelectorAll('.server-action-form').forEach(form => {
-            const action = form.dataset.action;
-            const btn = form.querySelector('button');
-            if (btn && actionStates[action]) {
+        document.querySelectorAll('.server-action-btn').forEach(btn => {
+            const action = btn.dataset.action;
+            if (actionStates[action]) {
                 btn.disabled = !actionStates[action].includes(state);
+            } else if (action === 'delete') {
+                btn.disabled = !['stopped', 'crashed'].includes(state);
             }
         });
 
@@ -183,12 +184,6 @@
         }
         if (sendBtn) {
             sendBtn.disabled = state !== 'running' || !input.value.trim();
-        }
-
-        // Update delete button
-        const deleteBtn = document.querySelector('form[action$="/delete"] button');
-        if (deleteBtn) {
-            deleteBtn.disabled = !['stopped', 'crashed'].includes(state);
         }
 
         // Immediately wipe stats and set charts offline when server stops/crashes
@@ -259,33 +254,61 @@
         sendBtn.addEventListener('click', sendCommand);
     }
 
-    // Modal confirmations for dangerous actions
-    const killForm = document.querySelector('.server-action-form[data-action="kill"]');
-    const killModalEl = document.getElementById('killModal');
-    if (killForm && killModalEl) {
-        const killModal = new bootstrap.Modal(killModalEl);
-        killForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            killModal.show();
+    // ── Server action buttons (start/stop/restart/kill/delete) ──
+    async function doAction(action, body) {
+        var labels = {
+            start:   { title: 'Starting server...',  desc: 'Please wait.' },
+            stop:    { title: 'Stopping server...',  desc: 'Please wait while the server shuts down.' },
+            restart: { title: 'Restarting server...', desc: 'Please wait.' },
+            kill:    { title: 'Killing server...',   desc: 'Please wait.' }
+        };
+        if (labels[action]) showOverlay(labels[action].title, labels[action].desc);
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/' + action, {
+            method: 'POST',
+            body: body || {}
         });
-        document.getElementById('confirm-kill').addEventListener('click', () => {
+        hideOverlay();
+        if (!res.ok) {
+            alert((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + '.'));
+        }
+        // State updates arrive via WebSocket.
+    }
+
+    const killModalEl = document.getElementById('killModal');
+    const deleteModalEl = document.getElementById('deleteModal');
+    const killModal = killModalEl ? new bootstrap.Modal(killModalEl) : null;
+    const deleteModal = deleteModalEl ? new bootstrap.Modal(deleteModalEl) : null;
+
+    document.querySelectorAll('.server-action-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var action = btn.dataset.action;
+            if (action === 'kill' && killModal) { killModal.show(); return; }
+            if (action === 'delete' && deleteModal) { deleteModal.show(); return; }
+            doAction(action);
+        });
+    });
+
+    var confirmKillBtn = document.getElementById('confirm-kill');
+    if (confirmKillBtn && killModal) {
+        confirmKillBtn.addEventListener('click', function () {
             killModal.hide();
-            killForm.submit();
+            doAction('kill');
         });
     }
 
-    const deleteForm = document.querySelector('form[action$="/delete"]');
-    const deleteModalEl = document.getElementById('deleteModal');
-    if (deleteForm && deleteModalEl) {
-        const deleteModal = new bootstrap.Modal(deleteModalEl);
-        deleteForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            deleteModal.show();
-        });
-        document.getElementById('confirm-delete').addEventListener('click', () => {
+    var confirmDeleteBtn = document.getElementById('confirm-delete');
+    if (confirmDeleteBtn && deleteModal) {
+        confirmDeleteBtn.addEventListener('click', async function () {
             deleteModal.hide();
             showOverlay('Deleting server...', 'Removing all files. This may take a moment.');
-            deleteForm.submit();
+            var res = await apiFetch('/api/v1/servers/' + serverId, { method: 'DELETE' });
+            if (!res.ok) {
+                hideOverlay();
+                alert((res.data && (res.data.message || res.data.error)) || 'Failed to delete server.');
+                return;
+            }
+            window.location.href = '/dashboard';
         });
     }
 
@@ -294,20 +317,11 @@
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('change', async () => {
-            try {
-                const csrfInput = document.querySelector('input[name="_csrf"]');
-                const res = await fetch('/api/servers/' + serverId + '/' + endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfInput ? csrfInput.value : ''
-                    },
-                    body: JSON.stringify({ enabled: el.checked })
-                });
-                if (!res.ok) el.checked = !el.checked;
-            } catch {
-                el.checked = !el.checked;
-            }
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/' + endpoint, {
+                method: 'POST',
+                body: { enabled: el.checked }
+            });
+            if (!res.ok) el.checked = !el.checked;
         });
     }
     bindToggle('autoRestart', 'autorestart');
@@ -537,7 +551,7 @@
 
     async function fetchStats() {
         try {
-            var res = await fetch('/api/servers/' + serverId + '/stats');
+            var res = await fetch('/api/v1/servers/' + serverId + '/stats');
             if (!res.ok) return;
             var data = await res.json();
             var s = data.stats;

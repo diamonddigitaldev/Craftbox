@@ -21,17 +21,33 @@
         }
     });
 
-    // Mark saved on form submit
     var form = document.getElementById('editor-form');
     if (form) {
-        form.addEventListener('submit', function () {
-            saved = true;
+        var serverId = form.dataset.serverId;
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
             var btn = form.querySelector('button[type="submit"]');
             if (btn) {
                 btn.disabled = true;
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
             }
             showOverlay('Saving file...', 'Please wait while your changes are applied.');
+
+            var filePath = form.querySelector('input[name="filePath"]').value;
+            var content = editor.value;
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/edit-file', {
+                method: 'POST',
+                body: { filePath: filePath, content: content }
+            });
+            hideOverlay();
+            if (!res.ok) {
+                alert((res.data && (res.data.message || res.data.error)) || 'Failed to save file.');
+                if (btn) { btn.disabled = false; btn.textContent = 'Save File'; }
+                return;
+            }
+            saved = true;
+            var parentDir = filePath.split('/').slice(0, -1).join('/');
+            window.location.href = '/servers/' + serverId + '/files' + (parentDir ? '/' + parentDir : '');
         });
     }
 

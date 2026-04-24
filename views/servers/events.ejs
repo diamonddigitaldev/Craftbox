@@ -62,7 +62,7 @@ const eventLabels = {
             <% }) %>
         </select>
         <% if (events.length > 0) { %>
-        <form id="clear-events-form" method="POST" action="/servers/<%= server.id %>/events/clear">
+        <form id="clear-events-form" data-server-id="<%= server.id %>">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button type="submit" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1">
                 <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span> Clear

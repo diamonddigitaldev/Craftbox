@@ -63,25 +63,22 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
                     <span class="card-stat-uptime">--</span>
                 </span>
             </div>
-            <div class="d-flex gap-2 server-actions">
-                <form method="POST" action="/servers/<%= server.id %>/start" class="d-inline server-action-start<%= ['stopped', 'crashed'].includes(server.state) ? '' : ' d-none' %>">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-success btn-sm d-flex align-items-center gap-1">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
-                    </button>
-                </form>
-                <form method="POST" action="/servers/<%= server.id %>/stop" class="d-inline server-action-stop<%= ['running', 'starting'].includes(server.state) ? '' : ' d-none' %>">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-warning btn-sm d-flex align-items-center gap-1">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
-                    </button>
-                </form>
-                <form method="POST" action="/servers/<%= server.id %>/restart" class="d-inline server-action-restart<%= server.state === 'running' ? '' : ' d-none' %>">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="btn btn-info btn-sm d-flex align-items-center gap-1">
-                        <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
-                    </button>
-                </form>
+            <div class="d-flex gap-2 server-actions" data-server-id="<%= server.id %>">
+                <button type="button"
+                    class="btn btn-success btn-sm d-flex align-items-center gap-1 server-action-btn server-action-start<%= ['stopped', 'crashed'].includes(server.state) ? '' : ' d-none' %>"
+                    data-action="start">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
+                </button>
+                <button type="button"
+                    class="btn btn-warning btn-sm d-flex align-items-center gap-1 server-action-btn server-action-stop<%= ['running', 'starting'].includes(server.state) ? '' : ' d-none' %>"
+                    data-action="stop">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
+                </button>
+                <button type="button"
+                    class="btn btn-info btn-sm d-flex align-items-center gap-1 server-action-btn server-action-restart<%= server.state === 'running' ? '' : ' d-none' %>"
+                    data-action="restart">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
+                </button>
                 <a href="/servers/<%= server.id %>" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1 ms-auto">
                     <span class="material-icons-outlined" style="font-size: 1rem;">settings</span> Manage
                 </a>

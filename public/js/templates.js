@@ -23,30 +23,24 @@
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
 
-        try {
-            var res = await fetch('/api/templates/' + id, {
-                method: 'DELETE',
-                headers: { 'x-csrf-token': csrf }
-            });
-
-            if (!res.ok) {
-                var data = await res.json().catch(function () { return {}; });
-                throw new Error(data.error || 'Delete failed.');
-            }
-
-            deleteModal.hide();
-
-            var row = pendingBtn.closest('tr');
-            if (row) row.remove();
-
-            // Show empty state if no templates left
-            var tbody = document.getElementById('templates-table');
-            if (tbody && tbody.children.length === 0) {
-                location.reload();
-            }
-        } catch (err) {
+        var res = await apiFetch('/api/v1/templates/' + id, { method: 'DELETE' });
+        if (!res.ok) {
             deleteModal.hide();
             pendingBtn.disabled = false;
+            alert((res.data && (res.data.message || res.data.error)) || 'Delete failed.');
+            pendingBtn = null;
+            return;
+        }
+
+        deleteModal.hide();
+
+        var row = pendingBtn.closest('tr');
+        if (row) row.remove();
+
+        // Show empty state if no templates left
+        var tbody = document.getElementById('templates-table');
+        if (tbody && tbody.children.length === 0) {
+            location.reload();
         }
 
         pendingBtn = null;

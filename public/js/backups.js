@@ -1,7 +1,6 @@
 // Backups page JavaScript
 (function () {
     var serverId = window.location.pathname.split('/')[2];
-    var csrf = document.getElementById('csrf-token')?.value || '';
 
     // ── Create Backup Modal ──
     var createBackupModal = new bootstrap.Modal(document.getElementById('createBackupModal'));
@@ -10,12 +9,12 @@
     var backupNameInput = document.getElementById('backupName');
     var backupStartAfterInput = document.getElementById('backupStartAfter');
     var startAfterBackupCheckbox = document.getElementById('startAfterBackup');
-    var stopFirst = document.getElementById('backupStopFirst');
-    var needsStop = stopFirst && stopFirst.value === 'true';
+    var stopFirstInput = document.getElementById('backupStopFirst');
+    var needsStop = stopFirstInput && stopFirstInput.value === 'true';
 
     if (createBackupBtn) {
         createBackupBtn.addEventListener('click', function () {
-            backupNameInput.value = '';
+            if (backupNameInput) backupNameInput.value = '';
             createBackupModal.show();
         });
     }
@@ -27,7 +26,10 @@
     }
 
     if (backupForm) {
-        backupForm.addEventListener('submit', function () {
+        backupForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            if (!backupForm.reportValidity()) return;
+
             var btn = document.getElementById('confirm-backup-btn');
             if (btn) {
                 btn.disabled = true;
@@ -36,6 +38,23 @@
             createBackupModal.hide();
             var overlayTitle = needsStop ? 'Stopping server & creating backup...' : 'Creating backup...';
             showOverlay(overlayTitle, 'Compressing server files. This may take a moment.');
+
+            var name = backupNameInput ? backupNameInput.value.trim() : 'Manual Backup';
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/backups', {
+                method: 'POST',
+                body: {
+                    name: name || 'Manual Backup',
+                    stopFirst: stopFirstInput ? stopFirstInput.value : 'false',
+                    startAfter: backupStartAfterInput ? backupStartAfterInput.value : 'false'
+                }
+            });
+            if (!res.ok) {
+                hideOverlay();
+                alert((res.data && (res.data.message || res.data.error)) || 'Backup failed.');
+                if (btn) { btn.disabled = false; btn.textContent = needsStop ? 'Stop & Backup' : 'Create Backup'; }
+                return;
+            }
+            window.location.reload();
         });
     }
 
@@ -44,30 +63,48 @@
     var restoreForm = document.getElementById('restore-form');
     var startAfterCheckbox = document.getElementById('startAfterRestore');
     var startAfterInput = document.getElementById('startAfterInput');
+    var pendingRestoreId = null;
 
     document.querySelectorAll('.restore-btn').forEach(function (btn) {
         btn.addEventListener('click', function () {
-            var backupId = btn.dataset.backupId;
-            restoreForm.action = '/servers/' + serverId + '/backups/' + backupId + '/restore';
-            startAfterCheckbox.checked = true;
-            startAfterInput.value = 'true';
+            pendingRestoreId = btn.dataset.backupId;
+            if (startAfterCheckbox) startAfterCheckbox.checked = true;
+            if (startAfterInput) startAfterInput.value = 'true';
             restoreModal.show();
         });
     });
 
     if (startAfterCheckbox) {
         startAfterCheckbox.addEventListener('change', function () {
-            startAfterInput.value = startAfterCheckbox.checked ? 'true' : 'false';
+            if (startAfterInput) startAfterInput.value = startAfterCheckbox.checked ? 'true' : 'false';
         });
     }
 
-    var confirmRestoreBtn = document.getElementById('confirm-restore-btn');
-    if (confirmRestoreBtn) {
-        restoreForm.addEventListener('submit', function () {
-            confirmRestoreBtn.disabled = true;
-            confirmRestoreBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restoring...';
+    if (restoreForm) {
+        restoreForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            if (!pendingRestoreId) return;
+            var confirmRestoreBtn = document.getElementById('confirm-restore-btn');
+            if (confirmRestoreBtn) {
+                confirmRestoreBtn.disabled = true;
+                confirmRestoreBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restoring...';
+            }
             restoreModal.hide();
             showOverlay('Restoring backup...', 'Extracting backup files. This may take a moment.');
+
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/backups/' + pendingRestoreId + '/restore', {
+                method: 'POST',
+                body: {
+                    startAfter: startAfterInput ? startAfterInput.value : 'true'
+                }
+            });
+            if (!res.ok) {
+                hideOverlay();
+                alert((res.data && (res.data.message || res.data.error)) || 'Restore failed.');
+                if (confirmRestoreBtn) { confirmRestoreBtn.disabled = false; confirmRestoreBtn.textContent = 'Restore'; }
+                return;
+            }
+            window.location.reload();
         });
     }
 
@@ -75,25 +112,40 @@
     var deleteModal = new bootstrap.Modal(document.getElementById('deleteBackupModal'));
     var deleteForm = document.getElementById('delete-form');
     var deleteNameSpan = document.getElementById('delete-backup-name');
+    var pendingDeleteId = null;
 
     document.querySelectorAll('.delete-btn').forEach(function (btn) {
         btn.addEventListener('click', function () {
-            var backupId = btn.dataset.backupId;
-            deleteForm.action = '/servers/' + serverId + '/backups/' + backupId + '/delete';
-            deleteNameSpan.textContent = btn.dataset.backupName;
+            pendingDeleteId = btn.dataset.backupId;
+            if (deleteNameSpan) deleteNameSpan.textContent = btn.dataset.backupName || '';
             deleteModal.show();
         });
     });
 
-    deleteForm.addEventListener('submit', function () {
-        var btn = deleteForm.querySelector('button[type="submit"]');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
-        }
-        deleteModal.hide();
-        showOverlay('Deleting backup...', 'Please wait while the backup is removed.');
-    });
+    if (deleteForm) {
+        deleteForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            if (!pendingDeleteId) return;
+            var btn = deleteForm.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
+            }
+            deleteModal.hide();
+            showOverlay('Deleting backup...', 'Please wait while the backup is removed.');
+
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/backups/' + pendingDeleteId, {
+                method: 'DELETE'
+            });
+            if (!res.ok) {
+                hideOverlay();
+                alert((res.data && (res.data.message || res.data.error)) || 'Delete failed.');
+                if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+                return;
+            }
+            window.location.reload();
+        });
+    }
 
     // ── Next Backup Display Helper ──
     var nextBackupText = document.getElementById('next-backup-text');
@@ -114,24 +166,15 @@
     if (scheduleToggle) {
         scheduleToggle.addEventListener('change', async function () {
             var enabled = scheduleToggle.checked;
-            scheduleSettings.classList.toggle('d-none', !enabled);
+            if (scheduleSettings) scheduleSettings.classList.toggle('d-none', !enabled);
 
-            try {
-                var res = await fetch('/api/servers/' + serverId + '/backup-schedule', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrf
-                    },
-                    body: JSON.stringify({ enabled: enabled })
-                });
-                if (res.ok) {
-                    var data = await res.json();
-                    updateNextBackup(data.nextBackupAt);
-                } else {
-                    scheduleToggle.checked = !enabled;
-                }
-            } catch {
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/backup-schedule', {
+                method: 'POST',
+                body: { enabled: enabled }
+            });
+            if (res.ok) {
+                updateNextBackup(res.data && res.data.nextBackupAt);
+            } else {
                 scheduleToggle.checked = !enabled;
             }
         });
@@ -147,28 +190,19 @@
             saveScheduleBtn.disabled = true;
             saveScheduleBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
 
-            try {
-                var res = await fetch('/api/servers/' + serverId + '/backup-schedule', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrf
-                    },
-                    body: JSON.stringify({
-                        enabled: scheduleToggle.checked,
-                        intervalHours: intervalHours,
-                        countdownMinutes: countdownMinutes
-                    })
-                });
-
-                if (res.ok) {
-                    var data = await res.json();
-                    updateNextBackup(data.nextBackupAt);
-                    saveScheduleBtn.textContent = 'Saved!';
-                } else {
-                    saveScheduleBtn.textContent = 'Error';
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/backup-schedule', {
+                method: 'POST',
+                body: {
+                    enabled: scheduleToggle ? scheduleToggle.checked : false,
+                    intervalHours: intervalHours,
+                    countdownMinutes: countdownMinutes
                 }
-            } catch {
+            });
+
+            if (res.ok) {
+                updateNextBackup(res.data && res.data.nextBackupAt);
+                saveScheduleBtn.textContent = 'Saved!';
+            } else {
                 saveScheduleBtn.textContent = 'Error';
             }
             setTimeout(function () {
@@ -188,25 +222,14 @@
             saveRetentionBtn.disabled = true;
             saveRetentionBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
 
-            try {
-                var res = await fetch('/api/servers/' + serverId + '/backup-retention', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrf
-                    },
-                    body: JSON.stringify({
-                        retentionCount: retentionCount,
-                        retentionDays: retentionDays
-                    })
-                });
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/backup-retention', {
+                method: 'POST',
+                body: { retentionCount: retentionCount, retentionDays: retentionDays }
+            });
 
-                if (res.ok) {
-                    saveRetentionBtn.textContent = 'Saved!';
-                } else {
-                    saveRetentionBtn.textContent = 'Error';
-                }
-            } catch {
+            if (res.ok) {
+                saveRetentionBtn.textContent = 'Saved!';
+            } else {
                 saveRetentionBtn.textContent = 'Error';
             }
             setTimeout(function () {

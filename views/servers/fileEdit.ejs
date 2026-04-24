@@ -42,7 +42,7 @@
         <strong><%= fileName %></strong>
     </div>
     <div class="card-body p-0">
-        <form method="POST" action="/servers/<%= server.id %>/edit-file" id="editor-form">
+        <form id="editor-form" data-server-id="<%= server.id %>">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <input type="hidden" name="filePath" value="<%= filePath %>">
             <textarea name="content" id="file-editor" class="form-control border-0 rounded-0 font-monospace"

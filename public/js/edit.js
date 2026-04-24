@@ -3,17 +3,43 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     new bootstrap.Tooltip(el);
 });
 
-// Show overlay on save
+function _formToBody(form) {
+    var body = {};
+    new FormData(form).forEach(function (v, k) {
+        if (k === '_csrf') return;
+        body[k] = v;
+    });
+    // Checkboxes are sent only when checked — explicitly record boolean state
+    form.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        if (cb.name && cb.name !== '_csrf') body[cb.name] = cb.checked;
+    });
+    return body;
+}
+
+// ── Edit settings form ──
 (function () {
-    var form = document.querySelector('form[action$="/edit"]');
+    var form = document.getElementById('edit-server-form');
     if (!form) return;
-    form.addEventListener('submit', function () {
+    var serverId = form.dataset.serverId;
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (!form.reportValidity()) return;
         var btn = form.querySelector('button[type="submit"]');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
         }
         showOverlay('Saving settings...', 'Please wait while your changes are applied.');
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/edit', { method: 'POST', body: _formToBody(form) });
+        hideOverlay();
+        if (!res.ok) {
+            alert((res.data && (res.data.message || res.data.error)) || 'Failed to save settings.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
+            return;
+        }
+        // Reload with ?saved=1 so the restart-modal auto-shows
+        window.location.href = '/servers/' + serverId + '/edit?saved=1';
     });
 })();
 
@@ -22,21 +48,12 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     document.querySelectorAll('.toggle-switch').forEach(function (el) {
         el.addEventListener('change', async function () {
             const serverId = el.dataset.serverId;
-            const csrf = el.dataset.csrf;
             const endpoint = el.dataset.endpoint;
-            try {
-                const res = await fetch('/api/servers/' + serverId + '/' + endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrf
-                    },
-                    body: JSON.stringify({ enabled: el.checked })
-                });
-                if (!res.ok) el.checked = !el.checked;
-            } catch {
-                el.checked = !el.checked;
-            }
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/' + endpoint, {
+                method: 'POST',
+                body: { enabled: el.checked }
+            });
+            if (!res.ok) el.checked = !el.checked;
         });
     });
 })();
@@ -50,7 +67,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     var currentVersion = versionSelect.dataset.currentVersion;
     var upgradeAccepted = false;
 
-    // Compare two version strings numerically (returns -1, 0, or 1)
     function compareVersions(a, b) {
         var aParts = a.split('.').map(Number);
         var bParts = b.split('.').map(Number);
@@ -61,10 +77,9 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         return 0;
     }
 
-    // Load versions from API and populate dropdown (only >= current)
     async function loadUpgradeVersions() {
         try {
-            var res = await fetch('/api/versions?type=' + encodeURIComponent(serverType));
+            var res = await fetch('/api/v1/versions?type=' + encodeURIComponent(serverType));
             var data = await res.json();
             if (!data.versions || data.versions.length === 0) return;
 
@@ -85,7 +100,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
 
     loadUpgradeVersions();
 
-    // Show warning modal when version changes
     var modalEl = document.getElementById('versionUpgradeModal');
     if (!modalEl) return;
     var modal = new bootstrap.Modal(modalEl);
@@ -97,7 +111,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
             upgradeAccepted = false;
             return;
         }
-        // Show the warning modal
         document.getElementById('upgrade-from').textContent = currentVersion;
         document.getElementById('upgrade-to').textContent = versionSelect.value;
         modal.show();
@@ -114,7 +127,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         modal.hide();
     });
 
-    // If modal is dismissed (backdrop click, escape), revert
     modalEl.addEventListener('hidden.bs.modal', function () {
         if (!upgradeAccepted && versionSelect.value !== currentVersion) {
             versionSelect.value = currentVersion;
@@ -156,7 +168,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         modal.hide();
     });
 
-    // If modal is dismissed (backdrop click, escape), revert
     modalEl.addEventListener('hidden.bs.modal', function () {
         if (!jarAccepted && jarUrlInput.value.trim() !== currentUrl) {
             jarUrlInput.value = currentUrl;
@@ -180,7 +191,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     var btn = document.getElementById('save-advertised-ip');
     if (!input || !btn) return;
     var serverId = btn.dataset.serverId;
-    var csrf = btn.dataset.csrf;
 
     input.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); btn.click(); }
@@ -193,20 +203,11 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         input.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
-        try {
-            var res = await fetch('/api/servers/' + serverId + '/advertisedip', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-                body: JSON.stringify({ value: value })
-            });
-            if (res.ok) {
-                btn.textContent = 'Saved!';
-            } else {
-                btn.textContent = 'Error';
-            }
-        } catch {
-            btn.textContent = 'Error';
-        }
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/advertisedip', {
+            method: 'POST',
+            body: { value: value }
+        });
+        btn.textContent = res.ok ? 'Saved!' : 'Error';
         setTimeout(function () {
             btn.textContent = 'Save';
             btn.disabled = false;
@@ -228,7 +229,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
     if (!dropZone || !fileInput) return;
 
     var serverId = dropZone.dataset.serverId;
-    var csrf = dropZone.dataset.csrf;
     var hasIcon = false;
 
     function showRestartModal() {
@@ -241,7 +241,6 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         }
     }
 
-    // ── State management ──
     function showIcon() {
         hasIcon = true;
         preview.style.display = 'block';
@@ -275,10 +274,8 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         dropArea.style.pointerEvents = '';
     }
 
-    // ── Initial load ──
     preview.addEventListener('load', showIcon);
     preview.addEventListener('error', showPlaceholder);
-    // Re-trigger in case the image loaded/errored before listeners were attached
     if (preview.src) {
         var src = preview.src;
         preview.src = '';
@@ -290,13 +287,13 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         statusEl.textContent = msg;
     }
 
-    // ── Upload a file (shared by click & drop) ──
     var uploading = false;
     async function uploadFile(file) {
         if (!file || uploading) return;
         uploading = true;
         if (file.type !== 'image/png') {
             showStatus('danger', 'Only PNG files are allowed.');
+            uploading = false;
             return;
         }
 
@@ -306,32 +303,21 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         showSpinner();
         resetBtn.disabled = true;
         showStatus('body-secondary', 'Uploading...');
-        try {
-            var res = await fetch('/api/servers/' + serverId + '/icon', {
-                method: 'POST',
-                headers: { 'X-CSRF-Token': csrf },
-                body: formData
-            });
-            hideSpinner();
-            var data = await res.json();
-            if (res.ok && data.success) {
-                showStatus('success', 'Icon updated. Restart the server for changes to take effect.');
-                preview.src = '/api/servers/' + serverId + '/icon?t=' + Date.now();
-                showRestartModal();
-            } else {
-                showStatus('danger', data.error || 'Upload failed.');
-                showPlaceholder();
-            }
-        } catch {
-            hideSpinner();
-            showStatus('danger', 'Upload failed.');
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/icon', { method: 'POST', body: formData });
+        hideSpinner();
+        if (res.ok && res.data && res.data.success) {
+            showStatus('success', 'Icon updated. Restart the server for changes to take effect.');
+            preview.src = '/api/v1/servers/' + serverId + '/icon?t=' + Date.now();
+            showRestartModal();
+        } else {
+            showStatus('danger', (res.data && res.data.error) || 'Upload failed.');
             showPlaceholder();
         }
         resetBtn.disabled = false;
         uploading = false;
     }
 
-    // ── Click to upload ──
     dropArea.addEventListener('click', function () {
         fileInput.click();
     });
@@ -341,11 +327,9 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         fileInput.value = '';
     });
 
-    // ── Prevent browser from opening dropped files outside the drop area ──
     document.addEventListener('dragover', function (e) { e.preventDefault(); });
     document.addEventListener('drop', function (e) { e.preventDefault(); });
 
-    // ── Drag and drop ──
     dropArea.addEventListener('dragover', function (e) {
         e.preventDefault();
         if (uploading) return;
@@ -368,144 +352,144 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         if (file) uploadFile(file);
     });
 
-    // ── Delete icon ──
     deleteBtn.addEventListener('click', async function (e) {
         e.stopPropagation();
         deleteBtn.disabled = true;
         resetBtn.disabled = true;
         showStatus('body-secondary', 'Removing...');
-        try {
-            var res = await fetch('/api/servers/' + serverId + '/icon', {
-                method: 'DELETE',
-                headers: { 'X-CSRF-Token': csrf }
-            });
-            var data = await res.json();
-            if (res.ok && data.success) {
-                showStatus('success', 'Icon removed. Restart the server for changes to take effect.');
-                showPlaceholder();
-                showRestartModal();
-            } else {
-                showStatus('danger', data.error || 'Delete failed.');
-            }
-        } catch {
-            showStatus('danger', 'Delete failed.');
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/icon', { method: 'DELETE' });
+        if (res.ok && res.data && res.data.success) {
+            showStatus('success', 'Icon removed. Restart the server for changes to take effect.');
+            showPlaceholder();
+            showRestartModal();
+        } else {
+            showStatus('danger', (res.data && res.data.error) || 'Delete failed.');
         }
         deleteBtn.disabled = false;
         resetBtn.disabled = false;
     });
 
-    // ── Reset to default ──
     if (resetBtn) {
         resetBtn.addEventListener('click', async function () {
             resetBtn.disabled = true;
             showStatus('body-secondary', 'Resetting...');
-            try {
-                var res = await fetch('/api/servers/' + serverId + '/icon/reset', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }
-                });
-                var data = await res.json();
-                if (res.ok && data.success) {
-                    showStatus('success', 'Icon reset to default. Restart the server for changes to take effect.');
-                    preview.src = '/api/servers/' + serverId + '/icon?t=' + Date.now();
-                    showRestartModal();
-                } else {
-                    showStatus('danger', data.error || 'Reset failed.');
-                }
-            } catch {
-                showStatus('danger', 'Reset failed.');
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/icon/reset', { method: 'POST', body: {} });
+            if (res.ok && res.data && res.data.success) {
+                showStatus('success', 'Icon reset to default. Restart the server for changes to take effect.');
+                preview.src = '/api/v1/servers/' + serverId + '/icon?t=' + Date.now();
+                showRestartModal();
+            } else {
+                showStatus('danger', (res.data && res.data.error) || 'Reset failed.');
             }
             resetBtn.disabled = false;
         });
     }
 })();
 
-// ── Overlay helper ──
-function showEditOverlay(title, desc) {
-    showOverlay(title, desc);
-}
-
-// ── Duplicate form (direct submit when server is stopped) ──
+// ── Duplicate form ──
 (function () {
     var form = document.getElementById('duplicate-form');
-    // Only wire direct submit if there's no "running" button (server is stopped)
-    if (!form || document.getElementById('duplicate-running-btn')) return;
-    form.addEventListener('submit', function () {
-        var btn = form.querySelector('button[type="submit"]');
+    if (!form) return;
+    var serverId = form.dataset.serverId;
+
+    async function submitDuplicate() {
+        var btn = form.querySelector('button[type="submit"]') || document.getElementById('duplicate-running-btn');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Duplicating...';
         }
-        showEditOverlay('Duplicating server...', 'Copying server files. This may take a moment.');
+        showOverlay('Duplicating server...', 'Copying server files. This may take a moment.');
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/duplicate', { method: 'POST', body: _formToBody(form) });
+        if (!res.ok) {
+            hideOverlay();
+            alert((res.data && (res.data.message || res.data.error)) || 'Failed to duplicate server.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Duplicate'; }
+            return;
+        }
+        var newId = res.data && res.data.server && res.data.server.id;
+        window.location.href = newId ? '/servers/' + newId : '/dashboard';
+    }
+
+    // Direct submit (server already stopped)
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (!form.reportValidity()) return;
+        submitDuplicate();
     });
+
+    // Stop-then-duplicate modal flow
+    var dupRunningBtn = document.getElementById('duplicate-running-btn');
+    if (dupRunningBtn) {
+        var modal = new bootstrap.Modal(document.getElementById('stopDuplicateModal'));
+        var confirmBtn = document.getElementById('confirm-stop-duplicate-btn');
+        var startAfterCheckbox = document.getElementById('dupStartAfter');
+
+        dupRunningBtn.addEventListener('click', function () {
+            if (!form.reportValidity()) return;
+            modal.show();
+        });
+        startAfterCheckbox.addEventListener('change', function () {
+            document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+        });
+        confirmBtn.addEventListener('click', function () {
+            document.getElementById('dup-stop-first').value = 'true';
+            document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+            modal.hide();
+            submitDuplicate();
+        });
+    }
 })();
 
-// ── Template form (direct submit when server is stopped) ──
+// ── Template form ──
 (function () {
     var form = document.getElementById('template-form');
-    if (!form || document.getElementById('template-running-btn')) return;
-    form.addEventListener('submit', function () {
-        var btn = form.querySelector('button[type="submit"]');
+    if (!form) return;
+
+    async function submitTemplate() {
+        var btn = form.querySelector('button[type="submit"]') || document.getElementById('template-running-btn');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
         }
-        showEditOverlay('Saving template...', 'This may take a moment.');
-    });
-})();
+        showOverlay('Saving template...', 'This may take a moment.');
 
-// ── Stop & Duplicate Modal ──
-(function () {
-    var btn = document.getElementById('duplicate-running-btn');
-    if (!btn) return;
+        var res = await apiFetch('/api/v1/templates', { method: 'POST', body: _formToBody(form) });
+        hideOverlay();
+        if (!res.ok) {
+            alert((res.data && (res.data.message || res.data.error)) || 'Failed to save template.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save as Template'; }
+            return;
+        }
+        window.location.href = '/templates';
+    }
 
-    var modal = new bootstrap.Modal(document.getElementById('stopDuplicateModal'));
-    var confirmBtn = document.getElementById('confirm-stop-duplicate-btn');
-    var startAfterCheckbox = document.getElementById('dupStartAfter');
-    var form = document.getElementById('duplicate-form');
-
-    btn.addEventListener('click', function () { modal.show(); });
-
-    startAfterCheckbox.addEventListener('change', function () {
-        document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (!form.reportValidity()) return;
+        submitTemplate();
     });
 
-    confirmBtn.addEventListener('click', function () {
-        document.getElementById('dup-stop-first').value = 'true';
-        document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
-        confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Stopping...';
-        modal.hide();
-        showEditOverlay('Stopping server & duplicating...', 'Copying server files. This may take a moment.');
-        form.submit();
-    });
-})();
+    var tmplRunningBtn = document.getElementById('template-running-btn');
+    if (tmplRunningBtn) {
+        var modal = new bootstrap.Modal(document.getElementById('stopTemplateModal'));
+        var confirmBtn = document.getElementById('confirm-stop-template-btn');
+        var startAfterCheckbox = document.getElementById('tmplStartAfter');
 
-// ── Stop & Save Template Modal ──
-(function () {
-    var btn = document.getElementById('template-running-btn');
-    if (!btn) return;
-
-    var modal = new bootstrap.Modal(document.getElementById('stopTemplateModal'));
-    var confirmBtn = document.getElementById('confirm-stop-template-btn');
-    var startAfterCheckbox = document.getElementById('tmplStartAfter');
-    var form = document.getElementById('template-form');
-
-    btn.addEventListener('click', function () { modal.show(); });
-
-    startAfterCheckbox.addEventListener('change', function () {
-        document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
-    });
-
-    confirmBtn.addEventListener('click', function () {
-        document.getElementById('tmpl-stop-first').value = 'true';
-        document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
-        confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Stopping...';
-        modal.hide();
-        showEditOverlay('Stopping server & saving template...', 'This may take a moment.');
-        form.submit();
-    });
+        tmplRunningBtn.addEventListener('click', function () {
+            if (!form.reportValidity()) return;
+            modal.show();
+        });
+        startAfterCheckbox.addEventListener('change', function () {
+            document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+        });
+        confirmBtn.addEventListener('click', function () {
+            document.getElementById('tmpl-stop-first').value = 'true';
+            document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
+            modal.hide();
+            submitTemplate();
+        });
+    }
 })();
 
 // ── Update Checker ──
@@ -525,7 +509,7 @@ function showEditOverlay(title, desc) {
         resultDiv.classList.add('d-none');
 
         try {
-            const res = await fetch('/api/servers/' + serverId + '/check-update');
+            const res = await fetch('/api/v1/servers/' + serverId + '/check-update');
             const data = await res.json();
 
             if (!res.ok) {
@@ -559,10 +543,8 @@ function showEditOverlay(title, desc) {
     }
 
     function showUpdateButton() {
-        // Only add if not already present
         if (document.getElementById('update-jar-btn')) return;
 
-        const csrf = document.querySelector('[name="_csrf"]')?.value;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.id = 'update-jar-btn';
@@ -576,32 +558,16 @@ function showEditOverlay(title, desc) {
                 '<span class="spinner-border spinner-border-sm" role="status"></span> Updating...';
             showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
 
-            try {
-                const res = await fetch('/api/servers/' + serverId + '/update-jar', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrf
-                    }
-                });
-                const data = await res.json();
-
-                hideOverlay();
-                if (res.ok && data.success) {
-                    showResult('success', 'Jar updated to build #' + (data.build || 'latest') + '.');
-                    if (statusEl && data.build) {
-                        statusEl.textContent = 'Current build: #' + data.build;
-                    }
-                    btn.remove();
-                } else {
-                    showResult('danger', data.error || 'Failed to update jar.');
-                    btn.disabled = false;
-                    btn.innerHTML =
-                        '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/update-jar', { method: 'POST', body: {} });
+            hideOverlay();
+            if (res.ok && res.data && res.data.success) {
+                showResult('success', 'Jar updated to build #' + (res.data.build || 'latest') + '.');
+                if (statusEl && res.data.build) {
+                    statusEl.textContent = 'Current build: #' + res.data.build;
                 }
-            } catch {
-                hideOverlay();
-                showResult('danger', 'Failed to update jar.');
+                btn.remove();
+            } else {
+                showResult('danger', (res.data && res.data.error) || 'Failed to update jar.');
                 btn.disabled = false;
                 btn.innerHTML =
                     '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const { usersDb, configDb } = require('../db');
+const { usersDb, configDb, apiKeysDb } = require('../db');
 const { passport, hashPassword, comparePassword, findUserByUsername } = require('../auth');
 const { loginLimiter } = require('../security');
 const ensureAuth = require('../middleware/ensureAuth');
@@ -143,11 +143,25 @@ router.post('/logout', (req, res) => {
 
 // GET /account — Account settings page
 router.get('/account', ensureAuth, async (req, res) => {
+    const rows = await apiKeysDb.all();
+    const apiKeys = rows
+        .map(r => r.value)
+        .filter(k => k && k.userId === req.user.id)
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+        .map(k => ({
+            id: k.id,
+            name: k.name,
+            prefix: k.prefix,
+            createdAt: k.createdAt,
+            lastUsedAt: k.lastUsedAt || null
+        }));
+
     res.render('account', {
         title: 'Account Settings',
         ogTitle: 'Craftbox',
         navbar: true,
         user: req.user,
+        apiKeys,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });

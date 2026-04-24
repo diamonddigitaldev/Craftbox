@@ -37,13 +37,23 @@
             e.preventDefault();
             clearModal.show();
         });
-        document.getElementById('confirm-clear').addEventListener('click', function () {
+        document.getElementById('confirm-clear').addEventListener('click', async function () {
             var btn = this;
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Clearing...';
             clearModal.hide();
             showOverlay('Clearing events...', 'Deleting all logged events for this server.');
-            clearForm.submit();
+
+            var serverId = clearForm.dataset.serverId;
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/events/clear', { method: 'POST', body: {} });
+            if (!res.ok) {
+                hideOverlay();
+                alert((res.data && (res.data.message || res.data.error)) || 'Failed to clear events.');
+                btn.disabled = false;
+                btn.textContent = 'Clear Events';
+                return;
+            }
+            window.location.reload();
         });
     }
 })();
