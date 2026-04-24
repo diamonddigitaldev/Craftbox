@@ -764,6 +764,29 @@ router.post('/servers/:id/restart', async (req, res) => {
     }
 });
 
+// POST /servers/:id/command — Send a console command to a running server
+router.post('/servers/:id/command', async (req, res) => {
+    if (!await loadServerOr404(req, res)) return;
+
+    const raw = req.body?.command;
+    if (typeof raw !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid "command" field.' });
+    }
+    const line = raw.trim().slice(0, 1000);
+    if (line.length === 0) {
+        return res.status(400).json({ error: 'Command cannot be empty.' });
+    }
+
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager.getProcess(req.params.id);
+    if (!proc || proc.state !== 'running') {
+        return res.status(409).json({ error: 'Server is not running.' });
+    }
+
+    proc.sendCommand(line);
+    res.json({ success: true });
+});
+
 // POST /servers/:id/kill
 router.post('/servers/:id/kill', async (req, res) => {
     if (!await loadServerOr404(req, res)) return;
