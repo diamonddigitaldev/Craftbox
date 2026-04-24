@@ -21,8 +21,6 @@ const { copyModEnvMap, clearAllModEnv } = require('../../utils/modEnvironment');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // Shared 404 helper — returns the server record or sends 404 JSON and returns null.
 // The caller must `return` after a null result.
 async function loadServerOr404(req, res) {
@@ -81,8 +79,8 @@ router.get('/servers', async (req, res) => {
 // GET /servers/:id — JSON single server
 router.get('/servers/:id', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const s = { ...server };
         delete s.directory;
@@ -154,8 +152,8 @@ router.get('/versions/:type/builds/:version', async (req, res) => {
 // POST /servers/:id/autorestart — Toggle auto-restart
 router.post('/servers/:id/autorestart', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         server.autoRestart = !!req.body.enabled;
         await serversDb.set(`server_${server.id}`, server);
@@ -173,8 +171,8 @@ router.post('/servers/:id/autorestart', async (req, res) => {
 // POST /servers/:id/autostart — Toggle auto-start
 router.post('/servers/:id/autostart', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         server.autoStart = !!req.body.enabled;
         await serversDb.set(`server_${server.id}`, server);
@@ -192,8 +190,8 @@ router.post('/servers/:id/autostart', async (req, res) => {
 // GET /servers/:id/check-update — Check if a newer build is available
 router.get('/servers/:id/check-update', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const type = server.serverType || 'vanilla';
         const provider = getProvider(type);
@@ -236,8 +234,8 @@ router.get('/servers/:id/check-update', async (req, res) => {
 // POST /servers/:id/update-jar — Download the latest build, replacing the current jar
 router.post('/servers/:id/update-jar', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const serverManager = req.app.get('serverManager');
         const proc = serverManager?.getProcess(server.id);
@@ -268,8 +266,8 @@ router.post('/servers/:id/update-jar', async (req, res) => {
 // POST /servers/:id/backup-schedule — Update backup schedule settings
 router.post('/servers/:id/backup-schedule', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const { enabled, intervalHours, countdownMinutes } = req.body;
 
@@ -320,8 +318,8 @@ router.post('/servers/:id/backup-schedule', async (req, res) => {
 // POST /servers/:id/backup-retention — Update retention policy
 router.post('/servers/:id/backup-retention', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         if (!server.backupSchedule) {
             server.backupSchedule = {
@@ -354,8 +352,8 @@ router.post('/servers/:id/backup-retention', async (req, res) => {
 // GET /servers/:id/events — Event history for a server
 router.get('/servers/:id/events', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
         const types = req.query.types ? req.query.types.split(',') : null;
@@ -370,8 +368,8 @@ router.get('/servers/:id/events', async (req, res) => {
 // GET /servers/:id/stats — Resource stats for a server
 router.get('/servers/:id/stats', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const serverManager = req.app.get('serverManager');
         const statsCollector = req.app.get('statsCollector');
@@ -434,8 +432,8 @@ router.get('/servers/:id/stats', async (req, res) => {
 // POST /servers/:id/statuspublic — Toggle status page visibility
 router.post('/servers/:id/statuspublic', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         server.statusPagePublic = !!req.body.enabled;
         await serversDb.set(`server_${server.id}`, server);
@@ -449,8 +447,8 @@ router.post('/servers/:id/statuspublic', async (req, res) => {
 // POST /servers/:id/advertisedip — Update advertised IP
 router.post('/servers/:id/advertisedip', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         server.advertisedIp = String(req.body.value || '').trim() || null;
         await serversDb.set(`server_${server.id}`, server);
@@ -472,8 +470,8 @@ router.post('/servers/:id/icon', function (req, res, next) {
 }, async (req, res) => {
     const fs = require('fs');
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded.' });
@@ -494,8 +492,8 @@ router.post('/servers/:id/icon', function (req, res, next) {
 // POST /servers/:id/icon/reset — Reset server icon to Craftbox default
 router.post('/servers/:id/icon/reset', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const success = resetServerIcon(req.params.id);
         if (!success) {
@@ -513,8 +511,8 @@ router.post('/servers/:id/icon/reset', async (req, res) => {
 // GET /servers/:id/icon — Get current server icon (binary PNG)
 router.get('/servers/:id/icon', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const iconPath = getIconPath(req.params.id);
         const fs = require('fs');
@@ -531,8 +529,8 @@ router.get('/servers/:id/icon', async (req, res) => {
 // DELETE /servers/:id/icon — Remove server icon entirely
 router.delete('/servers/:id/icon', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         removeServerIcon(req.params.id);
 
@@ -547,8 +545,8 @@ router.delete('/servers/:id/icon', async (req, res) => {
 // POST /servers/:id/motd — Update server MOTD
 router.post('/servers/:id/motd', async (req, res) => {
     try {
-        const server = await serversDb.get(`server_${req.params.id}`);
-        if (!server) return res.status(404).json({ error: 'Server not found.' });
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
 
         const rawMotd = String(req.body.motd ?? 'A Minecraft Server');
         const motd = rawMotd.replace(/[^\x00-\x7F]/g, ch => {
@@ -804,10 +802,8 @@ router.post('/servers/:id/kill', async (req, res) => {
 // POST /servers/:id/duplicate
 router.post('/servers/:id/duplicate', async (req, res) => {
     const id = req.params.id;
-    const server = await serversDb.get(`server_${id}`);
-    if (!server) {
-        return res.status(404).json({ error: 'Server not found.' });
-    }
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
 
     const serverManager = req.app.get('serverManager');
     const proc = serverManager?.getProcess(id);
@@ -918,10 +914,8 @@ router.post('/servers/:id/duplicate', async (req, res) => {
 // DELETE /servers/:id — Delete a server entirely
 router.delete('/servers/:id', async (req, res) => {
     const id = req.params.id;
-    const server = await serversDb.get(`server_${id}`);
-    if (!server) {
-        return res.status(404).json({ error: 'Server not found.' });
-    }
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
 
     const serverManager = req.app.get('serverManager');
     const proc = serverManager?.getProcess(id);
@@ -960,10 +954,8 @@ router.delete('/servers/:id', async (req, res) => {
 // POST /servers/:id/edit — Edit server settings (name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl)
 router.post('/servers/:id/edit', async (req, res) => {
     const id = req.params.id;
-    const server = await serversDb.get(`server_${id}`);
-    if (!server) {
-        return res.status(404).json({ error: 'Server not found.' });
-    }
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
 
     const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl } = req.body;
 
@@ -1106,10 +1098,8 @@ router.post('/servers/:id/edit', async (req, res) => {
 // POST /servers/:id/properties — Update server.properties
 router.post('/servers/:id/properties', async (req, res) => {
     const id = req.params.id;
-    const server = await serversDb.get(`server_${id}`);
-    if (!server) {
-        return res.status(404).json({ error: 'Server not found.' });
-    }
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
 
     const serverDir = path.join(SERVERS_DIR, id);
     const currentProps = parseServerProperties(serverDir);
@@ -1133,10 +1123,8 @@ router.post('/servers/:id/properties', async (req, res) => {
 // POST /servers/:id/edit-file — Save a text file in the server directory
 router.post('/servers/:id/edit-file', async (req, res) => {
     const id = req.params.id;
-    const server = await serversDb.get(`server_${id}`);
-    if (!server) {
-        return res.status(404).json({ error: 'Server not found.' });
-    }
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
 
     const filePath = req.body.filePath;
     if (!filePath) {
