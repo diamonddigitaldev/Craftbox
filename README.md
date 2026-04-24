@@ -147,7 +147,7 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 * Java runtimes by [Eclipse Temurin](https://adoptium.net/)
 
 
-## AI Disclosure
+### AI Disclosure
 
 This project uses AI tools to aid development.
 
