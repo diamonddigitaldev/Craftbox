@@ -75,9 +75,14 @@ document.addEventListener('DOMContentLoaded', function () {
             keyNameInput.value = '';
             keyNameInput.setCustomValidity('');
             createKeyModal.show();
-            setTimeout(function () { keyNameInput.focus(); }, 200);
         });
     }
+
+    // Bootstrap's shown.bs.modal fires after its own focus logic has settled,
+    // so focusing here sticks (setTimeout races and loses).
+    document.getElementById('createKeyModal').addEventListener('shown.bs.modal', function () {
+        keyNameInput.focus();
+    });
 
     if (createKeyForm) {
         createKeyForm.addEventListener('submit', async function (e) {

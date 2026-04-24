@@ -17,6 +17,23 @@ class ServerManager {
     }
 
     /**
+     * Lazily create a ServerProcess shell for subscription purposes.
+     * Unlike _ensureProcess, this NEVER rebuilds an existing proc (it is safe
+     * to call on every WebSocket subscribe). Used so that WS subscribers can
+     * register against a live object before the server is ever started —
+     * otherwise the subsequent setState(STARTING) broadcast has no audience.
+     */
+    async getOrCreateProcess(serverId) {
+        let proc = this.processes.get(serverId);
+        if (proc) return proc;
+        const config = await syncServerConfig(serverId);
+        if (!config) return null;
+        proc = new ServerProcess(config);
+        this.processes.set(serverId, proc);
+        return proc;
+    }
+
+    /**
      * Ensure a ServerProcess instance exists for a server (lazy init).
      * If the cached process is stopped/crashed, rebuild it from current DB
      * state so that restored or edited config values (memory, javaArgs,

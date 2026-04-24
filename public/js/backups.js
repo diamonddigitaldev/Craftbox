@@ -19,6 +19,14 @@
         });
     }
 
+    // Focus the name field once the modal has fully opened (after Bootstrap's own focus logic).
+    var createBackupModalEl = document.getElementById('createBackupModal');
+    if (createBackupModalEl && backupNameInput) {
+        createBackupModalEl.addEventListener('shown.bs.modal', function () {
+            backupNameInput.focus();
+        });
+    }
+
     if (startAfterBackupCheckbox && backupStartAfterInput) {
         startAfterBackupCheckbox.addEventListener('change', function () {
             backupStartAfterInput.value = startAfterBackupCheckbox.checked ? 'true' : 'false';

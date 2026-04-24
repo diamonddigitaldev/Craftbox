@@ -185,7 +185,7 @@
             <form id="create-key-form" novalidate>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="keyName" class="form-label">Key Name</label>
+                        <label for="keyName" class="form-label required-star">Key Name</label>
                         <input type="text" class="form-control form-control-sm" id="keyName" name="name"
                             placeholder="e.g. ci-bot" maxlength="50" autocomplete="off"
                             pattern="[A-Za-z0-9 _\-]{1,50}" required>
@@ -220,7 +220,8 @@
                 <p class="mb-2">Here is your new API key. <strong>Copy it now</strong> — it will not be shown again.</p>
                 <div class="input-group mb-3">
                     <input type="text" class="form-control font-monospace" id="generatedKeyValue" readonly>
-                    <button type="button" class="btn btn-outline-secondary" id="copy-key-btn" title="Copy to clipboard">
+                    <button type="button" class="btn btn-outline-secondary d-flex align-items-center justify-content-center" id="copy-key-btn" title="Copy to clipboard"
+                        style="width: 42px;">
                         <span class="material-icons-outlined" style="font-size: 1.1rem;">content_copy</span>
                     </button>
                 </div>

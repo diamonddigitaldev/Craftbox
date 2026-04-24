@@ -5,6 +5,21 @@ const { log } = require('../../utils/log');
 
 const router = express.Router();
 
+// Never allow API-key-authed requests to manage keys. Rotating/creating/deleting
+// keys must require an interactive login — otherwise a leaked key could
+// bootstrap replacement keys or delete an admin's audit trail.
+// Path-scoped so this doesn't bleed into other /api/v1/* routers mounted
+// alongside this one in api-v1/index.js.
+router.use('/account/apikeys', function requireSession(req, res, next) {
+    if (req.apiKeyAuth) {
+        return res.status(403).json({
+            error: 'session_required',
+            message: 'API keys cannot be managed via API key auth. Sign in to continue.'
+        });
+    }
+    next();
+});
+
 const NAME_PATTERN = /^[A-Za-z0-9 _\-]{1,50}$/;
 const KEY_PREFIX_LEN = 12; // first 12 chars of "cbx_…" shown in UI to identify the key
 
