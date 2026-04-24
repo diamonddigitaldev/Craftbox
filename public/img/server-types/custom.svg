@@ -1,12 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Custom - upload/package icon -->
-  <rect x="8" y="20" width="48" height="36" rx="4" fill="#424242"/>
-  <rect x="8" y="20" width="48" height="12" rx="4" fill="#616161"/>
-  <!-- Upload arrow -->
-  <path d="M32 14l8 8h-5v10h-6V22h-5l8-8z" fill="#90CAF9"/>
-  <!-- Package detail lines -->
-  <rect x="16" y="40" width="12" height="3" rx="1.5" fill="#757575"/>
-  <rect x="16" y="46" width="20" height="3" rx="1.5" fill="#757575"/>
-  <!-- Dot indicators -->
-  <circle cx="44" cy="26" r="3" fill="#4CAF50"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 64 64"
+   fill="none"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="custom.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs4" />
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="12.21875"
+     inkscape:cx="32"
+     inkscape:cy="32"
+     inkscape:window-width="1920"
+     inkscape:window-height="995"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4" />
+  <rect
+     x="8"
+     y="20"
+     width="48"
+     height="36"
+     rx="4"
+     fill="#424242"
+     id="rect1" />
+  <rect
+     x="8"
+     y="20"
+     width="48"
+     height="12"
+     rx="4"
+     fill="#616161"
+     id="rect2" />
+  <path
+     d="M32 14l8 8h-5v10h-6V22h-5l8-8z"
+     fill="#90CAF9"
+     id="path2" />
+  <rect
+     x="16"
+     y="40"
+     width="12"
+     height="3"
+     rx="1.5"
+     fill="#757575"
+     id="rect3" />
+  <rect
+     x="16"
+     y="46"
+     width="20"
+     height="3"
+     rx="1.5"
+     fill="#757575"
+     id="rect4" />
+  <circle
+     cx="44"
+     cy="26"
+     r="3"
+     fill="#4CAF50"
+     id="circle4" />
 </svg>

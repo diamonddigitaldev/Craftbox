@@ -1,8 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Folia - leaf symbol (folia = leaves in Latin) -->
-  <circle cx="32" cy="32" r="28" fill="#1B5E20" opacity="0.15"/>
-  <path d="M32 8C20 20 14 36 18 50c4-8 10-14 14-16 4 2 10 8 14 16 4-14-2-30-14-42z" fill="#4CAF50"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 64 64"
+   fill="none"
+   version="1.1"
+   id="svg3"
+   sodipodi:docname="folia.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs3" />
+  <sodipodi:namedview
+     id="namedview3"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="12.21875"
+     inkscape:cx="32"
+     inkscape:cy="32"
+     inkscape:window-width="1920"
+     inkscape:window-height="995"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg3" />
+  <circle
+     cx="32"
+     cy="32"
+     r="28"
+     fill="#1B5E20"
+     opacity="0.15"
+     id="circle1" />
+  <path
+     d="M32 8C20 20 14 36 18 50c4-8 10-14 14-16 4 2 10 8 14 16 4-14-2-30-14-42z"
+     fill="#4CAF50"
+     id="path1" />
   <!-- Leaf vein -->
-  <path d="M32 16v32" stroke="#2E7D32" stroke-width="2" stroke-linecap="round"/>
-  <path d="M32 24l-8 8M32 30l-6 6M32 24l8 8M32 30l6 6" stroke="#2E7D32" stroke-width="1.5" stroke-linecap="round"/>
+  <path
+     d="M32 16v32"
+     stroke="#2E7D32"
+     stroke-width="2"
+     stroke-linecap="round"
+     id="path2" />
+  <path
+     d="M32 24l-8 8M32 30l-6 6M32 24l8 8M32 30l6 6"
+     stroke="#2E7D32"
+     stroke-width="1.5"
+     stroke-linecap="round"
+     id="path3" />
 </svg>
