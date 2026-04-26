@@ -66,7 +66,7 @@ form.addEventListener('submit', async (e) => {
     var res = await apiFetch('/api/v1/servers', { method: 'POST', body: body });
     if (!res.ok) {
         hideOverlay();
-        alert((res.data && (res.data.message || res.data.error)) || 'Failed to create server.');
+        showToast((res.data && (res.data.message || res.data.error)) || 'Failed to create server.', 'danger');
         createBtn.disabled = false;
         createBtn.textContent = 'Create Server';
         return;

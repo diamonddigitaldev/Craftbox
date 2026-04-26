@@ -10,6 +10,13 @@ const { log } = require('../utils/log');
 const activeLocks = new Map();
 
 /**
+ * Whether a backup is currently in progress for this server.
+ */
+function isBackupInProgress(serverId) {
+    return activeLocks.has(serverId);
+}
+
+/**
  * Ensure the backup directory for a server exists.
  */
 function ensureBackupDir(serverId) {
@@ -47,7 +54,7 @@ function safeTimestamp() {
  */
 async function createBackup(serverId, name, type = 'manual') {
     // Prevent concurrent backups for the same server
-    if (activeLocks.has(serverId)) {
+    if (isBackupInProgress(serverId)) {
         throw new Error('A backup is already in progress for this server.');
     }
 
@@ -299,5 +306,6 @@ module.exports = {
     deleteAllBackups,
     ensureBackupDir,
     resolveBackupPath,
-    formatSize
+    formatSize,
+    isBackupInProgress
 };

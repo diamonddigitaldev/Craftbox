@@ -48,7 +48,7 @@
             var res = await apiFetch('/api/v1/servers/' + serverId + '/events/clear', { method: 'POST', body: {} });
             if (!res.ok) {
                 hideOverlay();
-                alert((res.data && (res.data.message || res.data.error)) || 'Failed to clear events.');
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to clear events.', 'danger');
                 btn.disabled = false;
                 btn.textContent = 'Clear Events';
                 return;

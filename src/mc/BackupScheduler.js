@@ -1,7 +1,7 @@
 const { serversDb } = require('../db');
 const { log } = require('../utils/log');
 const { logEvent } = require('../utils/eventLogger');
-const { createBackup, applyRetention, listBackups, formatSize } = require('./BackupManager');
+const { createBackup, applyRetention, listBackups, formatSize, isBackupInProgress } = require('./BackupManager');
 const { STATES } = require('./stateMachine');
 
 /**
@@ -75,6 +75,10 @@ class BackupScheduler {
 
             const timeSinceLast = Date.now() - new Date(lastScheduled.createdAt).getTime();
             if (timeSinceLast > intervalMs) {
+                if (isBackupInProgress(server.id)) {
+                    log('info', `[${server.name}] Skipping catch-up backup: another backup is already in progress.`);
+                    return;
+                }
                 log('info', `[${server.name}] Missed scheduled backup detected (last: ${lastScheduled.createdAt}). Creating catch-up backup...`);
 
                 // Stop server if running before creating backup
@@ -290,6 +294,11 @@ class BackupScheduler {
     async _executeBackup(serverId) {
         const server = await serversDb.get(`server_${serverId}`);
         if (!server) return;
+
+        if (isBackupInProgress(serverId)) {
+            log('info', `[${server.name}] Skipping scheduled backup: another backup is already in progress.`);
+            return;
+        }
 
         const schedule = server.backupSchedule || {};
         const p = this.serverManager.getProcess(serverId);

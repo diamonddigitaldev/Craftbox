@@ -34,7 +34,7 @@ function _formToBody(form) {
         var res = await apiFetch('/api/v1/servers/' + serverId + '/edit', { method: 'POST', body: _formToBody(form) });
         hideOverlay();
         if (!res.ok) {
-            alert((res.data && (res.data.message || res.data.error)) || 'Failed to save settings.');
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save settings.', 'danger');
             if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
             return;
         }
@@ -403,7 +403,7 @@ function _formToBody(form) {
         var res = await apiFetch('/api/v1/servers/' + serverId + '/duplicate', { method: 'POST', body: _formToBody(form) });
         if (!res.ok) {
             hideOverlay();
-            alert((res.data && (res.data.message || res.data.error)) || 'Failed to duplicate server.');
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to duplicate server.', 'danger');
             if (btn) { btn.disabled = false; btn.textContent = 'Duplicate'; }
             return;
         }
@@ -457,7 +457,7 @@ function _formToBody(form) {
         var res = await apiFetch('/api/v1/templates', { method: 'POST', body: _formToBody(form) });
         hideOverlay();
         if (!res.ok) {
-            alert((res.data && (res.data.message || res.data.error)) || 'Failed to save template.');
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save template.', 'danger');
             if (btn) { btn.disabled = false; btn.textContent = 'Save as Template'; }
             return;
         }

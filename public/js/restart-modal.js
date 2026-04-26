@@ -30,7 +30,7 @@
 
             if (!res.ok) {
                 hideOverlay();
-                alert((res.data && (res.data.message || res.data.error)) || 'Failed to restart server.');
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to restart server.', 'danger');
                 restartBtn.disabled = false;
                 restartBtn.textContent = 'Restart Now';
                 return;

@@ -27,7 +27,7 @@
         if (!res.ok) {
             deleteModal.hide();
             pendingBtn.disabled = false;
-            alert((res.data && (res.data.message || res.data.error)) || 'Delete failed.');
+            showToast((res.data && (res.data.message || res.data.error)) || 'Delete failed.', 'danger');
             pendingBtn = null;
             return;
         }
