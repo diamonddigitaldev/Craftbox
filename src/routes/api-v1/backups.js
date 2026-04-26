@@ -9,7 +9,8 @@ const {
     deleteBackup,
     listBackups,
     applyRetention,
-    formatSize
+    formatSize,
+    isBackupInProgress
 } = require('../../mc/BackupManager');
 const { STATES } = require('../../mc/stateMachine');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
@@ -58,6 +59,10 @@ router.post('/servers/:id/backups', async (req, res) => {
     }
 
     try {
+        if (isBackupInProgress(server.id)) {
+            return res.status(409).json({ error: 'A backup is already in progress for this server.' });
+        }
+
         if (proc && ![STATES.STOPPED, STATES.CRASHED].includes(proc.state)) {
             if (!stopFirst) {
                 return res.status(409).json({ error: 'Server must be stopped to create a backup.' });
@@ -71,15 +76,29 @@ router.post('/servers/:id/backups', async (req, res) => {
 
         let backup;
         await serverManager.setOperationalState(server.id, STATES.BACKING_UP);
+        let weOwnState = true;
         try {
-            backup = await createBackup(server.id, backupName, 'manual');
+            try {
+                backup = await createBackup(server.id, backupName, 'manual');
+            } catch (err) {
+                // TOCTOU: another request acquired the backup lock between our
+                // isBackupInProgress() check and createBackup(). Leave the
+                // operational state alone — the winning request still owns it.
+                if (err.message && err.message.toLowerCase().includes('already in progress')) {
+                    weOwnState = false;
+                    return res.status(409).json({ error: 'A backup is already in progress for this server.' });
+                }
+                throw err;
+            }
 
             const schedule = server.backupSchedule || {};
             await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
 
             logEvent(server.id, 'backup_create', `Manual backup created (${formatSize(backup.size)})`, { initiatedBy: req.user.username }).catch(() => {});
         } finally {
-            await serverManager.setOperationalState(server.id, STATES.STOPPED);
+            if (weOwnState) {
+                await serverManager.setOperationalState(server.id, STATES.STOPPED);
+            }
         }
 
         let warning = null;
