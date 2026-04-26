@@ -270,7 +270,7 @@
         });
         hideOverlay();
         if (!res.ok) {
-            alert((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + '.'));
+            showToast((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + '.'), 'danger');
         }
         // State updates arrive via WebSocket.
     }
@@ -305,7 +305,7 @@
             var res = await apiFetch('/api/v1/servers/' + serverId, { method: 'DELETE' });
             if (!res.ok) {
                 hideOverlay();
-                alert((res.data && (res.data.message || res.data.error)) || 'Failed to delete server.');
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to delete server.', 'danger');
                 return;
             }
             window.location.href = '/dashboard';

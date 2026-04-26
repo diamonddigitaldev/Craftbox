@@ -58,7 +58,7 @@
             });
             if (!res.ok) {
                 hideOverlay();
-                alert((res.data && (res.data.message || res.data.error)) || 'Backup failed.');
+                showToast((res.data && (res.data.message || res.data.error)) || 'Backup failed.', 'danger');
                 if (btn) { btn.disabled = false; btn.textContent = needsStop ? 'Stop & Backup' : 'Create Backup'; }
                 return;
             }
@@ -108,7 +108,7 @@
             });
             if (!res.ok) {
                 hideOverlay();
-                alert((res.data && (res.data.message || res.data.error)) || 'Restore failed.');
+                showToast((res.data && (res.data.message || res.data.error)) || 'Restore failed.', 'danger');
                 if (confirmRestoreBtn) { confirmRestoreBtn.disabled = false; confirmRestoreBtn.textContent = 'Restore'; }
                 return;
             }
@@ -147,7 +147,7 @@
             });
             if (!res.ok) {
                 hideOverlay();
-                alert((res.data && (res.data.message || res.data.error)) || 'Delete failed.');
+                showToast((res.data && (res.data.message || res.data.error)) || 'Delete failed.', 'danger');
                 if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
                 return;
             }

@@ -72,59 +72,6 @@
         });
     });
 
-    /**
-     * Show a Bootstrap toast notification (matches flash.ejs style).
-     */
-    function showToast(message, type) {
-        type = type || 'danger';
-        var icons = { danger: 'error', success: 'check_circle', warning: 'warning', info: 'info' };
-        var icon = icons[type] || 'error';
-        var btnClass = type === 'warning' ? 'btn-close' : 'btn-close btn-close-white';
-
-        var container = document.querySelector('.toast-container');
-        if (!container) {
-            container = document.createElement('div');
-            container.className = 'toast-container position-fixed top-0 end-0 p-3';
-            container.style.zIndex = '1090';
-            document.body.appendChild(container);
-        }
-
-        var toastEl = document.createElement('div');
-        toastEl.className = 'toast align-items-center text-bg-' + type + ' border-0';
-        toastEl.setAttribute('role', 'alert');
-
-        var wrapper = document.createElement('div');
-        wrapper.className = 'd-flex';
-
-        var body = document.createElement('div');
-        body.className = 'toast-body d-flex align-items-center gap-2';
-
-        var iconEl = document.createElement('span');
-        iconEl.className = 'material-icons-outlined';
-        iconEl.style.fontSize = '1.2rem';
-        iconEl.textContent = icon;
-
-        var msgEl = document.createElement('span');
-        msgEl.textContent = message;
-
-        body.appendChild(iconEl);
-        body.appendChild(msgEl);
-
-        var closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = btnClass + ' me-2 m-auto';
-        closeBtn.setAttribute('data-bs-dismiss', 'toast');
-
-        wrapper.appendChild(body);
-        wrapper.appendChild(closeBtn);
-        toastEl.appendChild(wrapper);
-
-        container.appendChild(toastEl);
-        var toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 });
-        toastEl.addEventListener('hidden.bs.toast', function () { toastEl.remove(); });
-        toast.show();
-    }
-
     // ── Upload ──
 
     var fileInput = document.getElementById('file-input');

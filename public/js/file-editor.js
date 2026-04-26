@@ -41,7 +41,7 @@
             });
             hideOverlay();
             if (!res.ok) {
-                alert((res.data && (res.data.message || res.data.error)) || 'Failed to save file.');
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save file.', 'danger');
                 if (btn) { btn.disabled = false; btn.textContent = 'Save File'; }
                 return;
             }

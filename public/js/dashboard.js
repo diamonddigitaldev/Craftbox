@@ -185,7 +185,7 @@
         var res = await apiFetch('/api/v1/servers/' + serverId + '/' + action, { method: 'POST', body: {} });
         hideOverlay();
         if (!res.ok) {
-            alert((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + ' server.'));
+            showToast((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + ' server.'), 'danger');
         }
         // State updates arrive via WebSocket — no page reload needed.
     });

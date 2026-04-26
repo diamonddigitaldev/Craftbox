@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!res.ok) {
                     hideOverlay();
                     confirmCreateBtn.disabled = false;
-                    alert(data.message || data.error || 'Failed to generate key.');
+                    showToast(data.message || data.error || 'Failed to generate key.', 'danger');
                     return;
                 }
 
@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (err) {
                 hideOverlay();
                 confirmCreateBtn.disabled = false;
-                alert('Network error: ' + err.message);
+                showToast('Network error: ' + err.message, 'danger');
             }
         });
     }
@@ -187,7 +187,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     var data = await res.json().catch(function () { return {}; });
                     hideOverlay();
                     confirmDeleteBtn.disabled = false;
-                    alert(data.message || data.error || 'Failed to delete key.');
+                    showToast(data.message || data.error || 'Failed to delete key.', 'danger');
                     return;
                 }
 
@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (err) {
                 hideOverlay();
                 confirmDeleteBtn.disabled = false;
-                alert('Network error: ' + err.message);
+                showToast('Network error: ' + err.message, 'danger');
             }
         });
     }

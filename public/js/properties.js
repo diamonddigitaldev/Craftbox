@@ -26,7 +26,7 @@
         var res = await apiFetch('/api/v1/servers/' + serverId + '/properties', { method: 'POST', body: body });
         hideOverlay();
         if (!res.ok) {
-            alert((res.data && (res.data.message || res.data.error)) || 'Failed to save properties.');
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save properties.', 'danger');
             if (btn) { btn.disabled = false; btn.textContent = 'Save Properties'; }
             return;
         }
