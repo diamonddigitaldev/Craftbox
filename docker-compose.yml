@@ -12,9 +12,10 @@ services:
     volumes:
       - craftbox-data:/app/data
     environment:
-      - LOG_LEVEL=INFO
-      # - NODE_ENV=production # Will require HTTPS for secure cookies, so only enable if you have a reverse proxy with SSL
+      - LOG_LEVEL=DEBUG
       # - PORT=6464 # Change if you want to run the web panel on a different port
+      # - NODE_ENV=production # Will require HTTPS for secure cookies, so only enable if you have a reverse proxy with SSL
+      # - TRUST_PROXY=true # Enable if running behind a reverse proxy (e.g. Nginx, Caddy, Cloudflare Tunnel) so that rate limiting and secure cookies work correctly
     stop_grace_period: 45s
 
 volumes:
