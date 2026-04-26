@@ -153,7 +153,7 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 This project uses AI tools to aid development.
 
 AI is used to:
-- Plan sigificant changes
+- Plan significant changes
 - Implement initial passes of new features
 - Perform security audits (alongside human review)
 - Fix bugs and patch security vulnerabilities
