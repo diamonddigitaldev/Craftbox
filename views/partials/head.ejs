@@ -21,6 +21,15 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Craftbox">
     <meta name="theme-color" content="#4caf50">
+    <% if (typeof stateColors !== 'undefined') { %>
+    <script nonce="<%= cspNonce %>">
+        window.CraftboxState = {
+            stateColors: <%- JSON.stringify(stateColors) %>,
+            stateIcons: <%- JSON.stringify(stateIcons) %>,
+            stateDisplayNames: <%- JSON.stringify(stateDisplayNames) %>
+        };
+    </script>
+    <% } %>
 </head>
 <body>
 <% if (typeof navbar !== 'undefined' && navbar) { %>

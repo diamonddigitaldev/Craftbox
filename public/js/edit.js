@@ -502,6 +502,26 @@ function _formToBody(form) {
     const actionsDiv = document.getElementById('update-actions');
     const statusEl = document.getElementById('update-status');
 
+    // Page-load resilience: if the server is mid-update-jar, show the overlay
+    // and listen for completion (in case the user reloaded mid-operation).
+    var navHeader = document.getElementById('server-nav-header');
+    if (navHeader && navHeader.dataset.state === 'updating_jar') {
+        showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
+        document.addEventListener('craftbox:operation', function reloadOnComplete(e) {
+            var msg = e.detail || {};
+            if (msg.serverId !== serverId || msg.operation !== 'jar-update') return;
+            document.removeEventListener('craftbox:operation', reloadOnComplete);
+            hideOverlay();
+            if (msg.status === 'failed') {
+                showToast('Jar update failed: ' + (msg.error || 'unknown error'), 'danger');
+            } else {
+                // flashToast — the reload below would wipe a regular toast.
+                flashToast('Jar updated successfully.', 'success');
+                window.location.reload();
+            }
+        });
+    }
+
     checkBtn.addEventListener('click', async function () {
         checkBtn.disabled = true;
         checkBtn.innerHTML =
@@ -552,26 +572,50 @@ function _formToBody(form) {
         btn.innerHTML =
             '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
 
+        function onJarUpdateOperation(e) {
+            var msg = e.detail || {};
+            if (msg.serverId !== serverId || msg.operation !== 'jar-update') return;
+
+            hideOverlay();
+            document.removeEventListener('craftbox:operation', onJarUpdateOperation);
+
+            if (msg.status === 'complete') {
+                var build = msg.payload && msg.payload.build;
+                showResult('success', 'Jar updated to build #' + (build || 'latest') + '.');
+                if (statusEl && build) {
+                    statusEl.textContent = 'Current build: #' + build;
+                }
+                btn.remove();
+            } else {
+                showResult('danger', msg.error || 'Failed to update jar.');
+                btn.disabled = false;
+                btn.innerHTML =
+                    '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+            }
+        }
+
         btn.addEventListener('click', async function () {
             btn.disabled = true;
             btn.innerHTML =
                 '<span class="spinner-border spinner-border-sm" role="status"></span> Updating...';
             showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
 
+            // Listen for completion before kicking off — the backend may finish
+            // very quickly and broadcast before our listener attaches if we did
+            // it after the POST.
+            document.addEventListener('craftbox:operation', onJarUpdateOperation);
+
             var res = await apiFetch('/api/v1/servers/' + serverId + '/update-jar', { method: 'POST', body: {} });
-            hideOverlay();
-            if (res.ok && res.data && res.data.success) {
-                showResult('success', 'Jar updated to build #' + (res.data.build || 'latest') + '.');
-                if (statusEl && res.data.build) {
-                    statusEl.textContent = 'Current build: #' + res.data.build;
-                }
-                btn.remove();
-            } else {
-                showResult('danger', (res.data && res.data.error) || 'Failed to update jar.');
+            if (!res.ok) {
+                hideOverlay();
+                document.removeEventListener('craftbox:operation', onJarUpdateOperation);
+                showResult('danger', (res.data && res.data.error) || 'Failed to start jar update.');
                 btn.disabled = false;
                 btn.innerHTML =
                     '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+                return;
             }
+            // 202 Accepted: keep overlay; onJarUpdateOperation handles completion.
         });
 
         actionsDiv.appendChild(btn);

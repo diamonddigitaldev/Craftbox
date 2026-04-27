@@ -19,28 +19,11 @@
     }
     if (!serverId) return;
 
-    var stateColors = {
-        stopped: 'secondary',
-        starting: 'info',
-        running: 'success',
-        stopping: 'warning',
-        crashed: 'danger',
-        backing_up: 'info',
-        restoring: 'info'
-    };
-    var stateIcons = {
-        stopped: 'stop_circle',
-        starting: 'hourglass_top',
-        running: 'play_circle',
-        stopping: 'pending',
-        crashed: 'error',
-        backing_up: 'backup',
-        restoring: 'settings_backup_restore'
-    };
-    var stateDisplayNames = {
-        backing_up: 'Backing Up',
-        restoring: 'Restoring'
-    };
+    // Visual state metadata comes from window.CraftboxState (injected by
+    // head.ejs from src/utils/serverStateMeta.js — single source of truth).
+    var stateColors = (window.CraftboxState || {}).stateColors || {};
+    var stateIcons = (window.CraftboxState || {}).stateIcons || {};
+    var stateDisplayNames = (window.CraftboxState || {}).stateDisplayNames || {};
 
     var ws = null;
     var reconnectAttempts = 0;
@@ -63,6 +46,9 @@
             }
             if (msg.type === 'state' && msg.serverId === serverId) {
                 updateState(msg.state);
+            }
+            if (msg.type === 'operation' && msg.serverId === serverId) {
+                document.dispatchEvent(new CustomEvent('craftbox:operation', { detail: msg }));
             }
         };
 

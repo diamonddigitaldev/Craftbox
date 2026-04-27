@@ -8,6 +8,12 @@
 </div>
 
 <%
+// SECURITY BOUNDARY — do NOT replace with the shared getStateColor/getStateIcon
+// helpers from src/utils/serverStateMeta.js. These maps intentionally only
+// include the five SAFE_PUBLIC_STATES so that any non-public state which
+// somehow slipped past sanitizeForPublic() in src/routes/status.js falls
+// back to a generic 'secondary' badge instead of rendering with its real
+// (e.g. "Backing Up") label.
 const stateColors = { stopped: 'secondary', starting: 'info', running: 'success', stopping: 'warning', crashed: 'danger' };
 const stateIcons = { stopped: 'stop_circle', starting: 'hourglass_top', running: 'play_circle', stopping: 'pending', crashed: 'error' };
 const color = stateColors[server.state] || 'secondary';

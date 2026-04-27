@@ -3,6 +3,11 @@ const rateLimit = require('express-rate-limit');
 
 // Security headers middleware (OWASP compliant)
 function securityHeaders(req, res, next) {
+    // Per-request CSP nonce for the small bootstrap inline script in head.ejs
+    // (window.CraftboxState). Templates can read res.locals.cspNonce.
+    const nonce = crypto.randomBytes(16).toString('base64');
+    res.locals.cspNonce = nonce;
+
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '0');
@@ -14,7 +19,7 @@ function securityHeaders(req, res, next) {
             "default-src 'self'",
             "style-src 'self' 'unsafe-inline'",
             "font-src 'self'",
-            "script-src 'self'",
+            `script-src 'self' 'nonce-${nonce}'`,
             "connect-src 'self'",
             "img-src 'self' data:",
             "frame-ancestors 'none'",

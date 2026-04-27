@@ -231,35 +231,63 @@ router.get('/servers/:id/check-update', async (req, res) => {
     }
 });
 
-// POST /servers/:id/update-jar — Download the latest build, replacing the current jar
+// POST /servers/:id/update-jar — Kick off a jar download. Returns 202 immediately;
+// completion is reported via the per-server WebSocket as
+// { type: 'operation', operation: 'jar-update', status: 'complete'|'failed', ... }.
 router.post('/servers/:id/update-jar', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager?.getProcess(server.id);
+    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+        return res.status(409).json({ error: 'Stop the server before updating the jar.' });
+    }
+
+    const type = server.serverType || 'vanilla';
+    const provider = getProvider(type);
+    if (!provider) return res.status(400).json({ error: 'Unknown server type.' });
+
+    const initiatedBy = req.user.username;
+
     try {
-        const server = await loadServerOr404(req, res);
-        if (!server) return;
+        await serverManager.setOperationalState(server.id, STATES.UPDATING_JAR);
+        res.status(202).json({ success: true, status: 'started' });
 
-        const serverManager = req.app.get('serverManager');
-        const proc = serverManager?.getProcess(server.id);
-        if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-            return res.status(409).json({ error: 'Stop the server before updating the jar.' });
-        }
+        (async () => {
+            try {
+                const jarPath = path.join(SERVERS_DIR, server.id, server.jarFile || 'server.jar');
+                const result = await downloadServerJar(type, server.version, null, jarPath);
 
-        const type = server.serverType || 'vanilla';
-        const provider = getProvider(type);
-        if (!provider) return res.status(400).json({ error: 'Unknown server type.' });
+                if (result?.build) {
+                    const fresh = await serversDb.get(`server_${server.id}`);
+                    if (fresh) {
+                        fresh.build = result.build;
+                        await serversDb.set(`server_${server.id}`, fresh);
+                    }
+                }
 
-        const jarPath = path.join(SERVERS_DIR, server.id, server.jarFile || 'server.jar');
-        const result = await downloadServerJar(type, server.version, null, jarPath);
-
-        if (result?.build) {
-            server.build = result.build;
-            await serversDb.set(`server_${server.id}`, server);
-        }
-
-        log('info', `Server "${server.name}" jar updated to build ${result?.build || 'latest'}.`);
-        res.json({ success: true, build: result?.build || null });
+                await serverManager.setOperationalState(server.id, STATES.STOPPED);
+                logEvent(server.id, 'jar_update', `Jar updated to build ${result?.build || 'latest'}`, { initiatedBy }).catch(() => {});
+                log('info', `Server "${server.name}" jar updated to build ${result?.build || 'latest'}.`);
+                serverManager.broadcastOperation(server.id, 'jar-update', 'complete', {
+                    build: result?.build || null,
+                    version: server.version
+                });
+            } catch (err) {
+                log('error', `Update-jar failed for ${server.id}: ${err.message}`);
+                logEvent(server.id, 'jar_update_fail', `Jar update failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                try {
+                    await serverManager.setOperationalState(server.id, STATES.STOPPED);
+                } catch (_) {}
+                serverManager.broadcastOperation(server.id, 'jar-update', 'failed', err.message);
+            }
+        })();
     } catch (err) {
-        log('error', `Update-jar failed for ${req.params.id}: ${err.message}`);
-        res.status(500).json({ error: `Failed to update jar: ${err.message}` });
+        log('error', `Update-jar setup failed for ${req.params.id}: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to update jar: ${err.message}` });
+        }
     }
 });
 
@@ -630,9 +658,11 @@ router.post('/servers', async (req, res) => {
     const difficultyStr = validDifficulties.includes(difficulty) ? difficulty : 'easy';
     const seedStr = String(seed || '').trim();
 
+    const id = uuidv4();
+    const serverDir = path.join(SERVERS_DIR, id);
+    const initiatedBy = req.user.username;
+
     try {
-        const id = uuidv4();
-        const serverDir = path.join(SERVERS_DIR, id);
         const logsDir = path.join(serverDir, 'logs');
         fs.mkdirSync(logsDir, { recursive: true });
 
@@ -644,23 +674,15 @@ router.post('/servers', async (req, res) => {
         copyDefaultIcon(id);
         log('info', `Creating server "${trimmedName}" (${id}) — ${type} ${type === 'custom' ? '' : versionStr}`);
 
-        const jarVersion = type === 'custom' ? customJarUrl.trim() : versionStr;
-        const downloadResult = await downloadServerJar(type, jarVersion, null, path.join(serverDir, 'server.jar'));
-
-        writeServerProperties(serverDir, {
-            serverPort: portNum,
-            gamemode: gamemodeStr,
-            difficulty: difficultyStr,
-            levelSeed: seedStr
-        });
-        writeEula(serverDir);
-
+        // Record the server in DB up front in PROVISIONING state. The user will be
+        // redirected to /servers/:id and can subscribe via WebSocket while the jar
+        // downloads in the background.
         const server = {
             id,
             name: trimmedName,
             serverType: type,
-            build: downloadResult?.build || null,
-            state: 'stopped',
+            build: null,
+            state: STATES.PROVISIONING,
             port: portNum,
             memory: memoryNum,
             javaArgs: safeJavaArgs,
@@ -683,12 +705,56 @@ router.post('/servers', async (req, res) => {
         };
 
         await serversDb.set(`server_${id}`, server);
-        log('info', `Server "${trimmedName}" (${id}) created successfully.`);
 
         res.status(201).json({ success: true, server });
+
+        const serverManager = req.app.get('serverManager');
+        (async () => {
+            try {
+                const jarVersion = type === 'custom' ? customJarUrl.trim() : versionStr;
+                const downloadResult = await downloadServerJar(type, jarVersion, null, path.join(serverDir, 'server.jar'));
+
+                writeServerProperties(serverDir, {
+                    serverPort: portNum,
+                    gamemode: gamemodeStr,
+                    difficulty: difficultyStr,
+                    levelSeed: seedStr
+                });
+                writeEula(serverDir);
+
+                const fresh = await serversDb.get(`server_${id}`);
+                if (fresh) {
+                    fresh.build = downloadResult?.build || null;
+                    fresh.state = STATES.STOPPED;
+                    await serversDb.set(`server_${id}`, fresh);
+                }
+
+                if (serverManager) {
+                    await serverManager.setOperationalState(id, STATES.STOPPED);
+                    serverManager.broadcastOperation(id, 'create', 'complete', {
+                        build: downloadResult?.build || null
+                    });
+                }
+                logEvent(id, 'action', 'Server created', { initiatedBy }).catch(() => {});
+                log('info', `Server "${trimmedName}" (${id}) provisioned successfully.`);
+            } catch (err) {
+                log('error', `Failed to provision server "${trimmedName}" (${id}): ${err.message}`);
+                logEvent(id, 'action', `Server provisioning failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                if (serverManager) {
+                    try {
+                        await serverManager.setOperationalState(id, STATES.CRASHED, {
+                            crashReason: 'Provisioning failed: ' + err.message
+                        });
+                    } catch (_) {}
+                    serverManager.broadcastOperation(id, 'create', 'failed', err.message);
+                }
+            }
+        })();
     } catch (err) {
         log('error', `Failed to create server: ${err.message}`);
-        res.status(500).json({ error: `Failed to create server: ${err.message}` });
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to create server: ${err.message}` });
+        }
     }
 });
 
@@ -725,40 +791,68 @@ router.post('/servers/:id/restart', async (req, res) => {
     if (!await loadServerOr404(req, res)) return;
     const serverManager = req.app.get('serverManager');
     const id = req.params.id;
+    const initiatedBy = req.user.username;
     const createBackupFirst = req.body?.backup === 'true' || req.body?.backup === true;
 
-    try {
-        if (createBackupFirst) {
-            const { createBackup } = require('../../mc/BackupManager');
-
-            const proc = serverManager?.getProcess(id);
-            if (proc && ['running', 'starting'].includes(proc.state)) {
-                await serverManager.stopServer(id, { initiatedBy: req.user.username });
-                await proc.waitForState('stopped', 60000);
-            }
-
-            await syncServerConfig(id);
-
-            await serverManager.setOperationalState(id, STATES.BACKING_UP);
-            try {
-                await createBackup(id, 'Pre-restart backup', 'manual');
-                logEvent(id, 'action', 'Pre-restart backup created', { initiatedBy: req.user.username }).catch(() => {});
-            } finally {
-                await serverManager.setOperationalState(id, STATES.STOPPED);
-            }
-
+    if (!createBackupFirst) {
+        try {
             await clearStatsHistory(id);
-            await serverManager.startServer(id, { initiatedBy: req.user.username });
-            logEvent(id, 'action', 'Server restarted with backup', { initiatedBy: req.user.username }).catch(() => {});
-            return res.json({ success: true, message: 'Backup created and server is restarting...' });
+            await serverManager.restartServer(id, { initiatedBy });
+            logEvent(id, 'action', 'Server restart requested', { initiatedBy }).catch(() => {});
+            return res.json({ success: true, message: 'Server is restarting...' });
+        } catch (err) {
+            return res.status(400).json({ error: err.message });
+        }
+    }
+
+    // Restart-with-backup: stop → backup (long) → start. Fire-and-forget so the
+    // browser doesn't time out on the backup. Completion broadcast via WebSocket.
+    const { runBackupJob, tryAcquireBackupLock, releaseBackupLock, formatSize } = require('../../mc/BackupManager');
+
+    if (!tryAcquireBackupLock(id)) {
+        return res.status(409).json({ error: 'A backup is already in progress for this server.' });
+    }
+
+    let lockOwnedByRoute = true;
+    try {
+        const proc = serverManager?.getProcess(id);
+        if (proc && ['running', 'starting'].includes(proc.state)) {
+            await serverManager.stopServer(id, { initiatedBy });
+            await proc.waitForState('stopped', 60000);
         }
 
-        await clearStatsHistory(id);
-        await serverManager.restartServer(id, { initiatedBy: req.user.username });
-        logEvent(id, 'action', 'Server restart requested', { initiatedBy: req.user.username }).catch(() => {});
-        res.json({ success: true, message: 'Server is restarting...' });
+        await syncServerConfig(id);
+        await serverManager.setOperationalState(id, STATES.BACKING_UP);
+        lockOwnedByRoute = false;
+        res.status(202).json({ success: true, status: 'started', message: 'Backup started; server will restart on completion.' });
+
+        (async () => {
+            try {
+                const backup = await runBackupJob(id, 'Pre-restart backup', 'manual');
+                logEvent(id, 'action', 'Pre-restart backup created', { initiatedBy }).catch(() => {});
+                serverManager.broadcastOperation(id, 'backup', 'complete', {
+                    backup: { ...backup, sizeFormatted: formatSize(backup.size) }
+                });
+
+                await serverManager.setOperationalState(id, STATES.STOPPED);
+                await clearStatsHistory(id);
+                await serverManager.startServer(id, { initiatedBy });
+                logEvent(id, 'action', 'Server restarted with backup', { initiatedBy }).catch(() => {});
+            } catch (err) {
+                log('error', `Restart-with-backup failed for ${id}: ${err.message}`);
+                logEvent(id, 'backup_create_fail', `Pre-restart backup failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                try {
+                    await serverManager.setOperationalState(id, STATES.STOPPED);
+                } catch (_) {}
+                serverManager.broadcastOperation(id, 'backup', 'failed', err.message);
+            }
+        })();
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        if (lockOwnedByRoute) releaseBackupLock(id);
+        log('error', `Restart-with-backup setup failed for ${id}: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: err.message });
+        }
     }
 });
 
@@ -837,37 +931,18 @@ router.post('/servers/:id/duplicate', async (req, res) => {
         return res.status(400).json({ error: 'Port must be between 1024 and 65535.' });
     }
 
+    const newId = uuidv4();
+    const sourceDir = path.join(SERVERS_DIR, id);
+    const newDir = path.join(SERVERS_DIR, newId);
+    const initiatedBy = req.user.username;
+
     try {
-        const newId = uuidv4();
-        const sourceDir = path.join(SERVERS_DIR, id);
-        const newDir = path.join(SERVERS_DIR, newId);
-
-        fs.cpSync(sourceDir, newDir, { recursive: true });
-
-        if (includeWorld !== 'true' && includeWorld !== true) {
-            const worldDirs = ['world', 'world_nether', 'world_the_end'];
-            for (const dir of worldDirs) {
-                const worldPath = path.join(newDir, dir);
-                if (fs.existsSync(worldPath)) {
-                    fs.rmSync(worldPath, { recursive: true, force: true });
-                }
-            }
-        }
-
-        const logsDir = path.join(newDir, 'logs');
-        if (fs.existsSync(logsDir)) {
-            fs.rmSync(logsDir, { recursive: true, force: true });
-        }
-        fs.mkdirSync(logsDir, { recursive: true });
-
-        updateServerProperties(newDir, { 'server-port': String(portNum) });
-
         const newServer = {
             ...server,
             id: newId,
             name: trimmedName,
             port: portNum,
-            state: 'stopped',
+            state: STATES.PROVISIONING,
             createdAt: new Date().toISOString(),
             lastStarted: null,
             lastStopped: null,
@@ -884,30 +959,67 @@ router.post('/servers/:id/duplicate', async (req, res) => {
         };
 
         await serversDb.set(`server_${newId}`, newServer);
-        await copyModEnvMap(id, newId);
-        log('info', `Server "${trimmedName}" (${newId}) duplicated from "${server.name}" (${id}).`);
+        res.status(201).json({ success: true, server: newServer, warning: null });
 
-        if (newServer.backupSchedule?.enabled) {
-            const backupScheduler = req.app.get('backupScheduler');
-            if (backupScheduler) {
-                await backupScheduler.restartSchedule(newId);
-            }
-        }
-
-        let warning = null;
-        if (startAfter && stopFirst) {
+        (async () => {
             try {
-                await serverManager.startServer(id);
-            } catch (err) {
-                log('error', `Failed to restart server after duplicate: ${err.message}`);
-                warning = `The original server failed to restart: ${err.message}`;
-            }
-        }
+                await fs.promises.cp(sourceDir, newDir, { recursive: true });
 
-        res.status(201).json({ success: true, server: newServer, warning });
+                if (includeWorld !== 'true' && includeWorld !== true) {
+                    const worldDirs = ['world', 'world_nether', 'world_the_end'];
+                    for (const dir of worldDirs) {
+                        const worldPath = path.join(newDir, dir);
+                        await fs.promises.rm(worldPath, { recursive: true, force: true });
+                    }
+                }
+
+                const logsDir = path.join(newDir, 'logs');
+                await fs.promises.rm(logsDir, { recursive: true, force: true });
+                await fs.promises.mkdir(logsDir, { recursive: true });
+
+                updateServerProperties(newDir, { 'server-port': String(portNum) });
+
+                await copyModEnvMap(id, newId);
+
+                if (newServer.backupSchedule?.enabled) {
+                    const backupScheduler = req.app.get('backupScheduler');
+                    if (backupScheduler) {
+                        await backupScheduler.restartSchedule(newId);
+                    }
+                }
+
+                if (serverManager) {
+                    await serverManager.setOperationalState(newId, STATES.STOPPED);
+                    serverManager.broadcastOperation(newId, 'duplicate', 'complete', {});
+                }
+                logEvent(newId, 'action', `Duplicated from "${server.name}"`, { initiatedBy }).catch(() => {});
+                log('info', `Server "${trimmedName}" (${newId}) duplicated from "${server.name}" (${id}).`);
+
+                if (startAfter && stopFirst) {
+                    try {
+                        await serverManager.startServer(id, { initiatedBy });
+                    } catch (err) {
+                        log('error', `Failed to restart source server after duplicate: ${err.message}`);
+                    }
+                }
+            } catch (err) {
+                log('error', `Failed to duplicate server ${id} → ${newId}: ${err.message}`);
+                logEvent(newId, 'action', `Duplication failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                if (serverManager) {
+                    try {
+                        await serverManager.setOperationalState(newId, STATES.CRASHED, {
+                            crashReason: 'Duplication failed: ' + err.message
+                        });
+                    } catch (_) {}
+                    serverManager.broadcastOperation(newId, 'duplicate', 'failed', err.message);
+                }
+            }
+        })();
     } catch (err) {
         log('error', `Failed to duplicate server ${id}: ${err.message}`);
-        res.status(500).json({ error: `Failed to duplicate server: ${err.message}` });
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to duplicate server: ${err.message}` });
+        }
     }
 });
 
@@ -929,25 +1041,36 @@ router.delete('/servers/:id', async (req, res) => {
 
         const backupScheduler = req.app.get('backupScheduler');
         if (backupScheduler) backupScheduler.stopSchedule(id);
-        const { deleteAllBackups } = require('../../mc/BackupManager');
-        await deleteAllBackups(id);
 
-        await deleteServerEvents(id);
-        await clearStatsHistory(id);
-        await clearAllModEnv(id);
-
-        const serverDir = path.join(SERVERS_DIR, id);
-        if (fs.existsSync(serverDir)) {
-            fs.rmSync(serverDir, { recursive: true, force: true });
-        }
-
+        // Delete the DB record first so the user's UI immediately reflects the
+        // server as gone. Filesystem cleanup runs asynchronously below.
         await serversDb.delete(`server_${id}`);
-        log('info', `Server "${server.name}" (${id}) deleted.`);
+        log('info', `Server "${server.name}" (${id}) marked for deletion.`);
 
         res.json({ success: true });
+
+        // Background cleanup. Failures here orphan files on disk but do not
+        // affect the user's view, so we only log.
+        (async () => {
+            try {
+                const { deleteAllBackups } = require('../../mc/BackupManager');
+                await deleteAllBackups(id);
+                await deleteServerEvents(id);
+                await clearStatsHistory(id);
+                await clearAllModEnv(id);
+
+                const serverDir = path.join(SERVERS_DIR, id);
+                await fs.promises.rm(serverDir, { recursive: true, force: true });
+                log('info', `Server "${server.name}" (${id}) cleanup complete.`);
+            } catch (err) {
+                log('error', `Background cleanup failed for ${server.name} (${id}): ${err.message}`);
+            }
+        })();
     } catch (err) {
         log('error', `Failed to delete server ${id}: ${err.message}`);
-        res.status(500).json({ error: `Failed to delete server: ${err.message}` });
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to delete server: ${err.message}` });
+        }
     }
 });
 

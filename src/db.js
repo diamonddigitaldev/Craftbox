@@ -27,6 +27,14 @@ const apiKeysDb = db.table('api_keys');
 async function markAllServersStopped({ reason } = {}) {
     const safeReason = reason ? String(reason) : null;
 
+    // States that imply incomplete on-disk artifacts when interrupted — these
+    // map to `crashed` with an explanatory reason so the user can delete/retry
+    // rather than silently continuing as if all is well.
+    const INCOMPLETE_STATES = {
+        provisioning: 'Provisioning interrupted by restart',
+        updating_jar: 'Jar update interrupted by restart'
+    };
+
     try {
         const rows = await serversDb.all();
         let updated = 0;
@@ -36,14 +44,20 @@ async function markAllServersStopped({ reason } = {}) {
             if (!server || typeof server !== 'object') continue;
             if (server.state === 'stopped') continue;
 
-            server.state = 'stopped';
+            const incompleteReason = INCOMPLETE_STATES[server.state];
+            if (incompleteReason) {
+                server.state = 'crashed';
+                server.crashReason = incompleteReason;
+            } else {
+                server.state = 'stopped';
+            }
             const key = server.id ? `server_${server.id}` : row.id;
             await serversDb.set(key, server);
             updated++;
         }
 
         if (updated > 0) {
-            log('info', `Reset ${updated} server state(s) to stopped${safeReason ? ` (${safeReason})` : ''}.`);
+            log('info', `Reset ${updated} server state(s)${safeReason ? ` (${safeReason})` : ''}.`);
         }
 
         return { updated, total: rows.length };

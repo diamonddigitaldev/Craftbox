@@ -2,6 +2,76 @@
 (function () {
     var serverId = window.location.pathname.split('/')[2];
 
+    // ── Page-load resilience: if state is backing_up or restoring, show the
+    // overlay so a user reloading mid-operation sees the right thing.
+    var navHeader = document.getElementById('server-nav-header');
+    var initialState = navHeader ? navHeader.dataset.state : '';
+    if (initialState === 'backing_up') {
+        showOverlay('Creating backup...', 'Compressing server files. This may take a moment.');
+    } else if (initialState === 'restoring') {
+        showOverlay('Restoring backup...', 'Extracting backup files. This may take a moment.');
+    }
+
+    // ── Async operation completion via WebSocket ──
+    // serverState.js maintains the WebSocket subscription on this page and
+    // dispatches `craftbox:operation` events for backup/restore/jar-update
+    // outcomes. We listen here to drive the overlay + toasts after firing
+    // long operations.
+    function handleOperation(e) {
+        var msg = e.detail || {};
+        if (msg.serverId !== serverId) return;
+
+        if (msg.operation === 'backup') {
+            if (msg.status === 'complete') {
+                hideOverlay();
+                var warning = msg.payload && msg.payload.warning;
+                // flashToast (not showToast) — the immediate reload below
+                // would wipe a regular toast before it became visible.
+                if (warning) {
+                    flashToast(warning, 'warning');
+                } else {
+                    flashToast('Backup created successfully.', 'success');
+                }
+                window.location.reload();
+            } else if (msg.status === 'failed') {
+                hideOverlay();
+                showToast('Backup failed: ' + (msg.error || 'unknown error'), 'danger');
+                resetBackupButton();
+            }
+        } else if (msg.operation === 'restore') {
+            if (msg.status === 'complete') {
+                hideOverlay();
+                var rWarning = msg.payload && msg.payload.warning;
+                if (rWarning) {
+                    flashToast(rWarning, 'warning');
+                } else {
+                    flashToast('Backup restored successfully.', 'success');
+                }
+                window.location.reload();
+            } else if (msg.status === 'failed') {
+                hideOverlay();
+                showToast('Restore failed: ' + (msg.error || 'unknown error'), 'danger');
+                resetRestoreButton();
+            }
+        }
+    }
+    document.addEventListener('craftbox:operation', handleOperation);
+
+    function resetBackupButton() {
+        var btn = document.getElementById('confirm-backup-btn');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = needsStop ? 'Stop & Backup' : 'Create Backup';
+        }
+    }
+    function resetRestoreButton() {
+        var btn = document.getElementById('confirm-restore-btn');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Restore';
+        }
+    }
+
     // ── Create Backup Modal ──
     var createBackupModal = new bootstrap.Modal(document.getElementById('createBackupModal'));
     var createBackupBtn = document.getElementById('create-backup-btn');
@@ -59,10 +129,11 @@
             if (!res.ok) {
                 hideOverlay();
                 showToast((res.data && (res.data.message || res.data.error)) || 'Backup failed.', 'danger');
-                if (btn) { btn.disabled = false; btn.textContent = needsStop ? 'Stop & Backup' : 'Create Backup'; }
+                resetBackupButton();
                 return;
             }
-            window.location.reload();
+            // 202 Accepted: keep the overlay up; completion arrives via the
+            // craftbox:operation listener at the top of this file.
         });
     }
 
@@ -109,10 +180,11 @@
             if (!res.ok) {
                 hideOverlay();
                 showToast((res.data && (res.data.message || res.data.error)) || 'Restore failed.', 'danger');
-                if (confirmRestoreBtn) { confirmRestoreBtn.disabled = false; confirmRestoreBtn.textContent = 'Restore'; }
+                resetRestoreButton();
                 return;
             }
-            window.location.reload();
+            // 202 Accepted: keep the overlay up; completion arrives via the
+            // craftbox:operation listener at the top of this file.
         });
     }
 
