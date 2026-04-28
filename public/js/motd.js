@@ -183,6 +183,7 @@
         if (res.ok) {
             saveBtn.textContent = 'Saved!';
             showMotdStatus('success', 'Restart the server for changes to take effect.');
+            showToast('MOTD saved.', 'success');
             var modalEl = document.getElementById('restartModal');
             if (modalEl) {
                 var state = modalEl.dataset.serverState;
@@ -193,6 +194,7 @@
         } else {
             saveBtn.textContent = 'Error';
             showMotdStatus('danger', 'Failed to save MOTD.');
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save MOTD.', 'danger');
         }
         setTimeout(function () {
             saveBtn.textContent = 'Save MOTD';

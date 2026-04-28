@@ -3,28 +3,11 @@
     const grid = document.getElementById('server-grid');
     if (!grid) return;
 
-    const stateColors = {
-        stopped: 'secondary',
-        starting: 'info',
-        running: 'success',
-        stopping: 'warning',
-        crashed: 'danger',
-        backing_up: 'info',
-        restoring: 'info'
-    };
-    const stateIcons = {
-        stopped: 'stop_circle',
-        starting: 'hourglass_top',
-        running: 'play_circle',
-        stopping: 'pending',
-        crashed: 'error',
-        backing_up: 'backup',
-        restoring: 'settings_backup_restore'
-    };
-    const stateDisplayNames = {
-        backing_up: 'Backing Up',
-        restoring: 'Restoring'
-    };
+    // Visual state metadata comes from window.CraftboxState (injected by
+    // head.ejs from src/utils/serverStateMeta.js — single source of truth).
+    const stateColors = (window.CraftboxState || {}).stateColors || {};
+    const stateIcons = (window.CraftboxState || {}).stateIcons || {};
+    const stateDisplayNames = (window.CraftboxState || {}).stateDisplayNames || {};
 
     // Track lastStarted per server for client-side uptime ticking
     var serverStartTimes = {};
@@ -186,7 +169,9 @@
         hideOverlay();
         if (!res.ok) {
             showToast((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + ' server.'), 'danger');
+            return;
         }
+        showToast((res.data && res.data.message) || ('Server ' + action + ' requested.'), 'success');
         // State updates arrive via WebSocket — no page reload needed.
     });
 })();

@@ -46,6 +46,7 @@
                 return;
             }
             saved = true;
+            flashToast('File saved.', 'success');
             var parentDir = filePath.split('/').slice(0, -1).join('/');
             window.location.href = '/servers/' + serverId + '/files' + (parentDir ? '/' + parentDir : '');
         });

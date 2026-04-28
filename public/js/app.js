@@ -57,6 +57,41 @@ document.querySelectorAll('.toast').forEach(function (el) {
     new bootstrap.Toast(el).show();
 });
 
+// ── Flash toast (survives a navigation) ──
+// Use when a toast must be visible AFTER a reload / location change.
+// showToast() called immediately before window.location.reload() is wiped by
+// the navigation; flashToast() instead stashes the toast in sessionStorage,
+// and the drain handler below replays it on the destination page exactly once.
+function flashToast(message, type) {
+    try {
+        var queue = JSON.parse(sessionStorage.getItem('craftboxFlashToasts') || '[]');
+        if (!Array.isArray(queue)) queue = [];
+        queue.push({ message: String(message), type: type || 'info' });
+        sessionStorage.setItem('craftboxFlashToasts', JSON.stringify(queue));
+    } catch (_) {
+        // sessionStorage unavailable (private mode / quota) — fall back to a
+        // direct toast. It will be wiped by an imminent reload, but better
+        // than silently dropping the message.
+        showToast(message, type);
+    }
+}
+
+// Drain queued flash toasts on every page load. Clear FIRST so any unexpected
+// re-execution of this script (rare but possible with bfcache restoration)
+// cannot replay them.
+(function drainFlashToasts() {
+    try {
+        var raw = sessionStorage.getItem('craftboxFlashToasts');
+        if (!raw) return;
+        sessionStorage.removeItem('craftboxFlashToasts');
+        var queue = JSON.parse(raw);
+        if (!Array.isArray(queue)) return;
+        queue.forEach(function (item) {
+            if (item && item.message) showToast(item.message, item.type || 'info');
+        });
+    } catch (_) { /* ignore */ }
+})();
+
 // ── Show a Bootstrap toast notification (matches flash.ejs style) ──
 // type: 'danger' | 'success' | 'warning' | 'info' (defaults to 'danger')
 function showToast(message, type) {

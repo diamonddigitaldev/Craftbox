@@ -14,28 +14,11 @@
     const stateIcon = document.getElementById('state-icon');
     const navHeader = document.getElementById('server-nav-header');
 
-    const stateColors = {
-        stopped: 'secondary',
-        starting: 'info',
-        running: 'success',
-        stopping: 'warning',
-        crashed: 'danger',
-        backing_up: 'info',
-        restoring: 'info'
-    };
-    const stateIcons = {
-        stopped: 'stop_circle',
-        starting: 'hourglass_top',
-        running: 'play_circle',
-        stopping: 'pending',
-        crashed: 'error',
-        backing_up: 'backup',
-        restoring: 'settings_backup_restore'
-    };
-    const stateDisplayNames = {
-        backing_up: 'Backing Up',
-        restoring: 'Restoring'
-    };
+    // Visual state metadata comes from window.CraftboxState (injected by
+    // head.ejs from src/utils/serverStateMeta.js — single source of truth).
+    const stateColors = (window.CraftboxState || {}).stateColors || {};
+    const stateIcons = (window.CraftboxState || {}).stateIcons || {};
+    const stateDisplayNames = (window.CraftboxState || {}).stateDisplayNames || {};
     const actionStates = {
         start: ['stopped', 'crashed'],
         stop: ['running', 'starting'],
@@ -95,6 +78,12 @@
                     if (msg.serverId === serverId) {
                         updateState(msg.state, msg.crashReason, msg.exitCode);
                         updateLastStarted(msg.state, msg.lastStarted);
+                    }
+                    break;
+
+                case 'operation':
+                    if (msg.serverId === serverId) {
+                        document.dispatchEvent(new CustomEvent('craftbox:operation', { detail: msg }));
                     }
                     break;
 
@@ -201,17 +190,44 @@
             if (state === 'crashed') {
                 var autoRestartEl = document.getElementById('autoRestart');
                 var autoRestart = autoRestartEl ? autoRestartEl.checked : false;
-                var reasonText = crashReason === 'oom'
-                    ? ' due to Out of Memory'
-                    : '';
-                var exitText = exitCode != null
-                    ? ' Exit code: <strong>' + exitCode + '</strong>.'
-                    : '';
-                crashText.innerHTML = 'Server crashed' + reasonText + '.' + exitText
-                    + (autoRestart ? ' Auto-restart is enabled.' : '');
+                if (crashReason && (
+                    crashReason.indexOf('Provisioning failed') === 0 ||
+                    crashReason.indexOf('Duplication failed') === 0 ||
+                    crashReason.indexOf('Jar update interrupted') === 0 ||
+                    crashReason.indexOf('Provisioning interrupted') === 0
+                )) {
+                    crashText.textContent = crashReason;
+                } else {
+                    var reasonText = crashReason === 'oom'
+                        ? ' due to Out of Memory'
+                        : '';
+                    var exitText = exitCode != null
+                        ? ' Exit code: <strong>' + exitCode + '</strong>.'
+                        : '';
+                    crashText.innerHTML = 'Server crashed' + reasonText + '.' + exitText
+                        + (autoRestart ? ' Auto-restart is enabled.' : '');
+                }
                 crashBanner.style.display = 'flex';
             } else {
                 crashBanner.style.display = 'none';
+            }
+        }
+
+        // Show/hide operation banner
+        const opBanner = document.getElementById('operation-banner');
+        const opText = document.getElementById('operation-banner-text');
+        if (opBanner && opText) {
+            var opMessages = {
+                provisioning: 'Running first-time setup for this server...',
+                updating_jar: 'Downloading the latest server jar build...',
+                backing_up: 'Creating a backup of the server files...',
+                restoring: 'Restoring server files from a backup...'
+            };
+            if (opMessages[state]) {
+                opText.textContent = opMessages[state];
+                opBanner.style.display = 'flex';
+            } else {
+                opBanner.style.display = 'none';
             }
         }
     }
@@ -271,7 +287,9 @@
         hideOverlay();
         if (!res.ok) {
             showToast((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + '.'), 'danger');
+            return;
         }
+        showToast((res.data && res.data.message) || ('Server ' + action + ' requested.'), 'success');
         // State updates arrive via WebSocket.
     }
 
@@ -308,12 +326,13 @@
                 showToast((res.data && (res.data.message || res.data.error)) || 'Failed to delete server.', 'danger');
                 return;
             }
+            flashToast('Server deleted.', 'success');
             window.location.href = '/dashboard';
         });
     }
 
     // Toggle helpers for auto-restart and auto-start
-    function bindToggle(id, endpoint) {
+    function bindToggle(id, endpoint, friendlyName) {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('change', async () => {
@@ -321,11 +340,16 @@
                 method: 'POST',
                 body: { enabled: el.checked }
             });
-            if (!res.ok) el.checked = !el.checked;
+            if (!res.ok) {
+                el.checked = !el.checked;
+                showToast('Failed to update ' + friendlyName + '.', 'danger');
+                return;
+            }
+            showToast(friendlyName.charAt(0).toUpperCase() + friendlyName.slice(1) + ' ' + (el.checked ? 'enabled.' : 'disabled.'), 'success');
         });
     }
-    bindToggle('autoRestart', 'autorestart');
-    bindToggle('autoStart', 'autostart');
+    bindToggle('autoRestart', 'autorestart', 'auto-restart');
+    bindToggle('autoStart', 'autostart', 'auto-start');
 
     // ── Resource Stats ──
     const statPlayers = document.getElementById('stat-players');

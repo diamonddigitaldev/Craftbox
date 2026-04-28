@@ -140,14 +140,24 @@ class ServerManager {
     }
 
     /**
-     * Set an operational state (backing_up, restoring) that exists outside the
-     * normal process lifecycle. Persists to DB and broadcasts via WebSocket.
+     * Set an operational state (backing_up, restoring, updating_jar, provisioning,
+     * crashed) that exists outside the normal process lifecycle. Persists to DB
+     * and broadcasts via WebSocket. `crashReason` is optional and only used when
+     * transitioning to CRASHED.
      * @param {string} serverId
-     * @param {'backing_up'|'restoring'|'stopped'} newState
+     * @param {'backing_up'|'restoring'|'updating_jar'|'provisioning'|'stopped'|'crashed'} newState
+     * @param {{ crashReason?: string }} [opts]
      */
-    async setOperationalState(serverId, newState) {
+    async setOperationalState(serverId, newState, opts = {}) {
         const { STATES } = require('./stateMachine');
-        const allowed = [STATES.BACKING_UP, STATES.RESTORING, STATES.STOPPED];
+        const allowed = [
+            STATES.BACKING_UP,
+            STATES.RESTORING,
+            STATES.UPDATING_JAR,
+            STATES.PROVISIONING,
+            STATES.STOPPED,
+            STATES.CRASHED
+        ];
         if (!allowed.includes(newState)) {
             throw new Error(`Invalid operational state: ${newState}`);
         }
@@ -156,6 +166,11 @@ class ServerManager {
         if (!server) throw new Error('Server not found.');
 
         server.state = newState;
+        if (newState === STATES.CRASHED && opts.crashReason) {
+            server.crashReason = opts.crashReason;
+        } else if (newState === STATES.STOPPED) {
+            server.crashReason = null;
+        }
         await serversDb.set(`server_${serverId}`, server);
 
         const proc = this.getProcess(serverId);
@@ -166,9 +181,27 @@ class ServerManager {
                 serverId,
                 state: newState,
                 exitCode: null,
-                crashReason: null
+                crashReason: server.crashReason ?? null
             });
         }
+    }
+
+    /**
+     * Broadcast a long-running operation outcome to subscribed WebSocket clients.
+     * Only authenticated subscribers receive these (the broadcast filter in
+     * ServerProcess generates no publicMsg for unknown types).
+     * @param {string} serverId
+     * @param {'backup'|'restore'|'jar-update'|'create'|'duplicate'} operation
+     * @param {'complete'|'failed'} status
+     * @param {object|string} payloadOrError - object on complete, error message on failed
+     */
+    broadcastOperation(serverId, operation, status, payloadOrError) {
+        const proc = this.getProcess(serverId);
+        if (!proc) return;
+        const data = { type: 'operation', serverId, operation, status };
+        if (status === 'complete') data.payload = payloadOrError || {};
+        else data.error = String(payloadOrError);
+        proc.broadcast(data);
     }
 
     /**

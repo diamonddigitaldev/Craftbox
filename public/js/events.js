@@ -53,6 +53,7 @@
                 btn.textContent = 'Clear Events';
                 return;
             }
+            flashToast('Events cleared.', 'success');
             window.location.reload();
         });
     }

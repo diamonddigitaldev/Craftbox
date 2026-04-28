@@ -97,10 +97,14 @@ td > .material-icons-outlined {
 [data-state="stopping"] .server-state-badge,
 [data-state="backing_up"] .server-state-badge,
 [data-state="restoring"] .server-state-badge,
+[data-state="updating_jar"] .server-state-badge,
+[data-state="provisioning"] .server-state-badge,
 [data-state="starting"] .status-badge,
 [data-state="stopping"] .status-badge,
 [data-state="backing_up"] .status-badge,
-[data-state="restoring"] .status-badge {
+[data-state="restoring"] .status-badge,
+[data-state="updating_jar"] .status-badge,
+[data-state="provisioning"] .status-badge {
     animation: pulse-badge 1.5s ease-in-out infinite;
 }
 

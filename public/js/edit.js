@@ -38,6 +38,7 @@ function _formToBody(form) {
             if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
             return;
         }
+        flashToast('Settings saved.', 'success');
         // Reload with ?saved=1 so the restart-modal auto-shows
         window.location.href = '/servers/' + serverId + '/edit?saved=1';
     });
@@ -49,11 +50,17 @@ function _formToBody(form) {
         el.addEventListener('change', async function () {
             const serverId = el.dataset.serverId;
             const endpoint = el.dataset.endpoint;
+            const friendlyName = el.dataset.label || endpoint;
             var res = await apiFetch('/api/v1/servers/' + serverId + '/' + endpoint, {
                 method: 'POST',
                 body: { enabled: el.checked }
             });
-            if (!res.ok) el.checked = !el.checked;
+            if (!res.ok) {
+                el.checked = !el.checked;
+                showToast('Failed to update ' + friendlyName + '.', 'danger');
+                return;
+            }
+            showToast(friendlyName.charAt(0).toUpperCase() + friendlyName.slice(1) + ' ' + (el.checked ? 'enabled.' : 'disabled.'), 'success');
         });
     });
 })();
@@ -208,6 +215,11 @@ function _formToBody(form) {
             body: { value: value }
         });
         btn.textContent = res.ok ? 'Saved!' : 'Error';
+        if (res.ok) {
+            showToast(value ? 'Advertised IP saved.' : 'Advertised IP cleared.', 'success');
+        } else {
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save advertised IP.', 'danger');
+        }
         setTimeout(function () {
             btn.textContent = 'Save';
             btn.disabled = false;
@@ -308,10 +320,12 @@ function _formToBody(form) {
         hideSpinner();
         if (res.ok && res.data && res.data.success) {
             showStatus('success', 'Icon updated. Restart the server for changes to take effect.');
+            showToast('Icon updated.', 'success');
             preview.src = '/api/v1/servers/' + serverId + '/icon?t=' + Date.now();
             showRestartModal();
         } else {
             showStatus('danger', (res.data && res.data.error) || 'Upload failed.');
+            showToast((res.data && res.data.error) || 'Failed to update icon.', 'danger');
             showPlaceholder();
         }
         resetBtn.disabled = false;
@@ -360,10 +374,12 @@ function _formToBody(form) {
         var res = await apiFetch('/api/v1/servers/' + serverId + '/icon', { method: 'DELETE' });
         if (res.ok && res.data && res.data.success) {
             showStatus('success', 'Icon removed. Restart the server for changes to take effect.');
+            showToast('Icon removed.', 'success');
             showPlaceholder();
             showRestartModal();
         } else {
             showStatus('danger', (res.data && res.data.error) || 'Delete failed.');
+            showToast((res.data && res.data.error) || 'Failed to remove icon.', 'danger');
         }
         deleteBtn.disabled = false;
         resetBtn.disabled = false;
@@ -376,10 +392,12 @@ function _formToBody(form) {
             var res = await apiFetch('/api/v1/servers/' + serverId + '/icon/reset', { method: 'POST', body: {} });
             if (res.ok && res.data && res.data.success) {
                 showStatus('success', 'Icon reset to default. Restart the server for changes to take effect.');
+                showToast('Icon reset to default.', 'success');
                 preview.src = '/api/v1/servers/' + serverId + '/icon?t=' + Date.now();
                 showRestartModal();
             } else {
                 showStatus('danger', (res.data && res.data.error) || 'Reset failed.');
+                showToast((res.data && res.data.error) || 'Failed to reset icon.', 'danger');
             }
             resetBtn.disabled = false;
         });
@@ -407,6 +425,7 @@ function _formToBody(form) {
             if (btn) { btn.disabled = false; btn.textContent = 'Duplicate'; }
             return;
         }
+        flashToast('Server duplicated.', 'success');
         var newId = res.data && res.data.server && res.data.server.id;
         window.location.href = newId ? '/servers/' + newId : '/dashboard';
     }
@@ -461,6 +480,7 @@ function _formToBody(form) {
             if (btn) { btn.disabled = false; btn.textContent = 'Save as Template'; }
             return;
         }
+        flashToast('Template saved.', 'success');
         window.location.href = '/templates';
     }
 
@@ -501,6 +521,26 @@ function _formToBody(form) {
     const resultDiv = document.getElementById('update-result');
     const actionsDiv = document.getElementById('update-actions');
     const statusEl = document.getElementById('update-status');
+
+    // Page-load resilience: if the server is mid-update-jar, show the overlay
+    // and listen for completion (in case the user reloaded mid-operation).
+    var navHeader = document.getElementById('server-nav-header');
+    if (navHeader && navHeader.dataset.state === 'updating_jar') {
+        showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
+        document.addEventListener('craftbox:operation', function reloadOnComplete(e) {
+            var msg = e.detail || {};
+            if (msg.serverId !== serverId || msg.operation !== 'jar-update') return;
+            document.removeEventListener('craftbox:operation', reloadOnComplete);
+            hideOverlay();
+            if (msg.status === 'failed') {
+                showToast('Jar update failed: ' + (msg.error || 'unknown error'), 'danger');
+            } else {
+                // flashToast — the reload below would wipe a regular toast.
+                flashToast('Jar updated successfully.', 'success');
+                window.location.reload();
+            }
+        });
+    }
 
     checkBtn.addEventListener('click', async function () {
         checkBtn.disabled = true;
@@ -552,26 +592,50 @@ function _formToBody(form) {
         btn.innerHTML =
             '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
 
+        function onJarUpdateOperation(e) {
+            var msg = e.detail || {};
+            if (msg.serverId !== serverId || msg.operation !== 'jar-update') return;
+
+            hideOverlay();
+            document.removeEventListener('craftbox:operation', onJarUpdateOperation);
+
+            if (msg.status === 'complete') {
+                var build = msg.payload && msg.payload.build;
+                showResult('success', 'Jar updated to build #' + (build || 'latest') + '.');
+                if (statusEl && build) {
+                    statusEl.textContent = 'Current build: #' + build;
+                }
+                btn.remove();
+            } else {
+                showResult('danger', msg.error || 'Failed to update jar.');
+                btn.disabled = false;
+                btn.innerHTML =
+                    '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+            }
+        }
+
         btn.addEventListener('click', async function () {
             btn.disabled = true;
             btn.innerHTML =
                 '<span class="spinner-border spinner-border-sm" role="status"></span> Updating...';
             showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
 
+            // Listen for completion before kicking off — the backend may finish
+            // very quickly and broadcast before our listener attaches if we did
+            // it after the POST.
+            document.addEventListener('craftbox:operation', onJarUpdateOperation);
+
             var res = await apiFetch('/api/v1/servers/' + serverId + '/update-jar', { method: 'POST', body: {} });
-            hideOverlay();
-            if (res.ok && res.data && res.data.success) {
-                showResult('success', 'Jar updated to build #' + (res.data.build || 'latest') + '.');
-                if (statusEl && res.data.build) {
-                    statusEl.textContent = 'Current build: #' + res.data.build;
-                }
-                btn.remove();
-            } else {
-                showResult('danger', (res.data && res.data.error) || 'Failed to update jar.');
+            if (!res.ok) {
+                hideOverlay();
+                document.removeEventListener('craftbox:operation', onJarUpdateOperation);
+                showResult('danger', (res.data && res.data.error) || 'Failed to start jar update.');
                 btn.disabled = false;
                 btn.innerHTML =
                     '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+                return;
             }
+            // 202 Accepted: keep overlay; onJarUpdateOperation handles completion.
         });
 
         actionsDiv.appendChild(btn);

@@ -13,6 +13,7 @@ const { initDb, configDb, sessionsDb, statsDb, markAllServersStopped } = require
 const QuickDBStore = require('./sessionStore');
 const { passport } = require('./auth');
 const { securityHeaders, csrfToken, csrfValidate } = require('./security');
+const serverStateMeta = require('./utils/serverStateMeta');
 const { initWebSocket } = require('./websocket');
 const ServerManager = require('./mc/ServerManager');
 const BackupScheduler = require('./mc/BackupScheduler');
@@ -102,6 +103,10 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
             res.locals.version = version;
             next();
         });
+
+        // Make server-state visual metadata (badge color/icon/label) available
+        // to every EJS template without each render call passing it explicitly.
+        app.use(serverStateMeta.injectIntoLocals);
 
         // Static assets — vendor (from node_modules)
         app.use('/vendor/bootstrap', express.static(

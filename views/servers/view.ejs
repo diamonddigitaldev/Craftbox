@@ -44,9 +44,29 @@
      style="display: <%= server.state === 'crashed' ? 'flex' : 'none' %>;">
     <span class="material-icons-outlined">error</span>
     <div id="crash-banner-text">
-        Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.
-        Exit code: <strong><%= server.exitCode != null ? server.exitCode : '' %></strong>.
-        <% if (server.autoRestart) { %>Auto-restart is enabled.<% } %>
+        <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar update interrupted') || server.crashReason.startsWith('Provisioning interrupted'))) { %>
+            <%= server.crashReason %>
+        <% } else { %>
+            Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.
+            Exit code: <strong><%= server.exitCode != null ? server.exitCode : '' %></strong>.
+            <% if (server.autoRestart) { %>Auto-restart is enabled.<% } %>
+        <% } %>
+    </div>
+</div>
+
+<div class="alert alert-info align-items-center gap-2 mb-3" id="operation-banner"
+     style="display: <%= ['provisioning', 'updating_jar', 'backing_up', 'restoring'].includes(server.state) ? 'flex' : 'none' %>;">
+    <span class="spinner-border spinner-border-sm" role="status"></span>
+    <div id="operation-banner-text">
+        <% if (server.state === 'provisioning') { %>
+            Running first-time setup for this server...
+        <% } else if (server.state === 'updating_jar') { %>
+            Downloading the latest server jar build...
+        <% } else if (server.state === 'backing_up') { %>
+            Creating a backup of the server files...
+        <% } else if (server.state === 'restoring') { %>
+            Restoring server files from a backup...
+        <% } %>
     </div>
 </div>
 

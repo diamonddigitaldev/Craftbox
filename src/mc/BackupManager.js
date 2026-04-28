@@ -17,6 +17,23 @@ function isBackupInProgress(serverId) {
 }
 
 /**
+ * Synchronously claim the backup lock. Returns true if claimed, false if already held.
+ * Caller must call releaseBackupLock(serverId) when the backup work completes.
+ */
+function tryAcquireBackupLock(serverId) {
+    if (activeLocks.has(serverId)) return false;
+    activeLocks.set(serverId, true);
+    return true;
+}
+
+/**
+ * Release a previously claimed backup lock.
+ */
+function releaseBackupLock(serverId) {
+    activeLocks.delete(serverId);
+}
+
+/**
  * Ensure the backup directory for a server exists.
  */
 function ensureBackupDir(serverId) {
@@ -47,23 +64,39 @@ function safeTimestamp() {
 
 /**
  * Create a backup of the full server directory.
+ * Acquires the per-server backup lock for the duration of the work.
  * @param {string} serverId
  * @param {string} name - Human-readable label
  * @param {'manual'|'scheduled'} type
  * @returns {Promise<object>} The backup record
  */
 async function createBackup(serverId, name, type = 'manual') {
-    // Prevent concurrent backups for the same server
-    if (isBackupInProgress(serverId)) {
+    if (!tryAcquireBackupLock(serverId)) {
         throw new Error('A backup is already in progress for this server.');
     }
-
-    const promise = _doCreateBackup(serverId, name, type);
-    activeLocks.set(serverId, promise);
     try {
-        return await promise;
+        return await _doCreateBackup(serverId, name, type);
     } finally {
-        activeLocks.delete(serverId);
+        releaseBackupLock(serverId);
+    }
+}
+
+/**
+ * Run the backup work assuming the lock has already been claimed by the caller
+ * (via tryAcquireBackupLock). Releases the lock when done. Used by HTTP routes
+ * that need to claim the lock synchronously before responding 202.
+ * @param {string} serverId
+ * @param {string} name
+ * @param {'manual'|'scheduled'} type
+ */
+async function runBackupJob(serverId, name, type = 'manual') {
+    if (!isBackupInProgress(serverId)) {
+        throw new Error('runBackupJob called without an acquired lock.');
+    }
+    try {
+        return await _doCreateBackup(serverId, name, type);
+    } finally {
+        releaseBackupLock(serverId);
     }
 }
 
@@ -299,6 +332,7 @@ function formatSize(bytes) {
 
 module.exports = {
     createBackup,
+    runBackupJob,
     restoreBackup,
     deleteBackup,
     listBackups,
@@ -307,5 +341,7 @@ module.exports = {
     ensureBackupDir,
     resolveBackupPath,
     formatSize,
-    isBackupInProgress
+    isBackupInProgress,
+    tryAcquireBackupLock,
+    releaseBackupLock
 };

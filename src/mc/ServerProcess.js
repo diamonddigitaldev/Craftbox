@@ -117,8 +117,8 @@ class ServerProcess extends EventEmitter {
             serverId: this.id,
             state: newState,
             lastStarted: this.config.lastStarted || null,
-            exitCode: this.config.exitCode || null,
-            crashReason: this.config.crashReason || null
+            exitCode: this.config.exitCode ?? null,
+            crashReason: this.config.crashReason ?? null
         });
 
         this.emit('stateChange', newState, oldState);
@@ -456,8 +456,8 @@ class ServerProcess extends EventEmitter {
             history: this.lastLines.slice(-200),
             players: sortedPlayers,
             playerCount: this.players.size,
-            exitCode: this.config.exitCode || null,
-            crashReason: this.config.crashReason || null
+            exitCode: this.config.exitCode ?? null,
+            crashReason: this.config.crashReason ?? null
         });
         if (ws.readyState === 1) ws.send(msg);
     }
@@ -799,8 +799,8 @@ class ServerProcess extends EventEmitter {
                 type: 'state',
                 serverId: this.id,
                 state: targetState,
-                exitCode: this.config.exitCode || null,
-                crashReason: this.config.crashReason || null
+                exitCode: this.config.exitCode ?? null,
+                crashReason: this.config.crashReason ?? null
             });
 
             this.emit('stateChange', targetState, oldState);

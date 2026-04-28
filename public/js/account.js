@@ -191,6 +191,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
+                flashToast('API key deleted.', 'success');
                 window.location.reload();
             } catch (err) {
                 hideOverlay();
