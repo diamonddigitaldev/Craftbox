@@ -13,7 +13,7 @@ const { clearCpuTracking } = require('../utils/resourceStats');
 const { reconcileModFiles } = require('../utils/modEnvironment');
 
 // Pattern that indicates the server is done starting
-const DONE_PATTERN = /\]: Done \(/;
+const DONE_PATTERN = /\]:?\s+Done \(/;
 const OOM_PATTERN = /java\.lang\.OutOfMemoryError/;
 const CRASH_REPORT_PATTERN = /Preparing crash report|This crash report has been saved to/;
 const JOIN_PATTERN = /\]: .*?(\S+) joined the game$/;
