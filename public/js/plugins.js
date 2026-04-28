@@ -36,6 +36,13 @@
         });
     }
 
+    // ── Mod / Plugin terminology (sourced from upload-btn data-label, set by views/servers/plugins.ejs) ──
+
+    var uploadBtn = document.getElementById('upload-btn');
+    var contentLabel = uploadBtn ? (uploadBtn.dataset.label || 'plugins') : 'plugins';
+    var contentSingular = contentLabel === 'mods' ? 'mod' : 'plugin';
+    var contentSingularCap = contentSingular.charAt(0).toUpperCase() + contentSingular.slice(1);
+
     // ── Environment change ──
 
     document.querySelectorAll('.env-select').forEach(function (sel) {
@@ -59,6 +66,7 @@
                     if (row) row.setAttribute('data-env', newValue);
                     previousValue = newValue;
                     applyFilters();
+                    showToast(contentSingularCap + ' environment updated.', 'success');
                 } else {
                     showToast(data.error || 'Failed to update environment.', 'danger');
                     sel.value = previousValue;
@@ -75,8 +83,7 @@
     // ── Upload ──
 
     var fileInput = document.getElementById('file-input');
-    var uploadBtn = document.getElementById('upload-btn');
-    var uploadLabel = uploadBtn ? (uploadBtn.dataset.label || 'files') : 'files';
+    var uploadLabel = contentLabel;
 
     async function uploadFiles(files) {
         var jarFiles = Array.from(files).filter(function (f) {
@@ -105,6 +112,9 @@
 
             var data = await res.json();
             if (res.ok && data.success) {
+                var count = data.count || jarFiles.length;
+                var noun = count === 1 ? contentSingular : contentLabel;
+                flashToast(count + ' ' + noun + ' uploaded.', 'success');
                 window.location.reload();
             } else {
                 showToast(data.error || 'Upload failed.', 'danger');
@@ -211,6 +221,7 @@
                     var data = await res.json();
                     if (res.ok && data.success) {
                         bsDeleteModal.hide();
+                        flashToast(contentSingularCap + ' deleted.', 'success');
                         window.location.reload();
                     } else {
                         showToast(data.error || 'Delete failed.', 'danger');
@@ -257,6 +268,7 @@
 
                     var data = await res.json();
                     if (res.ok && data.success) {
+                        flashToast('All ' + contentLabel + ' deleted.', 'success');
                         window.location.reload();
                     } else {
                         hideOverlay();

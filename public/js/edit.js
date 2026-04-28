@@ -38,6 +38,7 @@ function _formToBody(form) {
             if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
             return;
         }
+        flashToast('Settings saved.', 'success');
         // Reload with ?saved=1 so the restart-modal auto-shows
         window.location.href = '/servers/' + serverId + '/edit?saved=1';
     });
@@ -49,11 +50,17 @@ function _formToBody(form) {
         el.addEventListener('change', async function () {
             const serverId = el.dataset.serverId;
             const endpoint = el.dataset.endpoint;
+            const friendlyName = el.dataset.label || endpoint;
             var res = await apiFetch('/api/v1/servers/' + serverId + '/' + endpoint, {
                 method: 'POST',
                 body: { enabled: el.checked }
             });
-            if (!res.ok) el.checked = !el.checked;
+            if (!res.ok) {
+                el.checked = !el.checked;
+                showToast('Failed to update ' + friendlyName + '.', 'danger');
+                return;
+            }
+            showToast(friendlyName.charAt(0).toUpperCase() + friendlyName.slice(1) + ' ' + (el.checked ? 'enabled.' : 'disabled.'), 'success');
         });
     });
 })();
@@ -208,6 +215,11 @@ function _formToBody(form) {
             body: { value: value }
         });
         btn.textContent = res.ok ? 'Saved!' : 'Error';
+        if (res.ok) {
+            showToast(value ? 'Advertised IP saved.' : 'Advertised IP cleared.', 'success');
+        } else {
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save advertised IP.', 'danger');
+        }
         setTimeout(function () {
             btn.textContent = 'Save';
             btn.disabled = false;
@@ -308,10 +320,12 @@ function _formToBody(form) {
         hideSpinner();
         if (res.ok && res.data && res.data.success) {
             showStatus('success', 'Icon updated. Restart the server for changes to take effect.');
+            showToast('Icon updated.', 'success');
             preview.src = '/api/v1/servers/' + serverId + '/icon?t=' + Date.now();
             showRestartModal();
         } else {
             showStatus('danger', (res.data && res.data.error) || 'Upload failed.');
+            showToast((res.data && res.data.error) || 'Failed to update icon.', 'danger');
             showPlaceholder();
         }
         resetBtn.disabled = false;
@@ -360,10 +374,12 @@ function _formToBody(form) {
         var res = await apiFetch('/api/v1/servers/' + serverId + '/icon', { method: 'DELETE' });
         if (res.ok && res.data && res.data.success) {
             showStatus('success', 'Icon removed. Restart the server for changes to take effect.');
+            showToast('Icon removed.', 'success');
             showPlaceholder();
             showRestartModal();
         } else {
             showStatus('danger', (res.data && res.data.error) || 'Delete failed.');
+            showToast((res.data && res.data.error) || 'Failed to remove icon.', 'danger');
         }
         deleteBtn.disabled = false;
         resetBtn.disabled = false;
@@ -376,10 +392,12 @@ function _formToBody(form) {
             var res = await apiFetch('/api/v1/servers/' + serverId + '/icon/reset', { method: 'POST', body: {} });
             if (res.ok && res.data && res.data.success) {
                 showStatus('success', 'Icon reset to default. Restart the server for changes to take effect.');
+                showToast('Icon reset to default.', 'success');
                 preview.src = '/api/v1/servers/' + serverId + '/icon?t=' + Date.now();
                 showRestartModal();
             } else {
                 showStatus('danger', (res.data && res.data.error) || 'Reset failed.');
+                showToast((res.data && res.data.error) || 'Failed to reset icon.', 'danger');
             }
             resetBtn.disabled = false;
         });
@@ -407,6 +425,7 @@ function _formToBody(form) {
             if (btn) { btn.disabled = false; btn.textContent = 'Duplicate'; }
             return;
         }
+        flashToast('Server duplicated.', 'success');
         var newId = res.data && res.data.server && res.data.server.id;
         window.location.href = newId ? '/servers/' + newId : '/dashboard';
     }
@@ -461,6 +480,7 @@ function _formToBody(form) {
             if (btn) { btn.disabled = false; btn.textContent = 'Save as Template'; }
             return;
         }
+        flashToast('Template saved.', 'success');
         window.location.href = '/templates';
     }
 

@@ -223,6 +223,7 @@
                 if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
                 return;
             }
+            flashToast('Backup deleted.', 'success');
             window.location.reload();
         });
     }
@@ -254,8 +255,10 @@
             });
             if (res.ok) {
                 updateNextBackup(res.data && res.data.nextBackupAt);
+                showToast('Scheduled backups ' + (enabled ? 'enabled.' : 'disabled.'), 'success');
             } else {
                 scheduleToggle.checked = !enabled;
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to update schedule.', 'danger');
             }
         });
     }
@@ -282,8 +285,10 @@
             if (res.ok) {
                 updateNextBackup(res.data && res.data.nextBackupAt);
                 saveScheduleBtn.textContent = 'Saved!';
+                showToast('Backup schedule saved.', 'success');
             } else {
                 saveScheduleBtn.textContent = 'Error';
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save schedule.', 'danger');
             }
             setTimeout(function () {
                 saveScheduleBtn.textContent = 'Save Schedule';
@@ -309,8 +314,10 @@
 
             if (res.ok) {
                 saveRetentionBtn.textContent = 'Saved!';
+                showToast('Backup retention saved.', 'success');
             } else {
                 saveRetentionBtn.textContent = 'Error';
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save retention.', 'danger');
             }
             setTimeout(function () {
                 saveRetentionBtn.textContent = 'Save Retention';

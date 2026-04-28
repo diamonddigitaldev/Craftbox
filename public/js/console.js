@@ -287,7 +287,9 @@
         hideOverlay();
         if (!res.ok) {
             showToast((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + '.'), 'danger');
+            return;
         }
+        showToast((res.data && res.data.message) || ('Server ' + action + ' requested.'), 'success');
         // State updates arrive via WebSocket.
     }
 
@@ -324,12 +326,13 @@
                 showToast((res.data && (res.data.message || res.data.error)) || 'Failed to delete server.', 'danger');
                 return;
             }
+            flashToast('Server deleted.', 'success');
             window.location.href = '/dashboard';
         });
     }
 
     // Toggle helpers for auto-restart and auto-start
-    function bindToggle(id, endpoint) {
+    function bindToggle(id, endpoint, friendlyName) {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('change', async () => {
@@ -337,11 +340,16 @@
                 method: 'POST',
                 body: { enabled: el.checked }
             });
-            if (!res.ok) el.checked = !el.checked;
+            if (!res.ok) {
+                el.checked = !el.checked;
+                showToast('Failed to update ' + friendlyName + '.', 'danger');
+                return;
+            }
+            showToast(friendlyName.charAt(0).toUpperCase() + friendlyName.slice(1) + ' ' + (el.checked ? 'enabled.' : 'disabled.'), 'success');
         });
     }
-    bindToggle('autoRestart', 'autorestart');
-    bindToggle('autoStart', 'autostart');
+    bindToggle('autoRestart', 'autorestart', 'auto-restart');
+    bindToggle('autoStart', 'autostart', 'auto-start');
 
     // ── Resource Stats ──
     const statPlayers = document.getElementById('stat-players');

@@ -310,13 +310,13 @@
                                 <div class="form-check form-switch mb-2">
                                     <input class="form-check-input toggle-switch" type="checkbox" id="autoRestart"
                                         data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
-                                        data-endpoint="autorestart" <%=server.autoRestart ? 'checked' : '' %>>
+                                        data-endpoint="autorestart" data-label="auto-restart" <%=server.autoRestart ? 'checked' : '' %>>
                                     <label class="form-check-label" for="autoRestart">Auto-restart on crash</label>
                                 </div>
                                 <div class="form-check form-switch">
                                     <input class="form-check-input toggle-switch" type="checkbox" id="autoStart"
                                         data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
-                                        data-endpoint="autostart" <%=server.autoStart ? 'checked' : '' %>>
+                                        data-endpoint="autostart" data-label="auto-start" <%=server.autoStart ? 'checked' : '' %>>
                                     <label class="form-check-label" for="autoStart">Start with Craftbox</label>
                                 </div>
                                 <hr class="my-3">
@@ -324,7 +324,7 @@
                                 <div class="form-check form-switch mb-1">
                                     <input class="form-check-input toggle-switch" type="checkbox" id="statusPagePublic"
                                         data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
-                                        data-endpoint="statuspublic" <%=server.statusPagePublic ? 'checked' : '' %>>
+                                        data-endpoint="statuspublic" data-label="public status page" <%=server.statusPagePublic ? 'checked' : '' %>>
                                     <label class="form-check-label" for="statusPagePublic">
                                         Status Page Visibility: <strong id="statusPageLabel">
                                             <%= server.statusPagePublic ? 'Public' : 'Unlisted' %>

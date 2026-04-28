@@ -30,6 +30,7 @@
             if (btn) { btn.disabled = false; btn.textContent = 'Save Properties'; }
             return;
         }
+        flashToast('Properties saved.', 'success');
         window.location.href = '/servers/' + serverId + '/properties?saved=1';
     });
 })();

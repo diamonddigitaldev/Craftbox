@@ -169,7 +169,9 @@
         hideOverlay();
         if (!res.ok) {
             showToast((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + ' server.'), 'danger');
+            return;
         }
+        showToast((res.data && res.data.message) || ('Server ' + action + ' requested.'), 'success');
         // State updates arrive via WebSocket — no page reload needed.
     });
 })();

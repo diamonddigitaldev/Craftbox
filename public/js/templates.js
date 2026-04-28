@@ -40,7 +40,11 @@
         // Show empty state if no templates left
         var tbody = document.getElementById('templates-table');
         if (tbody && tbody.children.length === 0) {
+            // Reload to render the empty-state UI; flashToast survives the navigation.
+            flashToast('Template deleted.', 'success');
             location.reload();
+        } else {
+            showToast('Template deleted.', 'success');
         }
 
         pendingBtn = null;

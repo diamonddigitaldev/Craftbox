@@ -35,6 +35,7 @@
                 restartBtn.textContent = 'Restart Now';
                 return;
             }
+            flashToast((res.data && res.data.message) || 'Server is restarting...', 'success');
             window.location.href = '/servers/' + serverId;
         });
     }
