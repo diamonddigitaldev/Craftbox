@@ -12,6 +12,7 @@ const {
     getModEnvMap,
     listModFiles
 } = require('../utils/modEnvironment');
+const { isPathInside } = require('../utils/pathSafety');
 
 async function getServerWithState(req) {
     const id = req.params.id;
@@ -113,7 +114,7 @@ router.get('/servers/:id/plugins/download', ensureAuth, async (req, res) => {
     const contentDir = path.join(serverDir, contentType.folder);
     const targetPath = path.resolve(contentDir, safeName);
 
-    if (!targetPath.startsWith(path.resolve(contentDir))) {
+    if (!isPathInside(contentDir, targetPath)) {
         return res.status(403).json({ error: 'Access denied.' });
     }
 

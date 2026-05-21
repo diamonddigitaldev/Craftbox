@@ -50,6 +50,11 @@ module.exports = {
         const downloadUrl = `${BASE}/versions/loader/${version}/${loaderVersion}/${installerVersion}/server/jar`;
 
         log('info', `Downloading Fabric server ${version} (loader ${loaderVersion})...`);
+        // Fabric composes the server JAR on demand on its meta endpoint and
+        // publishes no static checksum for the resulting artifact, so this
+        // provider can't be checksum-verified the way the others are.
+        // Surface this once per download so the operator is aware.
+        log('warn', 'Fabric server JAR is not checksum-verified — upstream does not publish a checksum for the dynamically composed server jar.');
         const jarRes = await fetch(downloadUrl);
         if (!jarRes.ok) throw new Error(`Failed to download Fabric server jar: HTTP ${jarRes.status}`);
 

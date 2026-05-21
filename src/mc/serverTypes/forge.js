@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { log } = require('../../utils/log');
 const { getJavaForVersion } = require('../../utils/javaVersion');
+const { verifyChecksum } = require('./_verifyChecksum');
 
 const PROMOTIONS_URL = 'https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json';
 const MAVEN_BASE = 'https://maven.minecraftforge.net/net/minecraftforge/forge';
@@ -102,17 +103,29 @@ module.exports = {
         const suffixedUrl = `${MAVEN_BASE}/${forgeVersion}-${version}/forge-${forgeVersion}-${version}-installer.jar`;
 
         log('info', `Downloading Forge installer ${forgeVersion}...`);
-        let installerRes = await fetch(standardUrl);
+        let installerUrl = standardUrl;
+        let installerRes = await fetch(installerUrl);
         if (!installerRes.ok && installerRes.status === 404) {
             log('info', `Standard installer URL 404'd; trying legacy suffixed URL for ${forgeVersion}...`);
-            installerRes = await fetch(suffixedUrl);
+            installerUrl = suffixedUrl;
+            installerRes = await fetch(installerUrl);
         }
         if (!installerRes.ok) throw new Error(`Failed to download Forge installer: HTTP ${installerRes.status}`);
 
         fs.mkdirSync(serverDir, { recursive: true });
         const installerBuffer = Buffer.from(await installerRes.arrayBuffer());
+
+        // Verify against the SHA-256 sidecar published by Maven before the
+        // installer is written to disk and executed. Mirror compromise or
+        // in-path tampering would otherwise yield host RCE here.
+        const checksumRes = await fetch(installerUrl + '.sha256');
+        if (!checksumRes.ok) {
+            throw new Error(`Could not fetch Forge installer checksum: HTTP ${checksumRes.status}.`);
+        }
+        verifyChecksum(installerBuffer, 'sha256', await checksumRes.text(), 'Forge');
+
         fs.writeFileSync(installerPath, installerBuffer);
-        log('info', `Forge installer downloaded (${(installerBuffer.length / 1024 / 1024).toFixed(1)} MB). Running installer...`);
+        log('info', `Forge installer downloaded and SHA-256 verified (${(installerBuffer.length / 1024 / 1024).toFixed(1)} MB). Running installer...`);
 
         // Run the installer
         // Use the Java version required for the target MC version (important in Docker where multiple JREs are present)

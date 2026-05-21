@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../../utils/log');
+const { verifyChecksum } = require('./_verifyChecksum');
 
 /**
  * Factory that creates a provider for any PaperMC API v3 project
@@ -116,9 +117,11 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
 
             fs.mkdirSync(path.dirname(destPath), { recursive: true });
             const buffer = Buffer.from(await jarRes.arrayBuffer());
+            const expectedSha256 = download.checksums?.sha256;
+            verifyChecksum(buffer, 'sha256', expectedSha256, name);
             fs.writeFileSync(destPath, buffer);
 
-            log('info', `${name} server jar downloaded (${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
+            log('info', `${name} server jar downloaded and SHA-256 verified (${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
             return { build };
         }
     };

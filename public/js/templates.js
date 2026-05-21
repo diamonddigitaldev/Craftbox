@@ -18,7 +18,6 @@
         if (!pendingBtn) return;
 
         var id = pendingBtn.dataset.templateId;
-        var csrf = pendingBtn.dataset.csrf;
 
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';

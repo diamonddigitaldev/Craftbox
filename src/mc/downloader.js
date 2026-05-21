@@ -1,4 +1,7 @@
+const fs = require('fs');
 const { getProvider } = require('./serverTypes');
+const { ChecksumMismatchError } = require('./serverTypes/_verifyChecksum');
+const { log } = require('../utils/log');
 
 /**
  * Download a server jar using the appropriate provider.
@@ -11,7 +14,22 @@ const { getProvider } = require('./serverTypes');
 async function downloadServerJar(type, version, build, destPath) {
     const provider = getProvider(type);
     if (!provider) throw new Error(`Unknown server type: ${type}`);
-    return await provider.downloadJar(version, build, destPath);
+
+    try {
+        return await provider.downloadJar(version, build, destPath);
+    } catch (err) {
+        if (err instanceof ChecksumMismatchError) {
+            try {
+                if (fs.existsSync(destPath)) {
+                    fs.unlinkSync(destPath);
+                    log('warn', `Deleted ${destPath} after checksum mismatch.`);
+                }
+            } catch (cleanupErr) {
+                log('warn', `Failed to delete ${destPath} after checksum mismatch: ${cleanupErr.message}`);
+            }
+        }
+        throw err;
+    }
 }
 
 /**

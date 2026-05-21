@@ -117,7 +117,7 @@ td > .material-icons-outlined {
 .console-container {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 240px);
+    height: calc(96vh - 240px);
     min-height: 400px;
     background: var(--console-bg);
     overflow: hidden;

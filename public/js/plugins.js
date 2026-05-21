@@ -112,10 +112,32 @@
 
             var data = await res.json();
             if (res.ok && data.success) {
-                var count = data.count || jarFiles.length;
-                var noun = count === 1 ? contentSingular : contentLabel;
-                flashToast(count + ' ' + noun + ' uploaded.', 'success');
-                window.location.reload();
+                var uploadedCount = (data.uploaded && data.uploaded.length) || data.count || 0;
+                var rejectedCount = (data.rejected && data.rejected.length) || 0;
+                var noun = uploadedCount === 1 ? contentSingular : contentLabel;
+
+                if (uploadedCount === 0) {
+                    // Nothing made it through — show a danger toast and stay on the page.
+                    var allRejectedMsg = rejectedCount === 1
+                        ? 'File rejected: not a valid JAR.'
+                        : 'No files uploaded — all rejected as invalid JARs.';
+                    showToast(allRejectedMsg, 'danger');
+                    if (uploadBtn) uploadBtn.disabled = false;
+                    if (fileInput) fileInput.disabled = false;
+                    hideOverlay();
+                } else if (rejectedCount > 0) {
+                    // Partial success — reload to show what landed, with a warning toast.
+                    flashToast(
+                        uploadedCount + ' ' + noun + ' uploaded, '
+                            + rejectedCount + ' rejected (invalid JAR).',
+                        'warning'
+                    );
+                    window.location.reload();
+                } else {
+                    // Clean success path.
+                    flashToast(uploadedCount + ' ' + noun + ' uploaded.', 'success');
+                    window.location.reload();
+                }
             } else {
                 showToast(data.error || 'Upload failed.', 'danger');
                 if (uploadBtn) uploadBtn.disabled = false;
