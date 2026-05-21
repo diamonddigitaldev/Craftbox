@@ -9,6 +9,7 @@ const { parseServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
 const { hasIcon } = require('../utils/serverIcon');
+const { isPathInside } = require('../utils/pathSafety');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, (req, res) => {
@@ -167,7 +168,7 @@ async function handleFiles(req, res, subpath) {
     const serverDir = path.resolve(SERVERS_DIR, server.id);
     const targetPath = path.resolve(serverDir, subpath || '');
 
-    if (!targetPath.startsWith(serverDir)) {
+    if (!isPathInside(serverDir, targetPath)) {
         return res.status(403).render('errors/403', {
             title: 'Forbidden', navbar: true, user: req.user, message: 'Access denied.'
         });
@@ -240,7 +241,7 @@ router.get('/servers/:id/download', ensureAuth, async (req, res) => {
     const serverDir = path.resolve(SERVERS_DIR, server.id);
     const targetPath = path.resolve(serverDir, filePath);
 
-    if (!targetPath.startsWith(serverDir)) return res.status(403).json({ error: 'Access denied' });
+    if (!isPathInside(serverDir, targetPath)) return res.status(403).json({ error: 'Access denied' });
     if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
         return res.status(404).json({ error: 'File not found' });
     }
@@ -307,7 +308,7 @@ router.get('/servers/:id/edit-file', ensureAuth, async (req, res) => {
     const serverDir = path.resolve(SERVERS_DIR, server.id);
     const targetPath = path.resolve(serverDir, filePath);
 
-    if (!targetPath.startsWith(serverDir)) {
+    if (!isPathInside(serverDir, targetPath)) {
         return res.status(403).render('errors/403', {
             title: 'Forbidden', navbar: true, user: req.user, message: 'Access denied.'
         });

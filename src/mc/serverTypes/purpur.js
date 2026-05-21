@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../../utils/log');
+const { verifyChecksum } = require('./_verifyChecksum');
 
 const BASE = 'https://api.purpurmc.org/v2/purpur';
 
@@ -40,14 +41,24 @@ module.exports = {
         }
 
         log('info', `Downloading Purpur ${version} build ${build}...`);
+
+        // Fetch build metadata first to get the MD5 sidecar for verification.
+        // MD5 is the only checksum Purpur publishes — cryptographically weak
+        // (collisions are cheap) but still catches casual MITM and mirror
+        // corruption, which are the realistic supply-chain threats here.
+        const metaRes = await fetch(`${BASE}/${version}/${build}`);
+        if (!metaRes.ok) throw new Error(`Failed to fetch Purpur build metadata: HTTP ${metaRes.status}`);
+        const meta = await metaRes.json();
+
         const jarRes = await fetch(`${BASE}/${version}/${build}/download`);
         if (!jarRes.ok) throw new Error(`Failed to download Purpur jar: HTTP ${jarRes.status}`);
 
         fs.mkdirSync(path.dirname(destPath), { recursive: true });
         const buffer = Buffer.from(await jarRes.arrayBuffer());
+        verifyChecksum(buffer, 'md5', meta.md5, 'Purpur');
         fs.writeFileSync(destPath, buffer);
 
-        log('info', `Purpur server jar downloaded (${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
+        log('info', `Purpur server jar downloaded and MD5 verified (${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
         return { build };
     }
 };

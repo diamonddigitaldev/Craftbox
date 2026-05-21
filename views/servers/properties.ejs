@@ -4,6 +4,13 @@
 
 <div class="row justify-content-center">
     <div class="col-lg-10 col-xl-8">
+        <% if (Object.keys(properties).length === 0) { %>
+        <div class="text-center py-5">
+            <span class="material-icons-outlined text-body-secondary mb-3" style="font-size: 4rem;">tune</span>
+            <h5 class="text-body-secondary">No properties to edit</h5>
+            <p class="text-body-secondary mb-0">This server has no readable <code>server.properties</code> file yet. Start the server once to generate it, then return here to configure it.</p>
+        </div>
+        <% } else { %>
         <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
             <span class="material-icons-outlined">info</span>
             Changes take effect on next server restart.
@@ -102,6 +109,7 @@
                 Save Properties
             </button>
         </form>
+        <% } %>
     </div>
 </div>
 
@@ -126,7 +134,7 @@
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Later</button>
                 <button type="button" class="btn btn-info btn-sm" id="restart-now-btn"
-                    data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Restart Now</button>
+                    data-server-id="<%= server.id %>">Restart Now</button>
             </div>
         </div>
     </div>

@@ -155,7 +155,7 @@
                         <div class="card-body p-4 text-center">
                             <h6 class="mb-3">Server Icon</h6>
                             <div class="d-inline-block position-relative mb-3" id="icon-drop-zone"
-                                data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                data-server-id="<%= server.id %>">
                                 <div class="icon-drop-area border rounded"
                                     style="width: 128px; height: 128px; overflow: hidden; background: #1a1a2e; cursor: pointer;">
                                     <img id="icon-preview" <% if (hasIcon) { %>src="/api/v1/servers/<%= server.id %>/icon"
@@ -182,7 +182,7 @@
                             <div class="d-flex gap-2 justify-content-center mb-2">
                                 <button type="button"
                                     class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
-                                    id="icon-reset-btn" data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                    id="icon-reset-btn" data-server-id="<%= server.id %>">
                                     <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span>
                                     Reset to Default
                                 </button>
@@ -292,7 +292,7 @@
 
                             <!-- Save -->
                             <button type="button" class="btn btn-outline-secondary btn-sm" id="motd-save-btn"
-                                data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                data-server-id="<%= server.id %>">
                                 Save MOTD
                             </button>
                             <div id="motd-status" class="mt-2 small"></div>
@@ -309,13 +309,13 @@
                                 <h6 class="mb-3">Server Behavior</h6>
                                 <div class="form-check form-switch mb-2">
                                     <input class="form-check-input toggle-switch" type="checkbox" id="autoRestart"
-                                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                                        data-server-id="<%= server.id %>"
                                         data-endpoint="autorestart" data-label="auto-restart" <%=server.autoRestart ? 'checked' : '' %>>
                                     <label class="form-check-label" for="autoRestart">Auto-restart on crash</label>
                                 </div>
                                 <div class="form-check form-switch">
                                     <input class="form-check-input toggle-switch" type="checkbox" id="autoStart"
-                                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                                        data-server-id="<%= server.id %>"
                                         data-endpoint="autostart" data-label="auto-start" <%=server.autoStart ? 'checked' : '' %>>
                                     <label class="form-check-label" for="autoStart">Start with Craftbox</label>
                                 </div>
@@ -323,7 +323,7 @@
                                 <h6 class="mb-2">Status Page</h6>
                                 <div class="form-check form-switch mb-1">
                                     <input class="form-check-input toggle-switch" type="checkbox" id="statusPagePublic"
-                                        data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>"
+                                        data-server-id="<%= server.id %>"
                                         data-endpoint="statuspublic" data-label="public status page" <%=server.statusPagePublic ? 'checked' : '' %>>
                                     <label class="form-check-label" for="statusPagePublic">
                                         Status Page Visibility: <strong id="statusPageLabel">
@@ -351,9 +351,9 @@
                                         <input type="text" class="form-control" id="advertisedIp" name="advertisedIp"
                                             value="<%= server.advertisedIp || '' %>"
                                             placeholder="e.g. play.example.com or 203.0.113.5" maxlength="253"
-                                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">
+                                            data-server-id="<%= server.id %>">
                                         <button type="button" class="btn btn-outline-secondary" id="save-advertised-ip"
-                                            data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Save</button>
+                                            data-server-id="<%= server.id %>">Save</button>
                                     </div>
                                     <div class="form-text">Override the IP shown on the status page. Leave blank to use
                                         the Craftbox hostname automatically.</div>
@@ -656,7 +656,7 @@
                             <button type="button" class="btn btn-secondary btn-sm"
                                 data-bs-dismiss="modal">Later</button>
                             <button type="button" class="btn btn-info btn-sm" id="restart-now-btn"
-                                data-server-id="<%= server.id %>" data-csrf="<%= csrfToken %>">Restart Now</button>
+                                data-server-id="<%= server.id %>">Restart Now</button>
                         </div>
                     </div>
                 </div>

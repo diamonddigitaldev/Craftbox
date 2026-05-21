@@ -20,6 +20,7 @@ const { getContentType } = require('../../utils/contentType');
 const { copyModEnvMap, clearAllModEnv } = require('../../utils/modEnvironment');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
+const { isPathInside } = require('../../utils/pathSafety');
 
 // Shared 404 helper — returns the server record or sends 404 JSON and returns null.
 // The caller must `return` after a null result.
@@ -543,9 +544,13 @@ router.get('/servers/:id/icon', async (req, res) => {
         if (!server) return;
 
         const iconPath = getIconPath(req.params.id);
-        const fs = require('fs');
         if (!fs.existsSync(iconPath)) {
             return res.status(404).json({ error: 'No icon set.' });
+        }
+
+        const serverDir = path.resolve(SERVERS_DIR, req.params.id);
+        if (!isPathInside(serverDir, iconPath)) {
+            return res.status(403).json({ error: 'Access denied.' });
         }
 
         res.type('image/png').sendFile(path.resolve(iconPath));
@@ -1257,7 +1262,7 @@ router.post('/servers/:id/edit-file', async (req, res) => {
     const serverDir = path.resolve(SERVERS_DIR, id);
     const targetPath = path.resolve(serverDir, filePath);
 
-    if (!targetPath.startsWith(serverDir)) {
+    if (!isPathInside(serverDir, targetPath)) {
         return res.status(403).json({ error: 'Access denied.' });
     }
 

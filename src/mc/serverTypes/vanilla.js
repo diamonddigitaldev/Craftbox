@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../../utils/log');
+const { verifyChecksum } = require('./_verifyChecksum');
 
 const VERSION_MANIFEST_URL = 'https://launchermeta.mojang.com/mc/game/version_manifest.json';
 
@@ -65,8 +66,9 @@ module.exports = {
 
         fs.mkdirSync(path.dirname(destPath), { recursive: true });
         const buffer = Buffer.from(await jarRes.arrayBuffer());
+        verifyChecksum(buffer, 'sha1', serverDownload.sha1, 'Vanilla');
         fs.writeFileSync(destPath, buffer);
 
-        log('info', `Vanilla server jar downloaded (${buffer.length} bytes).`);
+        log('info', `Vanilla server jar downloaded and SHA-1 verified (${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
     }
 };

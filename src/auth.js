@@ -6,6 +6,12 @@ const { log } = require('./utils/log');
 
 const BCRYPT_ROUNDS = 12;
 
+// Precomputed dummy hash so the user-not-found login path costs the same
+// time as the user-found path. Without this, an attacker can enumerate
+// valid usernames by timing the response (~150ms when the user exists
+// because bcrypt.compare runs, <5ms when it doesn't).
+const DUMMY_HASH = bcrypt.hashSync('craftbox-dummy-do-not-match', BCRYPT_ROUNDS);
+
 // Find user by username (scans all users — fine for small user count)
 async function findUserByUsername(username) {
     const all = await usersDb.all();
@@ -33,6 +39,9 @@ passport.use(new LocalStrategy(async (username, password, done) => {
     try {
         const user = await findUserByUsername(username);
         if (!user) {
+            // Equalize timing with the user-found path so response time
+            // doesn't leak whether the username exists.
+            await bcrypt.compare(password, DUMMY_HASH);
             log('warn', `Failed login attempt for username: ${username}`);
             return done(null, false, { message: 'Invalid username or password.' });
         }

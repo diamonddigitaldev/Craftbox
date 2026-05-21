@@ -6,7 +6,6 @@
     if (!input || !previewEl || !saveBtn) return;
 
     var serverId = saveBtn.dataset.serverId;
-    var csrf = saveBtn.dataset.csrf;
 
     // The § character used in Minecraft formatting
     var SECTION = '\u00A7';

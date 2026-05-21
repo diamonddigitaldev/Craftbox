@@ -14,6 +14,7 @@ const {
     clearModEnv,
     clearAllModEnv
 } = require('../../utils/modEnvironment');
+const { isPathInside } = require('../../utils/pathSafety');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -46,6 +47,27 @@ function cleanupTempFiles(files) {
     if (!files) return;
     for (const file of files) {
         try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+    }
+}
+
+// JARs are ZIP archives; every valid one starts with one of these 4-byte
+// magic numbers. Filename suffix alone is not enough — multer accepts
+// anything the client labels `.jar`.
+function isZipFile(filepath) {
+    let fd;
+    try {
+        fd = fs.openSync(filepath, 'r');
+        const buf = Buffer.alloc(4);
+        const n = fs.readSync(fd, buf, 0, 4, 0);
+        if (n < 4) return false;
+        if (buf[0] !== 0x50 || buf[1] !== 0x4B) return false;
+        return (buf[2] === 0x03 && buf[3] === 0x04)
+            || (buf[2] === 0x05 && buf[3] === 0x06)
+            || (buf[2] === 0x07 && buf[3] === 0x08);
+    } catch {
+        return false;
+    } finally {
+        if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
     }
 }
 
@@ -84,13 +106,23 @@ router.post('/servers/:id/plugins/upload', function (req, res, next) {
     fs.mkdirSync(contentDir, { recursive: true });
 
     const uploaded = [];
+    const rejected = [];
     try {
         for (const file of req.files) {
             const safeName = path.basename(file.originalname).replace(/[/\\]/g, '');
-            if (!safeName.toLowerCase().endsWith('.jar')) continue;
+            if (!safeName.toLowerCase().endsWith('.jar')) {
+                rejected.push({ name: file.originalname, reason: 'not a .jar file' });
+                continue;
+            }
 
             const destPath = path.join(contentDir, safeName);
-            if (!path.resolve(destPath).startsWith(path.resolve(contentDir))) {
+            if (!isPathInside(contentDir, destPath)) {
+                rejected.push({ name: safeName, reason: 'invalid path' });
+                continue;
+            }
+
+            if (!isZipFile(file.path)) {
+                rejected.push({ name: safeName, reason: 'not a valid JAR file' });
                 continue;
             }
 
@@ -101,8 +133,13 @@ router.post('/servers/:id/plugins/upload', function (req, res, next) {
         cleanupTempFiles(req.files);
     }
 
-    log('info', `Uploaded ${uploaded.length} ${contentType.label.toLowerCase()} to server ${server.name} (${server.id}): ${uploaded.join(', ')}`);
-    res.json({ success: true, count: uploaded.length, files: uploaded });
+    if (uploaded.length > 0) {
+        log('info', `Uploaded ${uploaded.length} ${contentType.label.toLowerCase()} to server ${server.name} (${server.id}): ${uploaded.join(', ')}`);
+    }
+    if (rejected.length > 0) {
+        log('warn', `Rejected ${rejected.length} upload(s) to server ${server.name} (${server.id}): ${rejected.map(r => `${r.name} (${r.reason})`).join(', ')}`);
+    }
+    res.json({ success: true, count: uploaded.length, uploaded, rejected });
 });
 
 // POST /servers/:id/plugins/delete — Delete a single plugin/mod
@@ -127,7 +164,7 @@ router.post('/servers/:id/plugins/delete', async (req, res) => {
     const contentDir = path.join(serverDir, contentType.folder);
     const targetPath = path.resolve(contentDir, safeName);
 
-    if (!targetPath.startsWith(path.resolve(contentDir))) {
+    if (!isPathInside(contentDir, targetPath)) {
         return res.status(403).json({ error: 'Access denied.' });
     }
 
@@ -227,7 +264,7 @@ router.post('/servers/:id/plugins/environment', async (req, res) => {
     const contentDir = path.join(serverDir, contentType.folder);
 
     const enabledPath = path.resolve(contentDir, safeName);
-    if (!enabledPath.startsWith(path.resolve(contentDir))) {
+    if (!isPathInside(contentDir, enabledPath)) {
         return res.status(403).json({ error: 'Access denied.' });
     }
     const disabledPath = enabledPath + DISABLED_SUFFIX;
