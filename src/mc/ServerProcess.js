@@ -165,92 +165,112 @@ class ServerProcess extends EventEmitter {
 
         await this.setState(STATES.STARTING);
 
-        // Resolve the correct Java binary for this MC version
-        const javaPath = this.config.version
-            ? getJavaForVersion(this.config.version)
-            : getDefaultJava();
-
-        // Build the Java command
-        const jarPath = path.join(this.serverDir, this.config.jarFile || 'server.jar');
-
-        const args = [];
-        args.push(`-Xmx${this.config.memory || 2048}M`);
-        args.push(`-Xms${Math.min(this.config.memory || 2048, 1024)}M`);
-
-        // Parse additional JVM args safely
-        if (this.config.javaArgs) {
-            const extraArgs = this.config.javaArgs.split(/\s+/).filter(a => a.length > 0);
-            args.push(...extraArgs);
-        }
-
-        // Forge/NeoForge 1.17+ uses @args file instead of -jar
-        if (this.config.serverType === 'forge' || this.config.serverType === 'neoforge') {
-            const argsFile = this.config.serverType === 'neoforge'
-                ? this._findNeoForgeArgsFile()
-                : this._findForgeArgsFile();
-            if (argsFile) {
-                args.push(`@${argsFile}`, 'nogui');
-            } else if (fs.existsSync(jarPath)) {
-                args.push('-jar', jarPath, 'nogui');
-            } else {
-                throw new Error(`${this.config.serverType === 'neoforge' ? 'NeoForge' : 'Forge'} server jar or args file not found.`);
-            }
-        } else {
-            if (!fs.existsSync(jarPath)) {
-                throw new Error(`Server jar not found: ${jarPath}`);
-            }
-            args.push('-jar', jarPath, 'nogui');
-        }
-
-        log('info', `[${this.config.name}] Using Java: ${javaPath}`);
-        log('info', `[${this.config.name}] Spawning: ${javaPath} ${args.join(' ')}`);
-
-        // Open log stream
-        const logsDir = path.join(this.serverDir, 'logs');
-        fs.mkdirSync(logsDir, { recursive: true });
-        this.logStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
-
-        this.child = spawn(javaPath, args, {
-            cwd: this.serverDir,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true,
-            // On POSIX, make the JVM its own process-group leader so _killTree()
-            // can signal every descendant at once and avoid orphaned zombies.
-            detached: process.platform !== 'win32'
-        });
-
-        // Display server type, version, and Java info in console
-        const provider = getProvider(this.config.serverType);
-        const typeName = provider ? provider.name : this.config.serverType || 'Unknown';
-        const version = this.config.serverType === 'custom'
-            ? '(Unknown Version)'
-            : (this.config.version || '(Unknown Version)');
-        let javaVer = 'Unknown';
         try {
-            const javaVerOutput = execSync(`"${javaPath}" -version 2>&1`, {
+            // Resolve the correct Java binary for this MC version
+            const javaPath = this.config.version
+                ? getJavaForVersion(this.config.version)
+                : getDefaultJava();
+
+            // Build the Java command
+            const jarPath = path.join(this.serverDir, this.config.jarFile || 'server.jar');
+
+            const args = [];
+            args.push(`-Xmx${this.config.memory || 2048}M`);
+            args.push(`-Xms${Math.min(this.config.memory || 2048, 1024)}M`);
+
+            // Parse additional JVM args safely
+            if (this.config.javaArgs) {
+                const extraArgs = this.config.javaArgs.split(/\s+/).filter(a => a.length > 0);
+                args.push(...extraArgs);
+            }
+
+            // Forge/NeoForge 1.17+ uses @args file instead of -jar
+            if (this.config.serverType === 'forge' || this.config.serverType === 'neoforge') {
+                const argsFile = this.config.serverType === 'neoforge'
+                    ? this._findNeoForgeArgsFile()
+                    : this._findForgeArgsFile();
+                if (argsFile) {
+                    args.push(`@${argsFile}`, 'nogui');
+                } else if (fs.existsSync(jarPath)) {
+                    args.push('-jar', jarPath, 'nogui');
+                } else {
+                    throw new Error(`${this.config.serverType === 'neoforge' ? 'NeoForge' : 'Forge'} server jar or args file not found.`);
+                }
+            } else {
+                if (!fs.existsSync(jarPath)) {
+                    throw new Error(`Server jar not found: ${jarPath}`);
+                }
+                args.push('-jar', jarPath, 'nogui');
+            }
+
+            log('info', `[${this.config.name}] Using Java: ${javaPath}`);
+            log('info', `[${this.config.name}] Spawning: ${javaPath} ${args.join(' ')}`);
+
+            // Open log stream
+            const logsDir = path.join(this.serverDir, 'logs');
+            fs.mkdirSync(logsDir, { recursive: true });
+            this.logStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
+
+            this.child = spawn(javaPath, args, {
+                cwd: this.serverDir,
+                stdio: ['pipe', 'pipe', 'pipe'],
                 windowsHide: true,
-                timeout: 5000
-            }).toString();
-            const match = javaVerOutput.match(/version "([^"]+)"/);
-            if (match) javaVer = match[1];
-        } catch {}
-        this._appendLine(`[Craftbox] Starting ${typeName} ${version} using Java ${javaVer} (${javaPath})`);
+                // On POSIX, make the JVM its own process-group leader so _killTree()
+                // can signal every descendant at once and avoid orphaned zombies.
+                detached: process.platform !== 'win32'
+            });
 
-        // Process stdout line by line
-        const stdoutRL = readline.createInterface({ input: this.child.stdout });
-        stdoutRL.on('line', (line) => this._handleLine(line, 'stdout'));
+            // Display server type, version, and Java info in console
+            const provider = getProvider(this.config.serverType);
+            const typeName = provider ? provider.name : this.config.serverType || 'Unknown';
+            const version = this.config.serverType === 'custom'
+                ? '(Unknown Version)'
+                : (this.config.version || '(Unknown Version)');
+            let javaVer = 'Unknown';
+            try {
+                const javaVerOutput = execSync(`"${javaPath}" -version 2>&1`, {
+                    windowsHide: true,
+                    timeout: 5000
+                }).toString();
+                const match = javaVerOutput.match(/version "([^"]+)"/);
+                if (match) javaVer = match[1];
+            } catch {}
+            this._appendLine(`[Craftbox] Starting ${typeName} ${version} using Java ${javaVer} (${javaPath})`);
 
-        // Process stderr line by line
-        const stderrRL = readline.createInterface({ input: this.child.stderr });
-        stderrRL.on('line', (line) => this._handleLine(line, 'stderr'));
+            // Process stdout line by line
+            const stdoutRL = readline.createInterface({ input: this.child.stdout });
+            stdoutRL.on('line', (line) => this._handleLine(line, 'stdout'));
 
-        // Handle process exit
-        this.child.on('close', (code, signal) => this._handleClose(code, signal));
+            // Process stderr line by line
+            const stderrRL = readline.createInterface({ input: this.child.stderr });
+            stderrRL.on('line', (line) => this._handleLine(line, 'stderr'));
 
-        this.child.on('error', (err) => {
-            log('error', `[${this.config.name}] Process error: ${err.message}`);
-            this._appendLine(`[Craftbox] Process error: ${err.message}`);
-        });
+            // Handle process exit
+            this.child.on('close', (code, signal) => this._handleClose(code, signal));
+
+            this.child.on('error', (err) => {
+                log('error', `[${this.config.name}] Process error: ${err.message}`);
+                this._appendLine(`[Craftbox] Process error: ${err.message}`);
+            });
+        } catch (err) {
+            // Startup failed after we already transitioned to STARTING — e.g.
+            // the server jar is missing. Without this, the server would be
+            // stuck showing "Starting" forever (and `start` is not a permitted
+            // action from STARTING, so the user couldn't even retry).
+            // Force the state back to STOPPED and re-throw so the route can
+            // surface the reason to the user.
+            log('error', `[${this.config.name}] Startup failed: ${err.message}`);
+            if (this.logStream) {
+                this.logStream.end();
+                this.logStream = null;
+            }
+            // Only force-stop if no process was actually spawned; if a child
+            // exists, its own close/error handlers own the lifecycle.
+            if (!this.child) {
+                await this.setState(STATES.STOPPED);
+            }
+            throw err;
+        }
     }
 
     /**
