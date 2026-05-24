@@ -9,7 +9,7 @@
 <div align="center">
 
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)
-![version](https://img.shields.io/badge/version-1.0.0--beta.32-brightgreen?style=flat-square)
+![version](https://img.shields.io/badge/version-1.0.0-brightgreen?style=flat-square)
 ![docker](https://img.shields.io/badge/docker-supported-blue?style=flat-square)
 
 [![discord](https://img.shields.io/discord/667479986214666272?logo=discord&logoColor=white&style=flat-square)](https://diamonddigital.dev/discord)
@@ -17,10 +17,7 @@
 
 </div>
 
-> [!WARNING]
-> **Craftbox is not stable yet and is under active development.** Do not migrate to Craftbox as your primary server management solution just yet! Beta updates may contain breaking changes or bugs that could cause corruption or data loss. If you find a bug, please submit a bug report in the [issues tab](https://github.com/diamonddigitaldev/Craftbox/issues).
-
-## 🔎 Overview
+## Overview
 
 **Craftbox** is a self-hosted web panel for creating, configuring, monitoring, and managing Minecraft servers — no command-line expertise or dodgy download pages required.
 
@@ -29,21 +26,21 @@ It ships as a single **Node.js / Express** application with a **Bootstrap 5** da
 Whether you're running a single Vanilla server or juggling multiple modded instances, Craftbox gives you full control from your browser.
 
 
-## ✨ Features
+## Features
 
-- 🖥️ **Multi-Server Management** — Run and manage multiple Minecraft servers from a single panel, each with its own console, watchdog, and configuration.
-- 🧩 **Multi-Server-Type Support** — Vanilla, Paper, Purpur, Folia, Fabric, Forge, NeoForge, and custom JAR uploads.
-- 📟 **Live Console** — Real-time server log streaming and command input via WebSocket.
-- ⚙️ **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
-- 💾 **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
-- 🔌 **Plugin & Mod Management** — Upload and manage JAR files for plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge).
-- 📋 **Server Duplication & Templates** — Clone a server with or without world data, or save configurations as reusable templates.
-- 📊 **Status & Monitoring** — Public status pages, live player tracking, resource monitoring, and event history.
-- 🛡️ **Crash Detection & Auto-Restart** — Watchdog detects crashes/runtime errors and optionally auto-restarts.
-- 📱 **PWA Support** — Installable as a Progressive Web App on desktop and mobile.
+- **Multi-Server Management** — Run and manage multiple Minecraft servers from a single panel, each with its own console, watchdog, and configuration.
+- **Multi-Server-Type Support** — Vanilla, Paper, Purpur, Folia, Fabric, Forge, NeoForge, and custom JAR uploads.
+- **Live Console** — Real-time server log streaming and command input via WebSocket.
+- **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
+- **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
+- **Plugin & Mod Management** — Upload and manage JAR files for plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge).
+- **Server Duplication & Templates** — Clone a server with or without world data, or save configurations as reusable templates.
+- **Status & Monitoring** — Public status pages, live player tracking, resource monitoring, and event history.
+- **Crash Detection & Auto-Restart** — Watchdog detects crashes/runtime errors and optionally auto-restarts.
+- **PWA Support** — Installable as a Progressive Web App on desktop and mobile.
 
 
-## 📸 Screenshots
+## Screenshots
 
 | Feature | Screenshot |
 |---------|-----------|
@@ -60,7 +57,7 @@ Whether you're running a single Vanilla server or juggling multiple modded insta
 | **Server Templates** — Quickly create new servers based on existing configurations. | ![Templates](./docs/img/screenshots/templates.png) |
 
 
-## 🧰 Getting Started
+## Getting Started
 
 ### Docker (Recommended)
 
@@ -135,12 +132,12 @@ npm run dev
 > **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist.
 
 
-## 📜 License
+## License
 
 This project is licensed under the [GNU Affero General Public License v3.0](./LICENSE).
 
 
-## 📖 Acknowledgements
+## Acknowledgements
 
 * Logo designed by [TheFuturisticIdiot](https://github.com/TheFuturisticIdiot)
 * Built with [Node.js](https://nodejs.org/), [Express](https://expressjs.com/), and [Bootstrap](https://getbootstrap.com/)
@@ -171,11 +168,11 @@ AI has a tendency to hallucinate/produce plausible but suboptimal, inaccurate or
 Every commit is manually reviewed and approved by a member of Diamond Digital Development, and testing is carried out to ensure changes work as intended, do not introduce regressions, and meet reliability and security expectations before being merged into the `master` branch.
 
 
-## 🙂 Contact Us
+## Contact Us
 
-* 💬 **Need help or want to chat?** [Join our Discord Server](https://diamonddigital.dev/discord)
-* 🐛 **Found a bug?** [Open an issue](https://github.com/diamonddigitaldev/Craftbox/issues/new?template=bug_report.yml)
-* 💡 **Have a suggestion?** [Submit a feature request](https://github.com/diamonddigitaldev/Craftbox/issues/new?template=feature_request.yml)
+* **Need help or want to chat?** [Join our Discord Server](https://diamonddigital.dev/discord)
+* **Found a bug?** [Open an issue](https://github.com/diamonddigitaldev/Craftbox/issues/new?template=bug_report.yml)
+* **Have a suggestion?** [Submit a feature request](https://github.com/diamonddigitaldev/Craftbox/issues/new?template=feature_request.yml)
 
 
 <div align="center">
