@@ -22,7 +22,7 @@
 **Craftbox** is a modern self-hosted platform for managing Minecraft servers with built-in mod support.
 
 A common headache with Minecraft hosting is juggling Java versions, JVM flags, and dodgy download pages just to get a server running.
-Craftbox was built to make **self-hosted Minecraft hosting accessible**, **manageable from anywhere**, and **friendly to both Vanilla and modded play** — whether on a home server, a NAS, or in Docker.
+Craftbox was built to make **self-hosted Minecraft hosting accessible**, **manageable from anywhere**, and **friendly to both Vanilla and modded play** — whether on a home NAS, a VPS, or in Docker.
 
 Whether you're running a single Vanilla server or maintaining multiple modded instances, Craftbox gives you full control from your browser.
 
