@@ -1,6 +1,8 @@
 <%
 // stateColors / stateIcons / stateDisplayNames / getState* helpers come from
 // res.locals (injected by serverStateMeta.injectIntoLocals middleware).
+// groupNames is only passed by the dashboard — other pages get no group menu.
+const cardGroupNames = typeof groupNames !== 'undefined' && Array.isArray(groupNames) ? groupNames : null;
 const color = getStateColor(server.state);
 const icon = getStateIcon(server.state);
 const displayName = getStateDisplayName(server.state);
@@ -60,9 +62,42 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
                     data-action="restart">
                     <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
                 </button>
+                <% if (cardGroupNames) { %>
+                <div class="dropdown ms-auto">
+                    <button type="button" class="btn btn-outline-light btn-sm d-flex align-items-center"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Move to group">
+                        <span class="material-icons-outlined" style="font-size: 1rem;">drive_file_move</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><h6 class="dropdown-header">Move to group</h6></li>
+                        <% cardGroupNames.filter(function(g) { return g !== server.group; }).forEach(function(g) { %>
+                        <li>
+                            <button type="button" class="dropdown-item group-move-item" data-group="<%= g %>">
+                                <%= g %>
+                            </button>
+                        </li>
+                        <% }) %>
+                        <li>
+                            <button type="button" class="dropdown-item group-new-item">New group&hellip;</button>
+                        </li>
+                        <% if (server.group) { %>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <button type="button" class="dropdown-item group-move-item" data-group="">
+                                Remove from group
+                            </button>
+                        </li>
+                        <% } %>
+                    </ul>
+                </div>
+                <a href="/servers/<%= server.id %>" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">settings</span> Manage
+                </a>
+                <% } else { %>
                 <a href="/servers/<%= server.id %>" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1 ms-auto">
                     <span class="material-icons-outlined" style="font-size: 1rem;">settings</span> Manage
                 </a>
+                <% } %>
             </div>
         </div>
         <div class="card-footer bg-danger bg-opacity-10 text-danger small server-crash-footer<%= server.state === 'crashed' ? '' : ' d-none' %>">

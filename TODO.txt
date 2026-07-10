@@ -1,0 +1,5 @@
+Craftbox 1.1 — TODO
+===================
+
+- Modrinth support / create a server from a modpack.
+  (Deferred — complete later in 1.1's development.)

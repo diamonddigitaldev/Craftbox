@@ -37,11 +37,32 @@ router.get('/dashboard', ensureAuth, async (req, res) => {
         // Continue with empty servers array
     }
 
+    // Partition into named groups (alphabetical) and ungrouped servers,
+    // preserving the state-priority sort within each section.
+    const groupMap = new Map();
+    const ungrouped = [];
+    for (const server of servers) {
+        const group = typeof server.group === 'string' && server.group.trim() ? server.group.trim() : null;
+        if (!group) {
+            ungrouped.push(server);
+        } else {
+            if (!groupMap.has(group)) groupMap.set(group, []);
+            groupMap.get(group).push(server);
+        }
+    }
+    const serverGroups = [...groupMap.entries()]
+        .map(([name, groupServers]) => ({ name, servers: groupServers }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const groupNames = serverGroups.map(g => g.name);
+
     res.render('dashboard', {
         title: 'Dashboard',
         navbar: true,
         user: req.user,
         servers,
+        serverGroups,
+        ungrouped,
+        groupNames,
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });

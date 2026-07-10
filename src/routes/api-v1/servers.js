@@ -3,9 +3,11 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const AdmZip = require('adm-zip');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
-const { serversDb, SERVERS_DIR } = require('../../db');
+const { serversDb, backupsDb, eventsDb, SERVERS_DIR } = require('../../db');
+const { ensureBackupDir, resolveBackupPath } = require('../../mc/BackupManager');
 const { getProvider, listProviders } = require('../../mc/serverTypes');
 const { downloadServerJar } = require('../../mc/downloader');
 const { log } = require('../../utils/log');
@@ -17,10 +19,12 @@ const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath, copyDefau
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../../mc/serverProperties');
 const { PROPERTY_META } = require('../../mc/propertyMeta');
 const { getContentType } = require('../../utils/contentType');
-const { copyModEnvMap, clearAllModEnv } = require('../../utils/modEnvironment');
+const { copyModEnvMap, clearAllModEnv, setModEnvMap } = require('../../utils/modEnvironment');
+const { isZipFile } = require('../../utils/uploadSafety');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
+const { normalizeGroupName, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
 
 // Shared 404 helper — returns the server record or sends 404 JSON and returns null.
 // The caller must `return` after a null result.
@@ -42,6 +46,23 @@ const TEXT_EXTENSIONS = new Set([
 function isTextFile(filename) {
     return TEXT_EXTENSIONS.has(path.extname(filename).toLowerCase());
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Multer config for transfer archive import — .zip only. Capped at 4 GB: the
+// zip library reads the whole archive into one Buffer, which tops out around
+// 4 GiB on 64-bit Node.
+const importUpload = multer({
+    dest: os.tmpdir(),
+    limits: { fileSize: 4 * 1024 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        if (file.originalname.toLowerCase().endsWith('.zip')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only .zip files are allowed.'));
+        }
+    }
+});
 
 // Multer config for server icon upload — PNG only, 5 MB limit
 const iconUpload = multer({
@@ -183,6 +204,30 @@ router.post('/servers/:id/autostart', async (req, res) => {
         if (proc) proc.config.autoStart = server.autoStart;
 
         res.json({ autoStart: server.autoStart });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update setting.' });
+    }
+});
+
+// POST /servers/:id/group — Assign the server to a dashboard group (null/empty to ungroup)
+router.post('/servers/:id/group', async (req, res) => {
+    try {
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
+
+        const { valid, value } = normalizeGroupName(req.body.group);
+        if (!valid) {
+            return res.status(400).json({ error: GROUP_NAME_ERROR });
+        }
+
+        server.group = value;
+        await serversDb.set(`server_${server.id}`, server);
+
+        const serverManager = req.app.get('serverManager');
+        const proc = serverManager?.getProcess(server.id);
+        if (proc) proc.config.group = server.group;
+
+        res.json({ group: server.group });
     } catch (err) {
         res.status(500).json({ error: 'Failed to update setting.' });
     }
@@ -603,7 +648,7 @@ router.post('/servers/:id/motd', async (req, res) => {
 
 // POST /servers — Create a new server
 router.post('/servers', async (req, res) => {
-    const { name, version, port, memory, javaArgs, eula, gamemode, difficulty, seed, serverType, customJarUrl } = req.body;
+    const { name, version, port, memory, javaArgs, eula, gamemode, difficulty, seed, serverType, customJarUrl, group } = req.body;
 
     if (!name || !port || !memory) {
         return res.status(400).json({ error: 'All required fields must be filled.' });
@@ -663,6 +708,11 @@ router.post('/servers', async (req, res) => {
     const difficultyStr = validDifficulties.includes(difficulty) ? difficulty : 'easy';
     const seedStr = String(seed || '').trim();
 
+    const groupResult = normalizeGroupName(group);
+    if (!groupResult.valid) {
+        return res.status(400).json({ error: GROUP_NAME_ERROR });
+    }
+
     const id = uuidv4();
     const serverDir = path.join(SERVERS_DIR, id);
     const initiatedBy = req.user.username;
@@ -701,6 +751,7 @@ router.post('/servers', async (req, res) => {
             autoRestart: false,
             autoStart: false,
             statusPagePublic: false,
+            group: groupResult.value,
             createdAt: new Date().toISOString(),
             lastStarted: null,
             lastStopped: null,
@@ -898,6 +949,253 @@ router.post('/servers/:id/kill', async (req, res) => {
     }
 });
 
+// POST /servers/import — Import a server from a Craftbox export archive
+// (created by GET /servers/:id/export). Responds 201 immediately; extraction
+// continues in the background and completes via the WS 'operation' message.
+router.post('/servers/import', function (req, res, next) {
+    importUpload.single('archive')(req, res, function (err) {
+        if (err) {
+            return res.status(400).json({ error: err.message || 'Upload failed.' });
+        }
+        next();
+    });
+}, async (req, res) => {
+    const tmpPath = req.file?.path;
+    const cleanupTemp = () => {
+        if (tmpPath) fs.promises.unlink(tmpPath).catch(() => {});
+    };
+
+    if (!tmpPath) {
+        return res.status(400).json({ error: 'No archive uploaded.' });
+    }
+
+    try {
+        if (!isZipFile(tmpPath)) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Not a valid zip archive.' });
+        }
+
+        let zip;
+        try {
+            zip = new AdmZip(tmpPath);
+        } catch {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Failed to read archive.' });
+        }
+
+        const manifestEntry = zip.getEntry('craftbox-manifest.json');
+        if (!manifestEntry) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Not a Craftbox export archive.' });
+        }
+
+        let manifest;
+        try {
+            manifest = JSON.parse(manifestEntry.getData().toString('utf8'));
+        } catch {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Export manifest is corrupted.' });
+        }
+        if (manifest.format !== 'craftbox-server-export') {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Not a Craftbox export archive.' });
+        }
+        if (manifest.formatVersion !== 1) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'This archive was created by a newer version of Craftbox and cannot be imported.' });
+        }
+
+        // Sanity-check the embedded server object before touching disk or DB.
+        const source = manifest.server;
+        if (!source || typeof source !== 'object' || !UUID_RE.test(String(source.id))) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Export manifest is invalid.' });
+        }
+        const trimmedName = String(source.name || '').trim();
+        if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Export manifest contains an invalid server name.' });
+        }
+        if (!getProvider(source.serverType || 'vanilla')) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Export manifest contains an unknown server type.' });
+        }
+        const portNum = parseInt(source.port, 10);
+        if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Export manifest contains an invalid port.' });
+        }
+        const memoryNum = parseInt(source.memory, 10);
+        if (isNaN(memoryNum) || memoryNum < 512 || memoryNum > 65536) {
+            cleanupTemp();
+            return res.status(400).json({ error: 'Export manifest contains an invalid memory value.' });
+        }
+
+        // Reject unsafe or unexpected archive entries up front (zip-slip).
+        const knownRootFiles = new Set(['craftbox-manifest.json', 'modenv.json', 'backups.json', 'events.json']);
+        for (const entry of zip.getEntries()) {
+            const entryName = String(entry.entryName).replace(/\\/g, '/');
+            if (entryName.startsWith('/') || /^[a-zA-Z]:/.test(entryName) || entryName.split('/').includes('..')) {
+                cleanupTemp();
+                return res.status(400).json({ error: 'Archive contains unsafe paths.' });
+            }
+            if (!entryName.startsWith('server/') && !entryName.startsWith('backups/') && !knownRootFiles.has(entryName)) {
+                cleanupTemp();
+                return res.status(400).json({ error: `Archive contains an unexpected entry: ${entryName}` });
+            }
+        }
+
+        // Keep the source UUID when it is free on this instance; otherwise re-key.
+        let finalId = String(source.id).toLowerCase();
+        if (await serversDb.get(`server_${finalId}`) || fs.existsSync(path.join(SERVERS_DIR, finalId))) {
+            finalId = uuidv4();
+        }
+
+        const warnings = [];
+        const allServers = await serversDb.all();
+        const portClash = allServers.map(row => row.value).find(s => s && s.port === portNum);
+        if (portClash) {
+            warnings.push(`Port ${portNum} is already used by "${portClash.name}". Edit this server's port before starting it.`);
+        }
+        if (source.autoStart) {
+            warnings.push('Auto-start was disabled on import. Re-enable it once the server is confirmed working.');
+        }
+
+        const groupResult = normalizeGroupName(source.group);
+        const importedServer = {
+            ...source,
+            id: finalId,
+            name: trimmedName,
+            state: STATES.PROVISIONING,
+            port: portNum,
+            memory: memoryNum,
+            jarFile: typeof source.jarFile === 'string' && source.jarFile ? source.jarFile : 'server.jar',
+            group: groupResult.valid ? groupResult.value : null,
+            autoStart: false,
+            exitCode: null,
+            crashReason: null,
+            crashDetected: false,
+            lastStarted: null,
+            lastStopped: null,
+            advertisedIp: null,
+            directory: path.join('data', 'servers', finalId)
+        };
+        if (importedServer.backupSchedule) delete importedServer.backupSchedule.nextBackupAt;
+
+        await serversDb.set(`server_${finalId}`, importedServer);
+        res.status(201).json({ success: true, server: importedServer, warnings });
+
+        const serverManager = req.app.get('serverManager');
+        const initiatedBy = req.user.username;
+        (async () => {
+            try {
+                const serverDir = path.join(SERVERS_DIR, finalId);
+                const resolvedServerDir = path.resolve(serverDir);
+                await fs.promises.mkdir(serverDir, { recursive: true });
+
+                // Extract server files, stripping the server/ prefix and
+                // re-checking every resolved path (belt and braces vs the scan above).
+                for (const entry of zip.getEntries()) {
+                    const entryName = String(entry.entryName).replace(/\\/g, '/');
+                    if (!entryName.startsWith('server/')) continue;
+                    const relative = entryName.slice('server/'.length);
+                    if (!relative) continue;
+                    const target = path.resolve(serverDir, relative);
+                    if (target !== resolvedServerDir && !target.startsWith(resolvedServerDir + path.sep)) {
+                        throw new Error(`Zip entry escapes target directory: ${entry.entryName}`);
+                    }
+                    if (entry.isDirectory) {
+                        await fs.promises.mkdir(target, { recursive: true });
+                    } else {
+                        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+                        await fs.promises.writeFile(target, entry.getData());
+                    }
+                }
+                await fs.promises.mkdir(path.join(serverDir, 'logs'), { recursive: true });
+
+                // Mod environment map (disabled/client-only mods)
+                const modEnvEntry = zip.getEntry('modenv.json');
+                if (modEnvEntry) {
+                    try {
+                        const modEnv = JSON.parse(modEnvEntry.getData().toString('utf8'));
+                        if (modEnv && typeof modEnv === 'object') await setModEnvMap(finalId, modEnv);
+                    } catch { /* non-fatal */ }
+                }
+
+                // Backups — records are always re-keyed; filenames validated
+                const backupsEntry = zip.getEntry('backups.json');
+                if (backupsEntry) {
+                    let backupRecords = [];
+                    try { backupRecords = JSON.parse(backupsEntry.getData().toString('utf8')); } catch { /* skip */ }
+                    if (Array.isArray(backupRecords)) {
+                        ensureBackupDir(finalId);
+                        for (const record of backupRecords) {
+                            if (!record || typeof record.filename !== 'string') continue;
+                            const zipEntry = zip.getEntry(`backups/${record.filename}`);
+                            if (!zipEntry) continue;
+                            let backupPath;
+                            try { backupPath = resolveBackupPath(finalId, record.filename); } catch { continue; }
+                            await fs.promises.writeFile(backupPath, zipEntry.getData());
+                            const newBackupId = uuidv4();
+                            await backupsDb.set(`backup_${newBackupId}`, { ...record, id: newBackupId, serverId: finalId });
+                        }
+                    }
+                }
+
+                // Event history — re-keyed, capped at the pruneEvents limit
+                const eventsEntry = zip.getEntry('events.json');
+                if (eventsEntry) {
+                    let eventRecords = [];
+                    try { eventRecords = JSON.parse(eventsEntry.getData().toString('utf8')); } catch { /* skip */ }
+                    if (Array.isArray(eventRecords)) {
+                        for (const record of eventRecords.slice(0, 500)) {
+                            if (!record || typeof record !== 'object') continue;
+                            const newEventId = uuidv4();
+                            await eventsDb.set(`event_${newEventId}`, { ...record, id: newEventId, serverId: finalId });
+                        }
+                    }
+                }
+
+                // Keep DB ↔ server.properties/eula.txt consistent on the new host
+                await syncServerConfig(finalId);
+
+                if (importedServer.backupSchedule?.enabled) {
+                    const backupScheduler = req.app.get('backupScheduler');
+                    if (backupScheduler) {
+                        await backupScheduler.restartSchedule(finalId);
+                    }
+                }
+
+                if (serverManager) {
+                    await serverManager.setOperationalState(finalId, STATES.STOPPED);
+                    serverManager.broadcastOperation(finalId, 'import', 'complete', { warnings });
+                }
+                logEvent(finalId, 'action', 'Imported from Craftbox export archive', { initiatedBy }).catch(() => {});
+                log('info', `Server "${trimmedName}" (${finalId}) imported from export archive.`);
+            } catch (err) {
+                log('error', `Failed to import server ${finalId}: ${err.message}`);
+                logEvent(finalId, 'action', `Import failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                if (serverManager) {
+                    try {
+                        await serverManager.setOperationalState(finalId, STATES.CRASHED, {
+                            crashReason: 'Import failed: ' + err.message
+                        });
+                    } catch (_) {}
+                    serverManager.broadcastOperation(finalId, 'import', 'failed', err.message);
+                }
+            } finally {
+                cleanupTemp();
+            }
+        })();
+    } catch (err) {
+        cleanupTemp();
+        log('error', `Failed to import server: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to import server: ${err.message}` });
+        }
+    }
+});
+
 // POST /servers/:id/duplicate
 router.post('/servers/:id/duplicate', async (req, res) => {
     const id = req.params.id;
@@ -1085,7 +1383,7 @@ router.post('/servers/:id/edit', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
 
-    const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl } = req.body;
+    const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl, group } = req.body;
 
     const trimmedName = String(name).trim();
     if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
@@ -1108,6 +1406,11 @@ router.post('/servers/:id/edit', async (req, res) => {
     const difficultyStr = validDifficulties.includes(difficulty) ? difficulty : server.difficulty;
     const seedStr = String(seed || '').trim();
     const safeJavaArgs = String(javaArgs || '').trim();
+
+    const groupResult = normalizeGroupName(group);
+    if (!groupResult.valid) {
+        return res.status(400).json({ error: GROUP_NAME_ERROR });
+    }
 
     const type = server.serverType || 'vanilla';
     const newVersion = String(version || '').trim();
@@ -1204,6 +1507,7 @@ router.post('/servers/:id/edit', async (req, res) => {
     server.gamemode = gamemodeStr;
     server.difficulty = difficultyStr;
     server.seed = seedStr;
+    server.group = groupResult.value;
     await serversDb.set(`server_${id}`, server);
 
     const serverDir = path.join(SERVERS_DIR, id);

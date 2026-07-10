@@ -9,7 +9,7 @@
 <div align="center">
 
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)
-![version](https://img.shields.io/badge/version-1.0.0-brightgreen?style=flat-square)
+![version](https://img.shields.io/badge/version-1.1.0--beta.1-brightgreen?style=flat-square)
 ![docker](https://img.shields.io/badge/docker-supported-blue?style=flat-square)
 
 [![discord](https://img.shields.io/discord/667479986214666272?logo=discord&logoColor=white&style=flat-square)](https://diamonddigital.dev/discord)
@@ -131,6 +131,13 @@ npm run dev
 | `LOG_LEVEL` | `INFO` | `NONE`, `ERROR`, `WARN`, `INFO`, `DEBUG`. |
 
 > **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist.
+
+
+## API
+
+Craftbox exposes a JSON HTTP API (`/api/v1`) with bearer API-key authentication, a WebSocket protocol for live console and state updates, and unauthenticated public status endpoints — everything you need to build third-party integrations.
+
+See the full [Craftbox API Reference](./docs/API.md).
 
 
 ## License

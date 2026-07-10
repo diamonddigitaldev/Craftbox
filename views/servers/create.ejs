@@ -118,7 +118,7 @@
                                     <div class="col-md-6">
                                         <label for="memory" class="form-label required-star">Memory (MB)</label>
                                         <input type="number" class="form-control" id="memory" name="memory" value="2048"
-                                            min="512" max="65536" step="256" required>
+                                            min="512" max="65536" step="1" required>
                                         <div class="form-text">RAM allocated to the server (-Xmx).</div>
                                     </div>
                                     <div class="col-md-6 mt-3 mt-md-0">
@@ -126,6 +126,20 @@
                                         <input type="text" class="form-control" id="javaArgs" name="javaArgs"
                                             placeholder="-XX:+UseG1GC">
                                         <div class="form-text">Optional. Extra Java flags.</div>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <label for="group" class="form-label">Add to Group</label>
+                                        <input type="text" class="form-control" id="group" name="group"
+                                            list="group-options" maxlength="30" pattern="[a-zA-Z0-9 _\-]+"
+                                            placeholder="Optional">
+                                        <datalist id="group-options">
+                                            <% (typeof groupNames !== 'undefined' ? groupNames : []).forEach(function(g) { %>
+                                            <option value="<%= g %>"></option>
+                                            <% }) %>
+                                        </datalist>
+                                        <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
                                     </div>
                                 </div>
                             </div>

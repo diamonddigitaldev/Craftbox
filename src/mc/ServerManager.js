@@ -191,7 +191,7 @@ class ServerManager {
      * Only authenticated subscribers receive these (the broadcast filter in
      * ServerProcess generates no publicMsg for unknown types).
      * @param {string} serverId
-     * @param {'backup'|'restore'|'jar-update'|'create'|'duplicate'} operation
+     * @param {'backup'|'restore'|'jar-update'|'create'|'duplicate'|'import'} operation
      * @param {'complete'|'failed'} status
      * @param {object|string} payloadOrError - object on complete, error message on failed
      */

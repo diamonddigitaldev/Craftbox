@@ -249,6 +249,24 @@ td > .material-icons-outlined {
     vertical-align: middle;
 }
 
+/* ---- Dashboard Server Groups ---- */
+.group-toggle {
+    color: var(--bs-body-color);
+    background: transparent;
+}
+
+.group-toggle:hover {
+    color: var(--craftbox-green);
+}
+
+.group-toggle .group-arrow {
+    transition: transform 0.25s ease;
+}
+
+.group-toggle[aria-expanded="false"] .group-arrow {
+    transform: rotate(-90deg);
+}
+
 /* ---- Advanced Options Toggle ---- */
 .advanced-toggle .advanced-arrow {
     transition: transform 0.25s ease;

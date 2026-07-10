@@ -4,20 +4,24 @@ const path = require('path');
 const contentDisposition = require('content-disposition');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
-const { serversDb, SERVERS_DIR } = require('../db');
+const { serversDb, eventsDb, SERVERS_DIR } = require('../db');
+const { listBackups, resolveBackupPath, tryAcquireBackupLock, releaseBackupLock } = require('../mc/BackupManager');
+const { getModEnvMap } = require('../utils/modEnvironment');
 const { parseServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
 const { hasIcon } = require('../utils/serverIcon');
 const { isPathInside } = require('../utils/pathSafety');
+const { getDistinctGroups } = require('../utils/serverGroups');
 
 // GET /servers/create — Server creation form
-router.get('/servers/create', ensureAuth, (req, res) => {
+router.get('/servers/create', ensureAuth, async (req, res) => {
     res.render('servers/create', {
         title: 'Create Server',
         description: 'Set up a new Minecraft server instance.',
         navbar: true,
         user: req.user,
+        groupNames: await getDistinctGroups().catch(() => []),
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -107,6 +111,7 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
         currentMotd,
         hasIcon: hasIcon(server.id),
         user: req.user,
+        groupNames: await getDistinctGroups().catch(() => []),
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -292,6 +297,110 @@ router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
     archive.pipe(res);
     archive.directory(serverDir, false);
     archive.finalize();
+});
+
+// Server transfer export — server files + Craftbox settings always, backups and
+// event history when requested. Importable on another Craftbox instance via
+// POST /api/v1/servers/import. (binary download — stays here)
+router.get('/servers/:id/export', ensureAuth, async (req, res) => {
+    const server = await serversDb.get(`server_${req.params.id}`);
+    if (!server) return res.status(404).json({ error: 'Not found' });
+
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager?.getProcess(server.id);
+    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+        req.session.flash = { error: 'Stop the server before exporting.' };
+        return res.redirect(`/servers/${server.id}/edit`);
+    }
+
+    const serverDir = path.join(SERVERS_DIR, server.id);
+    if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Directory not found' });
+
+    const includeBackups = req.query.backups === '1';
+    const includeEvents = req.query.events === '1';
+
+    // Hold the backup lock while streaming so a scheduled backup can't write a
+    // partial zip into the archive mid-export.
+    let lockHeld = false;
+    if (includeBackups) {
+        if (!tryAcquireBackupLock(server.id)) {
+            req.session.flash = { error: 'A backup is currently in progress. Try again when it completes.' };
+            return res.redirect(`/servers/${server.id}/edit`);
+        }
+        lockHeld = true;
+    }
+    const releaseLock = () => {
+        if (lockHeld) {
+            releaseBackupLock(server.id);
+            lockHeld = false;
+        }
+    };
+
+    try {
+        const backups = includeBackups ? await listBackups(server.id) : [];
+        let events = [];
+        if (includeEvents) {
+            const allEvents = await eventsDb.all();
+            events = allEvents
+                .map(row => row.value)
+                .filter(e => e.serverId === server.id)
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        }
+        const modEnv = await getModEnvMap(server.id);
+
+        const manifest = {
+            format: 'craftbox-server-export',
+            formatVersion: 1,
+            exportedAt: new Date().toISOString(),
+            craftboxVersion: require('../../package.json').version,
+            server,
+            includes: { backups: includeBackups, events: includeEvents },
+            backupCount: backups.length,
+            eventCount: events.length
+        };
+
+        const archiver = require('archiver');
+        const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', contentDisposition(`${safeName}-export.zip`));
+
+        const archive = archiver('zip', { zlib: { level: 5 } });
+        archive.on('error', (err) => {
+            log('error', `Export archive error for ${server.name}: ${err.message}`);
+            releaseLock();
+            if (!res.headersSent) res.status(500).json({ error: 'Archive failed' });
+        });
+        res.on('close', releaseLock);
+        archive.on('end', releaseLock);
+
+        archive.pipe(res);
+        archive.append(JSON.stringify(manifest, null, 2), { name: 'craftbox-manifest.json' });
+        archive.append(JSON.stringify(modEnv, null, 2), { name: 'modenv.json' });
+        archive.directory(serverDir, 'server');
+
+        if (includeBackups) {
+            archive.append(JSON.stringify(backups, null, 2), { name: 'backups.json' });
+            for (const b of backups) {
+                try {
+                    const zipPath = resolveBackupPath(server.id, b.filename);
+                    if (fs.existsSync(zipPath)) {
+                        archive.file(zipPath, { name: `backups/${b.filename}` });
+                    }
+                } catch { /* skip backups with invalid filenames */ }
+            }
+        }
+        if (includeEvents) {
+            archive.append(JSON.stringify(events, null, 2), { name: 'events.json' });
+        }
+
+        log('info', `Exporting server "${server.name}" (backups: ${includeBackups}, events: ${includeEvents})`);
+        archive.finalize();
+    } catch (err) {
+        releaseLock();
+        log('error', `Export failed for ${server.name}: ${err.message}`);
+        if (!res.headersSent) res.status(500).json({ error: 'Export failed' });
+    }
 });
 
 router.get('/servers/:id/edit-file', ensureAuth, async (req, res) => {
