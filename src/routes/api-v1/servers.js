@@ -237,8 +237,14 @@ router.post('/servers/:id/group', async (req, res) => {
         if (proc) proc.config.group = server.group;
 
         // Groups are implicit — drop the old group's stored color if it emptied.
+        // Best-effort: the move already persisted, so a prune failure must not
+        // fail the request.
         if (previousGroup && previousGroup !== server.group) {
-            await pruneGroupMetaIfEmpty(previousGroup);
+            try {
+                await pruneGroupMetaIfEmpty(previousGroup);
+            } catch (err) {
+                log('error', `Group cleanup failed for "${previousGroup}": ${err.message}`);
+            }
         }
 
         const color = server.group ? await getGroupColor(server.group) : null;
@@ -1385,23 +1391,27 @@ router.delete('/servers/:id', async (req, res) => {
         notifyDashboard(req);
         res.json({ success: true });
 
-        // Background cleanup. Failures here orphan files on disk but do not
-        // affect the user's view, so we only log.
+        // Background cleanup. Each step is isolated so a failure in one (e.g. a
+        // locked file on Windows) can't skip the DB cleanup or group prune that
+        // follow. Failures only orphan data; they don't affect the user's view.
         (async () => {
-            try {
-                const { deleteAllBackups } = require('../../mc/BackupManager');
-                await deleteAllBackups(id);
-                await deleteServerEvents(id);
-                await clearStatsHistory(id);
-                await clearAllModEnv(id);
-                if (server.group) await pruneGroupMetaIfEmpty(server.group);
+            const step = async (label, fn) => {
+                try {
+                    await fn();
+                } catch (err) {
+                    log('error', `Cleanup step "${label}" failed for ${server.name} (${id}): ${err.message}`);
+                }
+            };
 
-                const serverDir = path.join(SERVERS_DIR, id);
-                await fs.promises.rm(serverDir, { recursive: true, force: true });
-                log('info', `Server "${server.name}" (${id}) cleanup complete.`);
-            } catch (err) {
-                log('error', `Background cleanup failed for ${server.name} (${id}): ${err.message}`);
-            }
+            const { deleteAllBackups } = require('../../mc/BackupManager');
+            await step('backups', () => deleteAllBackups(id));
+            await step('events', () => deleteServerEvents(id));
+            await step('stats', () => clearStatsHistory(id));
+            await step('mod metadata', () => clearAllModEnv(id));
+            if (server.group) await step('group', () => pruneGroupMetaIfEmpty(server.group));
+            await step('files', () => fs.promises.rm(path.join(SERVERS_DIR, id), { recursive: true, force: true }));
+
+            log('info', `Server "${server.name}" (${id}) cleanup complete.`);
         })();
     } catch (err) {
         log('error', `Failed to delete server ${id}: ${err.message}`);
@@ -1545,8 +1555,14 @@ router.post('/servers/:id/edit', async (req, res) => {
     server.group = groupResult.value;
     await serversDb.set(`server_${id}`, server);
 
+    // Best-effort cleanup of the old group's color if it emptied — a failure
+    // here must not fail the edit, which already saved.
     if (previousGroup && previousGroup !== server.group) {
-        await pruneGroupMetaIfEmpty(previousGroup);
+        try {
+            await pruneGroupMetaIfEmpty(previousGroup);
+        } catch (err) {
+            log('error', `Group cleanup failed for "${previousGroup}": ${err.message}`);
+        }
     }
 
     const serverDir = path.join(SERVERS_DIR, id);
