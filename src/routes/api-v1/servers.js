@@ -21,6 +21,7 @@ const { PROPERTY_META } = require('../../mc/propertyMeta');
 const { getContentType } = require('../../utils/contentType');
 const { copyModEnvMap, clearAllModEnv, setModEnvMap } = require('../../utils/modEnvironment');
 const { isZipFile } = require('../../utils/uploadSafety');
+const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
@@ -72,7 +73,7 @@ const importUpload = multer({
     }
 });
 
-// Multer config for server icon upload — PNG only, 5 MB limit
+// Multer config for server icon upload — PNG only, 20 MB limit
 const iconUpload = multer({
     dest: os.tmpdir(),
     limits: { fileSize: 20 * 1024 * 1024 },
@@ -248,9 +249,15 @@ router.post('/servers/:id/group', async (req, res) => {
         }
 
         const color = server.group ? await getGroupColor(server.group) : null;
+        if (previousGroup !== server.group) {
+            log('info', server.group
+                ? `Server "${server.name}" (${server.id}) moved to group "${server.group}"${previousGroup ? ` (was "${previousGroup}")` : ''}`
+                : `Server "${server.name}" (${server.id}) removed from group "${previousGroup}"`);
+        }
         notifyDashboard(req);
         res.json({ group: server.group, color });
     } catch (err) {
+        log('error', `Failed to update group for ${req.params.id}: ${err.message}`);
         res.status(500).json({ error: 'Failed to update setting.' });
     }
 });
@@ -555,16 +562,9 @@ router.post('/servers/:id/advertisedip', async (req, res) => {
     }
 });
 
-// POST /servers/:id/icon — Upload server icon
-router.post('/servers/:id/icon', function (req, res, next) {
-    iconUpload.single('icon')(req, res, function (err) {
-        if (err) {
-            return res.status(400).json({ error: err.message || 'Upload failed.' });
-        }
-        next();
-    });
-}, async (req, res) => {
-    const fs = require('fs');
+// Shared by the multipart route and the DGUP complete step, which synthesizes
+// an identical req.file — the response body is the same either way.
+const uploadIconHandler = async (req, res) => {
     try {
         const server = await loadServerOr404(req, res);
         if (!server) return;
@@ -580,10 +580,34 @@ router.post('/servers/:id/icon', function (req, res, next) {
         res.json({ success: true });
     } catch (err) {
         if (req.file) fs.unlink(req.file.path, () => {});
+        // sharp throws on bytes it cannot decode — that's a client problem,
+        // not a server fault.
+        if (/unsupported image|input buffer|input file/i.test(err.message || '')) {
+            log('warn', `Icon upload rejected ("${req.file?.originalname || 'unknown'}"): not a decodable image`);
+            return res.status(400).json({ error: 'Not a valid image.' });
+        }
         log('error', `Failed to update server icon: ${err.message}`);
         res.status(500).json({ error: 'Failed to update server icon.' });
     }
-});
+};
+
+// POST /servers/:id/icon — Upload server icon (single multipart request)
+router.post('/servers/:id/icon', multerShim(iconUpload.single('icon')), uploadIconHandler);
+
+// POST /servers/:id/icon/upload/{init,chunk,complete,cancel} — DGUP chunked icon upload
+router.use('/servers/:id/icon/upload', createDgupRouter({
+    routeKey: 'icon',
+    field: 'icon',
+    fileMode: 'single',
+    maxBytes: 20 * 1024 * 1024,
+    ext: ['.png'],
+    extError: 'Only PNG files are allowed.',
+    mimetype: 'image/png',
+    validate: async (req) => {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        return server ? null : { status: 404, error: 'Server not found.' };
+    }
+}, uploadIconHandler));
 
 // POST /servers/:id/icon/reset — Reset server icon to Craftbox default
 router.post('/servers/:id/icon/reset', async (req, res) => {
@@ -972,29 +996,30 @@ router.post('/servers/:id/kill', async (req, res) => {
     }
 });
 
-// POST /servers/import — Import a server from a Craftbox export archive
-// (created by GET /servers/:id/export). Responds 201 immediately; extraction
-// continues in the background and completes via the WS 'operation' message.
-router.post('/servers/import', function (req, res, next) {
-    importUpload.single('archive')(req, res, function (err) {
-        if (err) {
-            return res.status(400).json({ error: err.message || 'Upload failed.' });
-        }
-        next();
-    });
-}, async (req, res) => {
+// Import handler — shared by the multipart route and the DGUP complete step,
+// which synthesizes an identical req.file. Responds 201 immediately;
+// extraction continues in the background and completes via the WS 'operation'
+// message.
+const importServerHandler = async (req, res) => {
     const tmpPath = req.file?.path;
     const cleanupTemp = () => {
         if (tmpPath) fs.promises.unlink(tmpPath).catch(() => {});
     };
 
+    // Every rejection is logged — a silent 400 leaves nothing server-side to
+    // diagnose "my archive won't import" reports with.
+    const rejectImport = (status, message) => {
+        log('warn', `Import rejected ("${req.file?.originalname || 'unknown'}"): ${message}`);
+        return res.status(status).json({ error: message });
+    };
+
     if (!tmpPath) {
-        return res.status(400).json({ error: 'No archive uploaded.' });
+        return rejectImport(400, 'No archive uploaded.');
     }
 
     if (!isZipFile(tmpPath)) {
         cleanupTemp();
-        return res.status(400).json({ error: 'Not a valid zip archive.' });
+        return rejectImport(400, 'Not a valid zip archive.');
     }
 
     // node-stream-zip reads entry data from disk on demand — archive size is
@@ -1013,12 +1038,12 @@ router.post('/servers/import', function (req, res, next) {
             zipEntries = await zip.entries();
         } catch {
             await discard();
-            return res.status(400).json({ error: 'Failed to read archive.' });
+            return rejectImport(400, 'Failed to read archive.');
         }
 
         if (!zipEntries['craftbox-manifest.json']) {
             await discard();
-            return res.status(400).json({ error: 'Not a Craftbox export archive.' });
+            return rejectImport(400, 'Not a Craftbox export archive.');
         }
 
         let manifest;
@@ -1026,41 +1051,41 @@ router.post('/servers/import', function (req, res, next) {
             manifest = JSON.parse((await zip.entryData('craftbox-manifest.json')).toString('utf8'));
         } catch {
             await discard();
-            return res.status(400).json({ error: 'Export manifest is corrupted.' });
+            return rejectImport(400, 'Export manifest is corrupted.');
         }
         if (manifest.format !== 'craftbox-server-export') {
             await discard();
-            return res.status(400).json({ error: 'Not a Craftbox export archive.' });
+            return rejectImport(400, 'Not a Craftbox export archive.');
         }
         if (manifest.formatVersion !== 1) {
             await discard();
-            return res.status(400).json({ error: 'This archive was created by a newer version of Craftbox and cannot be imported.' });
+            return rejectImport(400, 'This archive was created by a newer version of Craftbox and cannot be imported.');
         }
 
         // Sanity-check the embedded server object before touching disk or DB.
         const source = manifest.server;
         if (!source || typeof source !== 'object' || !UUID_RE.test(String(source.id))) {
             await discard();
-            return res.status(400).json({ error: 'Export manifest is invalid.' });
+            return rejectImport(400, 'Export manifest is invalid.');
         }
         const trimmedName = String(source.name || '').trim();
         if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
             await discard();
-            return res.status(400).json({ error: 'Export manifest contains an invalid server name.' });
+            return rejectImport(400, 'Export manifest contains an invalid server name.');
         }
         if (!getProvider(source.serverType || 'vanilla')) {
             await discard();
-            return res.status(400).json({ error: 'Export manifest contains an unknown server type.' });
+            return rejectImport(400, 'Export manifest contains an unknown server type.');
         }
         const portNum = parseInt(source.port, 10);
         if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
             await discard();
-            return res.status(400).json({ error: 'Export manifest contains an invalid port.' });
+            return rejectImport(400, 'Export manifest contains an invalid port.');
         }
         const memoryNum = parseInt(source.memory, 10);
         if (isNaN(memoryNum) || memoryNum < 512 || memoryNum > 65536) {
             await discard();
-            return res.status(400).json({ error: 'Export manifest contains an invalid memory value.' });
+            return rejectImport(400, 'Export manifest contains an invalid memory value.');
         }
 
         // Reject unsafe or unexpected archive entries up front (zip-slip).
@@ -1069,11 +1094,11 @@ router.post('/servers/import', function (req, res, next) {
             const entryName = String(entry.name).replace(/\\/g, '/');
             if (entryName.startsWith('/') || /^[a-zA-Z]:/.test(entryName) || entryName.split('/').includes('..')) {
                 await discard();
-                return res.status(400).json({ error: 'Archive contains unsafe paths.' });
+                return rejectImport(400, 'Archive contains unsafe paths.');
             }
             if (!entryName.startsWith('server/') && !entryName.startsWith('backups/') && !knownRootFiles.has(entryName)) {
                 await discard();
-                return res.status(400).json({ error: `Archive contains an unexpected entry: ${entryName}` });
+                return rejectImport(400, `Archive contains an unexpected entry: ${entryName}`);
             }
         }
 
@@ -1088,6 +1113,7 @@ router.post('/servers/import', function (req, res, next) {
         const portClash = allServers.map(row => row.value).find(s => s && s.port === portNum);
         if (portClash) {
             warnings.push(`Port ${portNum} is already used by "${portClash.name}". Edit this server's port before starting it.`);
+            log('warn', `Import of "${trimmedName}": port ${portNum} clashes with "${portClash.name}"`);
         }
 
         const groupResult = normalizeGroupName(source.group);
@@ -1112,6 +1138,12 @@ router.post('/servers/import', function (req, res, next) {
         if (importedServer.backupSchedule) delete importedServer.backupSchedule.nextBackupAt;
 
         await serversDb.set(`server_${finalId}`, importedServer);
+        log('info', `Importing server "${trimmedName}" (${finalId}) from "${req.file.originalname}": `
+            + `${Object.keys(zipEntries).length} archive entries`
+            + `${zipEntries['backups.json'] ? ', with backups' : ''}`
+            + `${zipEntries['events.json'] ? ', with events' : ''}`
+            + `${finalId === String(source.id).toLowerCase() ? '' : ` (re-keyed from ${source.id})`}`
+            + ` — extracting in background`);
         notifyDashboard(req);
         res.status(201).json({ success: true, server: importedServer, warnings });
 
@@ -1168,6 +1200,7 @@ router.post('/servers/import', function (req, res, next) {
                     try { backupRecords = JSON.parse((await zip.entryData('backups.json')).toString('utf8')); } catch { /* skip */ }
                     if (Array.isArray(backupRecords)) {
                         ensureBackupDir(finalId);
+                        let restoredBackups = 0;
                         for (const record of backupRecords) {
                             if (!record || typeof record.filename !== 'string') continue;
                             if (!zipEntries[`backups/${record.filename}`]) continue;
@@ -1176,7 +1209,9 @@ router.post('/servers/import', function (req, res, next) {
                             await streamEntryTo(`backups/${record.filename}`, backupPath);
                             const newBackupId = uuidv4();
                             await backupsDb.set(`backup_${newBackupId}`, { ...record, id: newBackupId, serverId: finalId });
+                            restoredBackups++;
                         }
+                        log('info', `Import of "${trimmedName}": restored ${restoredBackups} of ${backupRecords.length} backup(s)`);
                     }
                 }
 
@@ -1185,11 +1220,14 @@ router.post('/servers/import', function (req, res, next) {
                     let eventRecords = [];
                     try { eventRecords = JSON.parse((await zip.entryData('events.json')).toString('utf8')); } catch { /* skip */ }
                     if (Array.isArray(eventRecords)) {
+                        let restoredEvents = 0;
                         for (const record of eventRecords.slice(0, 500)) {
                             if (!record || typeof record !== 'object') continue;
                             const newEventId = uuidv4();
                             await eventsDb.set(`event_${newEventId}`, { ...record, id: newEventId, serverId: finalId });
+                            restoredEvents++;
                         }
+                        log('info', `Import of "${trimmedName}": restored ${restoredEvents} event record(s)`);
                     }
                 }
 
@@ -1231,7 +1269,24 @@ router.post('/servers/import', function (req, res, next) {
             res.status(500).json({ error: `Failed to import server: ${err.message}` });
         }
     }
-});
+};
+
+// POST /servers/import — Import a server from a Craftbox export archive
+// (created by GET /servers/:id/export) as a single multipart request.
+router.post('/servers/import', multerShim(importUpload.single('archive')), importServerHandler);
+
+// POST /servers/import/upload/{init,chunk,complete,cancel} — DGUP chunked
+// import for archives too large for a single request (e.g. behind Cloudflare
+// Tunnel's 100 MB body cap). complete() runs importServerHandler unchanged.
+router.use('/servers/import/upload', createDgupRouter({
+    routeKey: 'import',
+    field: 'archive',
+    fileMode: 'single',
+    maxBytes: Infinity,
+    ext: ['.zip'],
+    extError: 'Only .zip files are allowed.',
+    mimetype: 'application/zip'
+}, importServerHandler));
 
 // POST /servers/:id/duplicate
 router.post('/servers/:id/duplicate', async (req, res) => {

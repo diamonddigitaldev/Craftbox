@@ -133,7 +133,7 @@ The server object returned by these endpoints contains the full configuration (n
 | Method | Path | Description |
 |---|---|---|
 | GET | `/servers/:id/icon` | Returns the icon as `image/png`; `404` if none |
-| POST | `/servers/:id/icon` | Upload. Multipart field `icon`, PNG only, max 20 MB |
+| POST | `/servers/:id/icon` | Upload. Multipart field `icon`, PNG only, max 20 MB. Also accepts [chunked uploads](#chunked-uploads-dgup) at `/servers/:id/icon/upload/*` |
 | POST | `/servers/:id/icon/reset` | Reset to the default icon |
 | DELETE | `/servers/:id/icon` | Remove the icon |
 
@@ -180,7 +180,7 @@ events.json              event history (optional)
 
 ### Import
 
-`POST /servers/import` — multipart upload, field `archive`, `.zip` only. There is no size cap: the archive is streamed to disk on upload and streamed out of the zip on extraction, so size is bounded by disk space rather than memory.
+`POST /servers/import` — multipart upload, field `archive`, `.zip` only. Craftbox imposes no size cap: the archive is streamed to disk on upload and streamed out of the zip on extraction, so size is bounded by disk space rather than memory. A reverse proxy in front of the panel may cap single-request bodies, however (Cloudflare Tunnel cuts them at 100 MB) — use the [chunked upload](#chunked-uploads-dgup) at `/servers/import/upload/*` for large archives, which is what the panel UI does.
 
 Returns `201 {"success": true, "server": {...}, "warnings": [...]}`; extraction continues in the background and completes via WS `operation: "import"`. Validation failures return `400` (not a zip, not a Craftbox export, corrupt manifest, newer `formatVersion`, unsafe paths).
 
@@ -189,6 +189,40 @@ Import behavior:
 - The source server UUID is kept when free on the target instance, otherwise a new UUID is generated. Backup and event records always get fresh IDs.
 - All settings (including `autoStart` and the dashboard group) are preserved; runtime state is reset (`exitCode`, `crashReason`, timestamps) and `advertisedIp` is cleared (host-specific). The server stays stopped after import until started.
 - A port collision with an existing server does not block the import; a warning is returned instead.
+
+
+## Chunked uploads (DGUP)
+
+Every upload endpoint also accepts chunked uploads using the [DGUP protocol](https://github.com/diamonddigitaldev/Dropgate/blob/master/docs/technical/DGUP.md) (Dropgate Upload Protocol, the normative reference — Craftbox implements the init/chunk/complete/cancel lifecycle without Dropgate's E2EE and bundle layers). Use this for files that would exceed a proxy's request-body cap; plain single-request multipart remains fully supported and is the simpler choice for small files.
+
+Each upload endpoint exposes a DGUP sub-resource:
+
+```
+/servers/import/upload/{init,chunk,complete,cancel}
+/servers/:id/icon/upload/{init,chunk,complete,cancel}
+/servers/:id/plugins/upload/{init,chunk,complete,cancel}   (one file per session)
+```
+
+All four are `POST` and require the same auth (and, for session auth, `X-CSRF-Token`) as the parent endpoint.
+
+### Lifecycle
+
+1. **`init`** — body `{filename, totalSize}` (bytes). Validates the destination up front (server exists and is stopped, file type allowed, size within limits) so a doomed upload fails before its first byte. Returns `{"uploadId", "chunkSize", "totalChunks"}` — chunk size is server-dictated (default 5 MiB, `UPLOAD_CHUNK_SIZE_BYTES` env var to override).
+2. **`chunk`** — ×N, raw bytes with `Content-Type: application/octet-stream` and headers `X-Upload-ID`, `X-Chunk-Index` (0-based), `X-Chunk-Hash` (lowercase hex SHA-256 of the chunk). Every chunk except the last must be exactly `chunkSize` bytes. Chunks may arrive in any order; a re-sent chunk that already landed is acknowledged with `200`. Returns `{"success": true, "received": <count>}`.
+3. **`complete`** — body `{uploadId}`. Assembles the file and runs the parent endpoint's normal handler: **the response is identical to the single-request multipart response** (e.g. `201 {"success": true, "server": {...}}` for import). Completion is idempotent — if the response is lost in transit, re-`POST` `complete` and the original outcome is replayed (kept for ~10 minutes) rather than processed twice.
+4. **`cancel`** — body `{uploadId}`. Discards the session and its data.
+
+### Errors
+
+| Code | Meaning |
+|---|---|
+| `400` | Validation failure — bad filename/size, wrong chunk size/index, incomplete upload at `complete`. A hash mismatch is `400` with `"code": "hash_mismatch"` and is worth retrying (transit corruption) |
+| `404` | Unknown upload session (also returned after a session expires or the panel restarts) — restart from `init` |
+| `413` | File exceeds the endpoint's size limit (rejected at `init`) |
+| `429` | Too many concurrent upload sessions (max 5 per user) |
+| `507` | Insufficient disk space |
+
+Sessions expire after 10 minutes without a chunk. Recommended client retry policy (per DGUP §7): up to 5 retries per chunk, exponential backoff from 1 s capped at 30 s, 60 s per-request timeout; treat other `4xx` as fatal.
 
 
 ## Groups
@@ -217,7 +251,7 @@ The server must be `stopped` or `crashed` for all of these.
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/plugins/upload` | Upload jar(s). Multipart, any field names, `.jar` only, max 500 MB each; files are verified to be real zip archives. Returns `{"success": true, "count", "uploaded": [...], "rejected": [{name, reason}]}` |
+| POST | `/servers/:id/plugins/upload` | Upload jar(s). Multipart, any field names, `.jar` only, no size cap (bounded by disk space); files are verified to be real zip archives. Returns `{"success": true, "count", "uploaded": [...], "rejected": [{name, reason}]}`. Also accepts [chunked uploads](#chunked-uploads-dgup) (one jar per session) at `/servers/:id/plugins/upload/*` |
 | POST | `/servers/:id/plugins/delete` | Body: `{filename}` |
 | POST | `/servers/:id/plugins/delete-all` | Delete all plugins/mods |
 | POST | `/servers/:id/plugins/environment` | Mod-loader servers only. Body: `{filename, environment}` where environment is `client`, `server`, or `both`. Client-only mods are disabled on the server but still offered on the status page mods download |

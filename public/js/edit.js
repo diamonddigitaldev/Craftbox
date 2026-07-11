@@ -300,7 +300,8 @@ function _formToBody(form) {
     }
 
     var uploading = false;
-    async function uploadFile(file) {
+    // Named uploadIcon so it does not shadow the global uploadFile (dgup.js).
+    async function uploadIcon(file) {
         if (!file || uploading) return;
         uploading = true;
         if (file.type !== 'image/png') {
@@ -308,15 +309,18 @@ function _formToBody(form) {
             uploading = false;
             return;
         }
-
-        var formData = new FormData();
-        formData.append('icon', file);
+        if (file.size > 20 * 1024 * 1024) {
+            showStatus('danger', 'Icon exceeds the 20 MB limit.');
+            uploading = false;
+            return;
+        }
 
         showSpinner();
         resetBtn.disabled = true;
         showStatus('body-secondary', 'Uploading...');
 
-        var res = await apiFetch('/api/v1/servers/' + serverId + '/icon', { method: 'POST', body: formData });
+        // Chunks icons over the threshold; small ones stay a single request.
+        var res = await uploadFile('/api/v1/servers/' + serverId + '/icon', file, { fieldName: 'icon' });
         hideSpinner();
         if (res.ok && res.data && res.data.success) {
             showStatus('success', 'Icon updated. Restart the server for changes to take effect.');
@@ -337,7 +341,7 @@ function _formToBody(form) {
     });
 
     fileInput.addEventListener('change', function () {
-        uploadFile(fileInput.files[0]);
+        uploadIcon(fileInput.files[0]);
         fileInput.value = '';
     });
 
@@ -363,7 +367,7 @@ function _formToBody(form) {
         dropArea.style.borderColor = '';
         dropArea.style.boxShadow = '';
         var file = e.dataTransfer.files[0];
-        if (file) uploadFile(file);
+        if (file) uploadIcon(file);
     });
 
     deleteBtn.addEventListener('click', async function (e) {

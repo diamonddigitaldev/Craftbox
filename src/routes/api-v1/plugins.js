@@ -16,6 +16,7 @@ const {
 } = require('../../utils/modEnvironment');
 const { isPathInside } = require('../../utils/pathSafety');
 const { cleanupTempFiles, isZipFile } = require('../../utils/uploadSafety');
+const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,9 +33,10 @@ async function getServerWithState(req) {
     return server;
 }
 
+// No size cap — files are streamed to disk by multer (or assembled on disk by
+// DGUP), so size is bounded by disk space rather than memory, same as import.
 const upload = multer({
     dest: os.tmpdir(),
-    limits: { fileSize: 500 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         if (file.originalname.toLowerCase().endsWith('.jar')) {
             cb(null, true);
@@ -44,15 +46,9 @@ const upload = multer({
     }
 });
 
-// POST /servers/:id/plugins/upload — Upload JAR file(s)
-router.post('/servers/:id/plugins/upload', function (req, res, next) {
-    upload.any()(req, res, function (err) {
-        if (err) {
-            return res.status(400).json({ error: err.message || 'Upload failed.' });
-        }
-        next();
-    });
-}, async (req, res) => {
+// Shared by the multipart route and the DGUP complete step, which synthesizes
+// an identical req.files — the response body is the same either way.
+const uploadPluginsHandler = async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         cleanupTempFiles(req.files);
@@ -113,7 +109,33 @@ router.post('/servers/:id/plugins/upload', function (req, res, next) {
         log('warn', `Rejected ${rejected.length} upload(s) to server ${server.name} (${server.id}): ${rejected.map(r => `${r.name} (${r.reason})`).join(', ')}`);
     }
     res.json({ success: true, count: uploaded.length, uploaded, rejected });
-});
+};
+
+// POST /servers/:id/plugins/upload — Upload JAR file(s) (single multipart request)
+router.post('/servers/:id/plugins/upload', multerShim(upload.any()), uploadPluginsHandler);
+
+// POST /servers/:id/plugins/upload/{init,chunk,complete,cancel} — DGUP chunked
+// upload for JARs too large for a single request (e.g. behind Cloudflare
+// Tunnel's 100 MB body cap). complete() runs uploadPluginsHandler unchanged.
+router.use('/servers/:id/plugins/upload', createDgupRouter({
+    routeKey: 'plugins',
+    field: 'files',
+    fileMode: 'array',
+    maxBytes: Infinity,
+    ext: ['.jar'],
+    extError: 'Only .jar files are allowed.',
+    mimetype: 'application/java-archive',
+    validate: async (req) => {
+        const server = await getServerWithState(req);
+        if (!server) return { status: 404, error: 'Server not found.' };
+        const contentType = getContentType(server.serverType);
+        if (!contentType) return { status: 400, error: 'This server type does not support plugins or mods.' };
+        if (!['stopped', 'crashed'].includes(server.state)) {
+            return { status: 400, error: `Stop the server before uploading ${contentType.label.toLowerCase()}.` };
+        }
+        return null;
+    }
+}, uploadPluginsHandler));
 
 // POST /servers/:id/plugins/delete — Delete a single plugin/mod
 router.post('/servers/:id/plugins/delete', async (req, res) => {

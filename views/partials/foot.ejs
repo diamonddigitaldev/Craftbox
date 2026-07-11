@@ -2,6 +2,8 @@
 <%- include('footer') %>
 <script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="/js/app.js"></script>
+<script src="/js/sha256.js"></script>
+<script src="/js/dgup.js"></script>
 <% if (typeof scripts !== 'undefined' && Array.isArray(scripts)) { %>
     <% scripts.forEach(function(src) { %>
         <script src="<%= src %>"></script>

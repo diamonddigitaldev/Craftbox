@@ -10,6 +10,11 @@
     var progressBar = progressWrap.querySelector('.progress-bar');
     var importBtn = document.getElementById('import-server-btn');
     var uploading = false;
+    var currentUpload = null; // AbortController while an upload is running
+
+    function isModalOpen() {
+        return modalEl.classList.contains('show');
+    }
 
     function resetModal() {
         uploading = false;
@@ -23,7 +28,10 @@
 
     importBtn?.addEventListener('click', function () {
         resetModal();
-        new bootstrap.Modal(modalEl).show();
+        // getOrCreateInstance, never `new`: a second Modal instance on an
+        // already-shown element creates a second backdrop that is orphaned on
+        // close, leaving the page stuck under a dark overlay.
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
     });
 
     fileInput.addEventListener('change', function () {
@@ -33,27 +41,12 @@
     function startImport(file) {
         if (!file || uploading) return;
         uploading = true;
+        currentUpload = new AbortController();
 
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Importing...';
         fileInput.disabled = true;
         progressWrap.classList.remove('d-none');
-
-        var formData = new FormData();
-        formData.append('archive', file);
-
-        // XMLHttpRequest instead of apiFetch — fetch has no upload-progress
-        // events, and transfer archives can be gigabytes.
-        var xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/v1/servers/import');
-        xhr.setRequestHeader('X-CSRF-Token', _findCsrfToken());
-        xhr.responseType = 'json';
-
-        xhr.upload.addEventListener('progress', function (e) {
-            if (e.lengthComputable) {
-                progressBar.style.width = Math.round((e.loaded / e.total) * 100) + '%';
-            }
-        });
 
         function fail(message) {
             showToast(message || 'Import failed.', 'danger');
@@ -65,9 +58,24 @@
             progressBar.style.width = '0%';
         }
 
-        xhr.addEventListener('load', function () {
-            var data = xhr.response || {};
-            if (xhr.status !== 201) {
+        // uploadFile (dgup.js) sends small archives as a single multipart POST
+        // and chunks anything larger, so multi-GB transfers survive proxies
+        // with request-body caps (e.g. Cloudflare Tunnel's 100 MB).
+        uploadFile('/api/v1/servers/import', file, {
+            fieldName: 'archive',
+            signal: currentUpload.signal,
+            onProgress: function (loaded, total) {
+                progressBar.style.width = Math.round((loaded / total) * 100) + '%';
+            }
+        }).then(function (res) {
+            currentUpload = null;
+            if (res.aborted) {
+                showToast('Import cancelled.', 'info');
+                resetModal();
+                return;
+            }
+            var data = res.data || {};
+            if (res.status !== 201) {
                 fail(data && data.error);
                 return;
             }
@@ -76,14 +84,16 @@
             var serverId = data.server && data.server.id;
             window.location.href = serverId ? '/servers/' + serverId : '/dashboard';
         });
-        xhr.addEventListener('error', function () {
-            fail('Upload failed. Check your connection and try again.');
-        });
-        xhr.send(formData);
     }
 
     confirmBtn.addEventListener('click', function () {
         startImport(fileInput.files[0]);
+    });
+
+    // Closing the modal mid-upload (Cancel button, X, Esc, backdrop click)
+    // aborts the transfer and frees the server-side upload session.
+    modalEl.addEventListener('hide.bs.modal', function () {
+        if (currentUpload) currentUpload.abort();
     });
 
     // Submit on Enter while the modal is open
@@ -110,9 +120,13 @@
             dropOverlay.classList.remove('d-flex');
         }
 
+        // No overlay while the import modal is open: the modal is already the
+        // drop target, and the overlay (z-index 1050) would render BEHIND the
+        // modal dialog (1055) as a broken-looking background blur. Dropping
+        // still works — the drop handler below runs either way.
         document.addEventListener('dragenter', function (e) {
             e.preventDefault();
-            if (isOverlayVisible() || uploading) return;
+            if (isOverlayVisible() || uploading || isModalOpen()) return;
             dragCounter++;
             if (dragCounter === 1) {
                 dropOverlay.classList.remove('d-none');
@@ -122,7 +136,7 @@
 
         document.addEventListener('dragleave', function (e) {
             e.preventDefault();
-            if (isOverlayVisible() || uploading) return;
+            if (isOverlayVisible() || uploading || isModalOpen()) return;
             dragCounter--;
             if (dragCounter === 0) hideDropOverlay();
         });
@@ -141,14 +155,17 @@
             }
 
             // Show the modal (with the file reflected in the input) and start
-            // uploading immediately, like the plugins page.
+            // uploading immediately, like the plugins page. The modal may
+            // already be open (user clicked Import, then dropped a file) —
+            // getOrCreateInstance reuses the live instance, and show() is a
+            // no-op while shown, so no duplicate backdrop.
             resetModal();
             try {
                 var dt = new DataTransfer();
                 dt.items.add(zipFile);
                 fileInput.files = dt.files;
             } catch (_) { /* input stays empty — upload proceeds regardless */ }
-            new bootstrap.Modal(modalEl).show();
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
             startImport(zipFile);
         });
     }

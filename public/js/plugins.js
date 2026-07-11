@@ -98,57 +98,89 @@
         if (fileInput) fileInput.disabled = true;
         showOverlay('Uploading ' + uploadLabel + '...', 'This may take a moment for large files.');
 
-        var formData = new FormData();
-        for (var i = 0; i < jarFiles.length; i++) {
-            formData.append('files', jarFiles[i]);
-        }
+        var uploaded = [];
+        var rejected = [];
+        var failure = null;
 
         try {
-            var res = await fetch('/api/v1/servers/' + serverId + '/plugins/upload', {
-                method: 'POST',
-                headers: { 'X-CSRF-Token': csrf },
-                body: formData
-            });
-
-            var data = await res.json();
-            if (res.ok && data.success) {
-                var uploadedCount = (data.uploaded && data.uploaded.length) || data.count || 0;
-                var rejectedCount = (data.rejected && data.rejected.length) || 0;
-                var noun = uploadedCount === 1 ? contentSingular : contentLabel;
-
-                if (uploadedCount === 0) {
-                    // Nothing made it through — show a danger toast and stay on the page.
-                    var allRejectedMsg = rejectedCount === 1
-                        ? 'File rejected: not a valid JAR.'
-                        : 'No files uploaded — all rejected as invalid JARs.';
-                    showToast(allRejectedMsg, 'danger');
-                    if (uploadBtn) uploadBtn.disabled = false;
-                    if (fileInput) fileInput.disabled = false;
-                    hideOverlay();
-                } else if (rejectedCount > 0) {
-                    // Partial success — reload to show what landed, with a warning toast.
-                    flashToast(
-                        uploadedCount + ' ' + noun + ' uploaded, '
-                            + rejectedCount + ' rejected (invalid JAR).',
-                        'warning'
-                    );
-                    window.location.reload();
+            var totalBytes = jarFiles.reduce(function (sum, f) { return sum + f.size; }, 0);
+            if (jarFiles.length > 0 && totalBytes <= DGUP_THRESHOLD) {
+                // Small selection — one multipart request for all files, as before.
+                var formData = new FormData();
+                for (var i = 0; i < jarFiles.length; i++) {
+                    formData.append('files', jarFiles[i]);
+                }
+                var res = await fetch('/api/v1/servers/' + serverId + '/plugins/upload', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrf },
+                    body: formData
+                });
+                var data = await res.json();
+                if (res.ok && data.success) {
+                    uploaded = data.uploaded || [];
+                    rejected = rejected.concat(data.rejected || []);
                 } else {
-                    // Clean success path.
-                    flashToast(uploadedCount + ' ' + noun + ' uploaded.', 'success');
-                    window.location.reload();
+                    failure = (data && data.error) || 'Upload failed.';
                 }
             } else {
-                showToast(data.error || 'Upload failed.', 'danger');
-                if (uploadBtn) uploadBtn.disabled = false;
-                if (fileInput) fileInput.disabled = false;
-                hideOverlay();
+                // Large selection — one upload per jar (uploadFile chunks
+                // anything over the threshold so 100+ MB mods survive proxies
+                // with request-body caps), merging the per-file results.
+                for (var j = 0; j < jarFiles.length; j++) {
+                    var file = jarFiles[j];
+                    var prefix = (jarFiles.length > 1 ? (j + 1) + ' of ' + jarFiles.length + ' — ' : '') + file.name;
+                    showOverlay('Uploading ' + uploadLabel + '...', prefix);
+                    var result = await uploadFile('/api/v1/servers/' + serverId + '/plugins/upload', file, {
+                        fieldName: 'files',
+                        csrfToken: csrf,
+                        onProgress: function (loaded, total) {
+                            showOverlay('Uploading ' + uploadLabel + '...',
+                                prefix + ' (' + Math.round((loaded / total) * 100) + '%)');
+                        }
+                    });
+                    if (result.ok && result.data && result.data.success) {
+                        uploaded = uploaded.concat(result.data.uploaded || []);
+                        rejected = rejected.concat(result.data.rejected || []);
+                    } else {
+                        failure = (result.data && result.data.error) || 'Upload failed.';
+                        break;
+                    }
+                }
             }
         } catch {
-            showToast('Upload failed. Please try again.', 'danger');
+            failure = 'Upload failed. Please try again.';
+        }
+
+        var uploadedCount = uploaded.length;
+        var rejectedCount = rejected.length;
+        var noun = uploadedCount === 1 ? contentSingular : contentLabel;
+
+        if (failure && uploadedCount > 0) {
+            // Some files landed before the failure — reload to show them.
+            flashToast(uploadedCount + ' ' + noun + ' uploaded, then: ' + failure, 'warning');
+            window.location.reload();
+        } else if (failure) {
+            showToast(failure, 'danger');
             if (uploadBtn) uploadBtn.disabled = false;
             if (fileInput) fileInput.disabled = false;
             hideOverlay();
+        } else if (uploadedCount === 0) {
+            // Nothing made it through — show a danger toast and stay on the page.
+            var allRejectedMsg = rejectedCount === 1
+                ? 'File rejected: ' + ((rejected[0] && rejected[0].reason) || 'not a valid JAR') + '.'
+                : 'No files uploaded — all ' + rejectedCount + ' were rejected.';
+            showToast(allRejectedMsg, 'danger');
+            if (uploadBtn) uploadBtn.disabled = false;
+            if (fileInput) fileInput.disabled = false;
+            hideOverlay();
+        } else if (rejectedCount > 0) {
+            // Partial success — reload to show what landed, with a warning toast.
+            flashToast(uploadedCount + ' ' + noun + ' uploaded, ' + rejectedCount + ' rejected.', 'warning');
+            window.location.reload();
+        } else {
+            // Clean success path.
+            flashToast(uploadedCount + ' ' + noun + ' uploaded.', 'success');
+            window.location.reload();
         }
     }
 

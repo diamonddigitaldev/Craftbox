@@ -85,6 +85,11 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
             secret: sessionSecret,
             resave: false,
             saveUninitialized: false,
+            // Refresh the cookie on every response: the 1-hour limit is an
+            // idle timeout, not an absolute one. Without this, chunked uploads
+            // (which re-authenticate per chunk) start 401-ing when a long
+            // transfer crosses the cookie's original expiry.
+            rolling: true,
             cookie: {
                 httpOnly: true,
                 secure: NODE_ENV === 'production',
@@ -164,17 +169,20 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
 
         // Global error handler
         app.use((err, req, res, next) => {
+            // Honour statuses set by middleware (e.g. body-parser's 413) —
+            // reporting everything as 500 hides actionable client errors.
+            const status = err.status || err.statusCode || 500;
             log('error', `Unhandled error: ${err.message}`);
             if (NODE_ENV !== 'production') {
                 log('error', err.stack);
             }
             if (req.path.startsWith('/api/')) {
-                return res.status(500).json({
-                    error: 'internal_error',
-                    message: NODE_ENV === 'production' ? undefined : err.message
+                return res.status(status).json({
+                    error: status >= 500 ? 'internal_error' : (err.type || 'request_error'),
+                    message: NODE_ENV === 'production' && status >= 500 ? undefined : err.message
                 });
             }
-            res.status(500).render('errors/500', {
+            res.status(status).render('errors/500', {
                 title: 'Error',
                 navbar: !!req.user,
                 user: req.user || null,
@@ -200,6 +208,9 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
 
         // ── 12. Start background stats collection ──
         statsCollector.start();
+
+        // Sweep orphaned chunked-upload part files and start the session reaper
+        require('./middleware/dgup').initDgup();
 
         // ── 13. Graceful shutdown ──
         let shuttingDown = false;

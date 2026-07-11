@@ -1,4 +1,23 @@
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// Namespaced staging area for in-progress DGUP chunked uploads. Part files
+// here are only meaningful alongside the in-memory session map, so the whole
+// directory is safe to wipe on boot.
+const UPLOAD_DIR = path.join(os.tmpdir(), 'craftbox-uploads');
+
+function ensureUploadDir() {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// Boot-time sweep: after a restart every part file is orphaned (sessions are
+// in-memory), so clear the staging area outright. Also reclaims files leaked
+// by a crash mid-upload.
+function sweepUploadDir() {
+    try { fs.rmSync(UPLOAD_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
+    ensureUploadDir();
+}
 
 // Removes multer temp files after an upload has been handled (or rejected).
 function cleanupTempFiles(files) {
@@ -29,4 +48,4 @@ function isZipFile(filepath) {
     }
 }
 
-module.exports = { cleanupTempFiles, isZipFile };
+module.exports = { cleanupTempFiles, isZipFile, UPLOAD_DIR, ensureUploadDir, sweepUploadDir };

@@ -10,6 +10,9 @@ window.CRAFTBOX_CLIENT_ID = window.CRAFTBOX_CLIENT_ID
 // the response. Returns { ok, status, data }. Never throws on HTTP errors.
 function _findCsrfToken() {
     var el = document.querySelector('input[name="_csrf"]');
+    if (el) return el.value;
+    // Some pages (plugins, backups) expose the token as #csrf-token instead
+    el = document.getElementById('csrf-token');
     return el ? el.value : '';
 }
 async function apiFetch(path, options) {

@@ -368,12 +368,14 @@ td > .material-icons-outlined {
     to { opacity: 1; }
 }
 
-/* ---- Drop Overlay ---- */
-#drop-overlay {
+/* ---- Drop Overlays (plugins page + dashboard import) ---- */
+#drop-overlay,
+#import-drop-overlay {
     animation: overlay-fade-in 0.2s ease-out;
 }
 
-#drop-overlay .material-icons-outlined {
+#drop-overlay .material-icons-outlined,
+#import-drop-overlay .material-icons-outlined {
     animation: drop-breathe 1.5s ease-in-out infinite;
 }
 

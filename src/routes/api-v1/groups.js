@@ -9,6 +9,7 @@ const {
     GROUP_NAME_ERROR,
     GROUP_COLOR_REGEX
 } = require('../../utils/serverGroups');
+const { log } = require('../../utils/log');
 
 // Notify all open dashboard/group pages of a grouping change so they refresh.
 function notifyDashboard(req) {
@@ -24,6 +25,7 @@ router.get('/groups', async (req, res) => {
         const groups = await getGroupsWithMeta();
         res.json({ groups });
     } catch (err) {
+        log('error', `Failed to fetch groups: ${err.message}`);
         res.status(500).json({ error: 'Failed to fetch groups.' });
     }
 });
@@ -47,9 +49,11 @@ router.post('/groups/:name', async (req, res) => {
         }
 
         await setGroupColor(name, color);
+        log('info', `Group "${name}" color set to ${color}`);
         notifyDashboard(req);
         res.json({ name, color });
     } catch (err) {
+        log('error', `Failed to update group "${req.params.name}": ${err.message}`);
         res.status(500).json({ error: 'Failed to update group.' });
     }
 });
@@ -86,9 +90,11 @@ router.post('/groups/:name/rename', async (req, res) => {
         }
 
         const color = await getGroupColor(newName);
+        log('info', `Group "${oldName}" renamed to "${newName}" (${affectedIds.length} server${affectedIds.length === 1 ? '' : 's'} moved)`);
         notifyDashboard(req);
         res.json({ name: newName, color });
     } catch (err) {
+        log('error', `Failed to rename group "${req.params.name}": ${err.message}`);
         res.status(500).json({ error: 'Failed to rename group.' });
     }
 });

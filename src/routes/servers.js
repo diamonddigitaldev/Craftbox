@@ -388,6 +388,16 @@ router.get('/servers/:id/export', ensureAuth, async (req, res) => {
         res.on('close', releaseLock);
         archive.on('end', releaseLock);
         res.on('finish', startServerAfterExport);
+        // 'finish' = the full archive reached the client; 'close' without it
+        // means the download was abandoned mid-stream.
+        res.on('finish', () => {
+            log('info', `Export of "${server.name}" (${server.id}) completed — ${formatSize(archive.pointer())} sent`);
+        });
+        res.on('close', () => {
+            if (!res.writableFinished) {
+                log('warn', `Export of "${server.name}" (${server.id}) aborted by client after ${formatSize(archive.pointer())}`);
+            }
+        });
 
         archive.pipe(res);
         archive.append(JSON.stringify(manifest, null, 2), { name: 'craftbox-manifest.json' });
@@ -409,7 +419,7 @@ router.get('/servers/:id/export', ensureAuth, async (req, res) => {
             archive.append(JSON.stringify(events, null, 2), { name: 'events.json' });
         }
 
-        log('info', `Exporting server "${server.name}" (backups: ${includeBackups}, events: ${includeEvents})`);
+        log('info', `Exporting server "${server.name}" (${server.id}) — backups: ${includeBackups} (${backups.length}), events: ${includeEvents} (${events.length}), startAfter: ${startAfter}`);
         archive.finalize();
     } catch (err) {
         releaseLock();
