@@ -85,7 +85,7 @@
 
             var serverName = card.dataset.serverName || 'Server';
             showToast(newGroup
-                ? '"' + serverName + '" added to ' + newGroup + '.'
+                ? '"' + serverName + '" added to group "' + newGroup + '".'
                 : '"' + serverName + '" removed from its group.', 'success');
 
             if (newGroup && groupNames.indexOf(newGroup) === -1) groupNames.push(newGroup);
