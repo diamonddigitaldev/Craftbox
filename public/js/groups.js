@@ -84,12 +84,18 @@
             bootstrap.Modal.getInstance(modalEl)?.hide();
 
             var serverName = card.dataset.serverName || 'Server';
-            showToast(newGroup
+            var message = newGroup
                 ? '"' + serverName + '" added to group "' + newGroup + '".'
-                : '"' + serverName + '" removed from its group.', 'success');
+                : '"' + serverName + '" removed from its group.';
 
             if (newGroup && groupNames.indexOf(newGroup) === -1) groupNames.push(newGroup);
-            applyLiveUpdate(card, newGroup, res.data.color);
+            var redirecting = applyLiveUpdate(card, newGroup, res.data.color);
+            if (redirecting) {
+                // The empty-group redirect to /dashboard would wipe a regular toast
+                flashToast(message, 'success');
+            } else {
+                showToast(message, 'success');
+            }
             activeCard = null;
         }
 
@@ -111,6 +117,8 @@
         });
     }
 
+    // Returns true when the update triggers a navigation, so callers know a
+    // regular toast would be wiped and must use flashToast instead.
     function applyLiveUpdate(card, newGroup, color) {
         var col = card.closest('[class*="col-"]');
         card.dataset.group = newGroup || '';
@@ -122,9 +130,12 @@
                 var remaining = grid.querySelectorAll('.server-card').length;
                 var countEl = document.getElementById('group-page-count');
                 if (countEl) countEl.textContent = remaining;
-                if (remaining === 0) window.location.href = '/dashboard';
+                if (remaining === 0) {
+                    window.location.href = '/dashboard';
+                    return true;
+                }
             }
-            return;
+            return false;
         }
 
         // Dashboard: only ungrouped servers render as cards, so a move into a
@@ -133,6 +144,7 @@
             col?.remove();
             bumpTile(newGroup, color);
         }
+        return false;
     }
 
     function bumpTile(name, color) {
