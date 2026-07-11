@@ -70,10 +70,18 @@ document.addEventListener('DOMContentLoaded', function () {
     var keyNameInput = document.getElementById('keyName');
     var confirmCreateBtn = document.getElementById('confirm-create-key-btn');
 
+    // Only enable "Generate Key" while the name is valid (non-blank and matches the input's pattern)
+    function checkKeyName() {
+        confirmCreateBtn.disabled = !(keyNameInput.checkValidity() && keyNameInput.value.trim().length > 0);
+    }
+
+    keyNameInput.addEventListener('input', checkKeyName);
+
     if (createKeyBtn) {
         createKeyBtn.addEventListener('click', function () {
             keyNameInput.value = '';
             keyNameInput.setCustomValidity('');
+            checkKeyName();
             createKeyModal.show();
         });
     }
