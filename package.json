@@ -1,6 +1,6 @@
 {
     "name": "craftbox",
-    "version": "1.0.0",
+    "version": "1.1.0-beta.1",
     "description": "A modern self-hosted platform for managing Minecraft servers with built-in mod support.",
     "main": "src/server.js",
     "funding": {
@@ -29,7 +29,6 @@
     "author": "Diamond Digital Development <https://diamonddigital.dev>",
     "license": "AGPL-3.0-only",
     "dependencies": {
-        "adm-zip": "^0.5.16",
         "archiver": "^7.0.1",
         "bcrypt": "^6.0.0",
         "better-sqlite3": "^12.10.0",
@@ -42,11 +41,12 @@
         "express-session": "^1.19.0",
         "material-icons": "^1.13.14",
         "multer": "^2.1.1",
+        "node-stream-zip": "^1.15.0",
         "passport": "^0.7.0",
         "passport-local": "^1.0.0",
         "quick.db": "^9.1.7",
         "sharp": "^0.34.5",
-        "uuid": "^14.0.0",
+        "uuid": "^14.0.1",
         "ws": "^8.20.1"
     }
 }

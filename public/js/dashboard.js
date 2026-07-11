@@ -15,6 +15,22 @@
     let ws = null;
     let reconnectAttempts = 0;
 
+    // Debounced reload so a burst of structural changes coalesces into one refresh.
+    var reloadTimer = null;
+    function scheduleDashboardReload() {
+        if (reloadTimer) return;
+        var attempt = function () {
+            // Don't yank the page out from under an open modal (e.g. the user is
+            // mid Add-to-Group) — wait for it to close first.
+            if (document.querySelector('.modal.show')) {
+                reloadTimer = setTimeout(attempt, 1000);
+                return;
+            }
+            window.location.reload();
+        };
+        reloadTimer = setTimeout(attempt, 400);
+    }
+
     // Collect all server IDs on the page
     function getServerIds() {
         const cards = grid.querySelectorAll('.server-card');
@@ -53,6 +69,14 @@
                     updateCardStat(msg.serverId, 'players', msg.playerCount);
                 }
                 updateLastStarted(msg.serverId, msg.state, msg.lastStarted);
+            }
+            if (msg.type === 'dashboard-changed') {
+                // A server was created/deleted or a group changed somewhere else.
+                // The tab that made the change already updated itself (or navigated),
+                // so it skips its own broadcast; every other view refreshes.
+                if (!msg.origin || msg.origin !== window.CRAFTBOX_CLIENT_ID) {
+                    scheduleDashboardReload();
+                }
             }
         };
 

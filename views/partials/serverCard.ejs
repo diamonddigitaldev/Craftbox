@@ -1,6 +1,8 @@
 <%
 // stateColors / stateIcons / stateDisplayNames / getState* helpers come from
 // res.locals (injected by serverStateMeta.injectIntoLocals middleware).
+// groupNames is only passed by the dashboard — other pages get no group menu.
+const cardGroupNames = typeof groupNames !== 'undefined' && Array.isArray(groupNames) ? groupNames : null;
 const color = getStateColor(server.state);
 const icon = getStateIcon(server.state);
 const displayName = getStateDisplayName(server.state);
@@ -9,7 +11,8 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
     : (server.version || '(Unknown Version)');
 %>
 <div class="col-md-6 col-xl-4 mb-4">
-    <div class="card server-card h-100 border-<%= color %>" data-server-id="<%= server.id %>" data-state="<%= server.state %>">
+    <div class="card server-card h-100 border-<%= color %>" data-server-id="<%= server.id %>" data-state="<%= server.state %>"
+        data-server-name="<%= server.name %>" data-group="<%= server.group || '' %>">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-start mb-3">
                 <div>
@@ -44,25 +47,38 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
                     <span class="card-stat-uptime">--</span>
                 </span>
             </div>
-            <div class="d-flex gap-2 server-actions" data-server-id="<%= server.id %>">
-                <button type="button"
-                    class="btn btn-success btn-sm d-flex align-items-center gap-1 server-action-btn server-action-start<%= ['stopped', 'crashed'].includes(server.state) ? '' : ' d-none' %>"
-                    data-action="start">
-                    <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
-                </button>
-                <button type="button"
-                    class="btn btn-warning btn-sm d-flex align-items-center gap-1 server-action-btn server-action-stop<%= ['running', 'starting'].includes(server.state) ? '' : ' d-none' %>"
-                    data-action="stop">
-                    <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
-                </button>
-                <button type="button"
-                    class="btn btn-info btn-sm d-flex align-items-center gap-1 server-action-btn server-action-restart<%= server.state === 'running' ? '' : ' d-none' %>"
-                    data-action="restart">
-                    <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
-                </button>
-                <a href="/servers/<%= server.id %>" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1 ms-auto">
-                    <span class="material-icons-outlined" style="font-size: 1rem;">settings</span> Manage
-                </a>
+            <div class="server-actions" data-server-id="<%= server.id %>">
+                <div class="server-actions-inner">
+                    <div class="d-flex flex-wrap gap-2 server-actions-primary">
+                        <button type="button"
+                            class="btn btn-success btn-sm d-flex align-items-center gap-1 server-action-btn server-action-start<%= ['stopped', 'crashed'].includes(server.state) ? '' : ' d-none' %>"
+                            data-action="start">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
+                        </button>
+                        <button type="button"
+                            class="btn btn-warning btn-sm d-flex align-items-center gap-1 server-action-btn server-action-stop<%= ['running', 'starting'].includes(server.state) ? '' : ' d-none' %>"
+                            data-action="stop">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
+                        </button>
+                        <button type="button"
+                            class="btn btn-info btn-sm d-flex align-items-center gap-1 server-action-btn server-action-restart<%= server.state === 'running' ? '' : ' d-none' %>"
+                            data-action="restart">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
+                        </button>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 server-actions-secondary">
+                        <% if (cardGroupNames) { %>
+                        <button type="button"
+                            class="btn btn-outline-light btn-sm d-flex align-items-center gap-1 add-group-btn"
+                            title="Assign Group">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">drive_file_move</span> Group
+                        </button>
+                        <% } %>
+                        <a href="/servers/<%= server.id %>" class="btn btn-outline-light btn-sm d-flex align-items-center gap-1">
+                            <span class="material-icons-outlined" style="font-size: 1rem;">settings</span> Manage
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="card-footer bg-danger bg-opacity-10 text-danger small server-crash-footer<%= server.state === 'crashed' ? '' : ' d-none' %>">

@@ -3,9 +3,11 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const StreamZip = require('node-stream-zip');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
-const { serversDb, SERVERS_DIR } = require('../../db');
+const { serversDb, backupsDb, eventsDb, SERVERS_DIR } = require('../../db');
+const { ensureBackupDir, resolveBackupPath } = require('../../mc/BackupManager');
 const { getProvider, listProviders } = require('../../mc/serverTypes');
 const { downloadServerJar } = require('../../mc/downloader');
 const { log } = require('../../utils/log');
@@ -17,10 +19,12 @@ const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath, copyDefau
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../../mc/serverProperties');
 const { PROPERTY_META } = require('../../mc/propertyMeta');
 const { getContentType } = require('../../utils/contentType');
-const { copyModEnvMap, clearAllModEnv } = require('../../utils/modEnvironment');
+const { copyModEnvMap, clearAllModEnv, setModEnvMap } = require('../../utils/modEnvironment');
+const { isZipFile } = require('../../utils/uploadSafety');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
+const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
 
 // Shared 404 helper — returns the server record or sends 404 JSON and returns null.
 // The caller must `return` after a null result.
@@ -33,6 +37,15 @@ async function loadServerOr404(req, res) {
     return server;
 }
 
+// Notify all open dashboard/group pages that the server list or grouping changed
+// so they can live-refresh. `origin` lets the initiating tab skip its own event.
+function notifyDashboard(req) {
+    req.app.get('serverManager')?.broadcastGlobal?.({
+        type: 'dashboard-changed',
+        origin: req.get('x-client-id') || null
+    });
+}
+
 const TEXT_EXTENSIONS = new Set([
     '.txt', '.log', '.properties', '.json', '.yml', '.yaml', '.xml',
     '.cfg', '.conf', '.ini', '.toml', '.csv', '.md', '.sh', '.bat',
@@ -42,6 +55,22 @@ const TEXT_EXTENSIONS = new Set([
 function isTextFile(filename) {
     return TEXT_EXTENSIONS.has(path.extname(filename).toLowerCase());
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Multer config for transfer archive import — .zip only, no size cap (the
+// archive is streamed to disk on upload and streamed out of the zip on
+// extraction, so size is bounded by disk space, not memory).
+const importUpload = multer({
+    dest: os.tmpdir(),
+    fileFilter: (_req, file, cb) => {
+        if (file.originalname.toLowerCase().endsWith('.zip')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only .zip files are allowed.'));
+        }
+    }
+});
 
 // Multer config for server icon upload — PNG only, 5 MB limit
 const iconUpload = multer({
@@ -183,6 +212,44 @@ router.post('/servers/:id/autostart', async (req, res) => {
         if (proc) proc.config.autoStart = server.autoStart;
 
         res.json({ autoStart: server.autoStart });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update setting.' });
+    }
+});
+
+// POST /servers/:id/group — Assign the server to a dashboard group (null/empty to ungroup)
+router.post('/servers/:id/group', async (req, res) => {
+    try {
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
+
+        const { valid, value } = normalizeGroupName(req.body.group);
+        if (!valid) {
+            return res.status(400).json({ error: GROUP_NAME_ERROR });
+        }
+
+        const previousGroup = server.group || null;
+        server.group = value;
+        await serversDb.set(`server_${server.id}`, server);
+
+        const serverManager = req.app.get('serverManager');
+        const proc = serverManager?.getProcess(server.id);
+        if (proc) proc.config.group = server.group;
+
+        // Groups are implicit — drop the old group's stored color if it emptied.
+        // Best-effort: the move already persisted, so a prune failure must not
+        // fail the request.
+        if (previousGroup && previousGroup !== server.group) {
+            try {
+                await pruneGroupMetaIfEmpty(previousGroup);
+            } catch (err) {
+                log('error', `Group cleanup failed for "${previousGroup}": ${err.message}`);
+            }
+        }
+
+        const color = server.group ? await getGroupColor(server.group) : null;
+        notifyDashboard(req);
+        res.json({ group: server.group, color });
     } catch (err) {
         res.status(500).json({ error: 'Failed to update setting.' });
     }
@@ -603,7 +670,7 @@ router.post('/servers/:id/motd', async (req, res) => {
 
 // POST /servers — Create a new server
 router.post('/servers', async (req, res) => {
-    const { name, version, port, memory, javaArgs, eula, gamemode, difficulty, seed, serverType, customJarUrl } = req.body;
+    const { name, version, port, memory, javaArgs, eula, gamemode, difficulty, seed, serverType, customJarUrl, group } = req.body;
 
     if (!name || !port || !memory) {
         return res.status(400).json({ error: 'All required fields must be filled.' });
@@ -663,6 +730,11 @@ router.post('/servers', async (req, res) => {
     const difficultyStr = validDifficulties.includes(difficulty) ? difficulty : 'easy';
     const seedStr = String(seed || '').trim();
 
+    const groupResult = normalizeGroupName(group);
+    if (!groupResult.valid) {
+        return res.status(400).json({ error: GROUP_NAME_ERROR });
+    }
+
     const id = uuidv4();
     const serverDir = path.join(SERVERS_DIR, id);
     const initiatedBy = req.user.username;
@@ -701,6 +773,7 @@ router.post('/servers', async (req, res) => {
             autoRestart: false,
             autoStart: false,
             statusPagePublic: false,
+            group: groupResult.value,
             createdAt: new Date().toISOString(),
             lastStarted: null,
             lastStopped: null,
@@ -711,6 +784,7 @@ router.post('/servers', async (req, res) => {
 
         await serversDb.set(`server_${id}`, server);
 
+        notifyDashboard(req);
         res.status(201).json({ success: true, server });
 
         const serverManager = req.app.get('serverManager');
@@ -898,6 +972,267 @@ router.post('/servers/:id/kill', async (req, res) => {
     }
 });
 
+// POST /servers/import — Import a server from a Craftbox export archive
+// (created by GET /servers/:id/export). Responds 201 immediately; extraction
+// continues in the background and completes via the WS 'operation' message.
+router.post('/servers/import', function (req, res, next) {
+    importUpload.single('archive')(req, res, function (err) {
+        if (err) {
+            return res.status(400).json({ error: err.message || 'Upload failed.' });
+        }
+        next();
+    });
+}, async (req, res) => {
+    const tmpPath = req.file?.path;
+    const cleanupTemp = () => {
+        if (tmpPath) fs.promises.unlink(tmpPath).catch(() => {});
+    };
+
+    if (!tmpPath) {
+        return res.status(400).json({ error: 'No archive uploaded.' });
+    }
+
+    if (!isZipFile(tmpPath)) {
+        cleanupTemp();
+        return res.status(400).json({ error: 'Not a valid zip archive.' });
+    }
+
+    // node-stream-zip reads entry data from disk on demand — archive size is
+    // bounded by disk space, not process memory.
+    const zip = new StreamZip.async({ file: tmpPath });
+    const discard = async () => {
+        // Close the zip's file handle before unlinking — Windows cannot delete
+        // an open file.
+        try { await zip.close(); } catch { /* ignore */ }
+        cleanupTemp();
+    };
+
+    try {
+        let zipEntries;
+        try {
+            zipEntries = await zip.entries();
+        } catch {
+            await discard();
+            return res.status(400).json({ error: 'Failed to read archive.' });
+        }
+
+        if (!zipEntries['craftbox-manifest.json']) {
+            await discard();
+            return res.status(400).json({ error: 'Not a Craftbox export archive.' });
+        }
+
+        let manifest;
+        try {
+            manifest = JSON.parse((await zip.entryData('craftbox-manifest.json')).toString('utf8'));
+        } catch {
+            await discard();
+            return res.status(400).json({ error: 'Export manifest is corrupted.' });
+        }
+        if (manifest.format !== 'craftbox-server-export') {
+            await discard();
+            return res.status(400).json({ error: 'Not a Craftbox export archive.' });
+        }
+        if (manifest.formatVersion !== 1) {
+            await discard();
+            return res.status(400).json({ error: 'This archive was created by a newer version of Craftbox and cannot be imported.' });
+        }
+
+        // Sanity-check the embedded server object before touching disk or DB.
+        const source = manifest.server;
+        if (!source || typeof source !== 'object' || !UUID_RE.test(String(source.id))) {
+            await discard();
+            return res.status(400).json({ error: 'Export manifest is invalid.' });
+        }
+        const trimmedName = String(source.name || '').trim();
+        if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
+            await discard();
+            return res.status(400).json({ error: 'Export manifest contains an invalid server name.' });
+        }
+        if (!getProvider(source.serverType || 'vanilla')) {
+            await discard();
+            return res.status(400).json({ error: 'Export manifest contains an unknown server type.' });
+        }
+        const portNum = parseInt(source.port, 10);
+        if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+            await discard();
+            return res.status(400).json({ error: 'Export manifest contains an invalid port.' });
+        }
+        const memoryNum = parseInt(source.memory, 10);
+        if (isNaN(memoryNum) || memoryNum < 512 || memoryNum > 65536) {
+            await discard();
+            return res.status(400).json({ error: 'Export manifest contains an invalid memory value.' });
+        }
+
+        // Reject unsafe or unexpected archive entries up front (zip-slip).
+        const knownRootFiles = new Set(['craftbox-manifest.json', 'modenv.json', 'backups.json', 'events.json']);
+        for (const entry of Object.values(zipEntries)) {
+            const entryName = String(entry.name).replace(/\\/g, '/');
+            if (entryName.startsWith('/') || /^[a-zA-Z]:/.test(entryName) || entryName.split('/').includes('..')) {
+                await discard();
+                return res.status(400).json({ error: 'Archive contains unsafe paths.' });
+            }
+            if (!entryName.startsWith('server/') && !entryName.startsWith('backups/') && !knownRootFiles.has(entryName)) {
+                await discard();
+                return res.status(400).json({ error: `Archive contains an unexpected entry: ${entryName}` });
+            }
+        }
+
+        // Keep the source UUID when it is free on this instance; otherwise re-key.
+        let finalId = String(source.id).toLowerCase();
+        if (await serversDb.get(`server_${finalId}`) || fs.existsSync(path.join(SERVERS_DIR, finalId))) {
+            finalId = uuidv4();
+        }
+
+        const warnings = [];
+        const allServers = await serversDb.all();
+        const portClash = allServers.map(row => row.value).find(s => s && s.port === portNum);
+        if (portClash) {
+            warnings.push(`Port ${portNum} is already used by "${portClash.name}". Edit this server's port before starting it.`);
+        }
+
+        const groupResult = normalizeGroupName(source.group);
+        const importedServer = {
+            ...source,
+            id: finalId,
+            name: trimmedName,
+            state: STATES.PROVISIONING,
+            port: portNum,
+            memory: memoryNum,
+            jarFile: typeof source.jarFile === 'string' && source.jarFile ? source.jarFile : 'server.jar',
+            group: groupResult.valid ? groupResult.value : null,
+            autoStart: !!source.autoStart,
+            exitCode: null,
+            crashReason: null,
+            crashDetected: false,
+            lastStarted: null,
+            lastStopped: null,
+            advertisedIp: null,
+            directory: path.join('data', 'servers', finalId)
+        };
+        if (importedServer.backupSchedule) delete importedServer.backupSchedule.nextBackupAt;
+
+        await serversDb.set(`server_${finalId}`, importedServer);
+        notifyDashboard(req);
+        res.status(201).json({ success: true, server: importedServer, warnings });
+
+        const serverManager = req.app.get('serverManager');
+        const initiatedBy = req.user.username;
+        (async () => {
+            try {
+                const serverDir = path.join(SERVERS_DIR, finalId);
+                const resolvedServerDir = path.resolve(serverDir);
+                await fs.promises.mkdir(serverDir, { recursive: true });
+
+                // Extract server files (streamed, so any archive size works),
+                // stripping the server/ prefix and re-checking every resolved
+                // path (belt and braces vs the scan above).
+                const streamEntryTo = (entryName, target) => new Promise((resolve, reject) => {
+                    zip.stream(entryName).then((stm) => {
+                        const out = fs.createWriteStream(target);
+                        stm.on('error', reject);
+                        out.on('error', reject);
+                        out.on('finish', resolve);
+                        stm.pipe(out);
+                    }).catch(reject);
+                });
+
+                for (const entry of Object.values(zipEntries)) {
+                    const entryName = String(entry.name).replace(/\\/g, '/');
+                    if (!entryName.startsWith('server/')) continue;
+                    const relative = entryName.slice('server/'.length);
+                    if (!relative) continue;
+                    const target = path.resolve(serverDir, relative);
+                    if (target !== resolvedServerDir && !target.startsWith(resolvedServerDir + path.sep)) {
+                        throw new Error(`Zip entry escapes target directory: ${entry.name}`);
+                    }
+                    if (entry.isDirectory) {
+                        await fs.promises.mkdir(target, { recursive: true });
+                    } else {
+                        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+                        await streamEntryTo(entry.name, target);
+                    }
+                }
+                await fs.promises.mkdir(path.join(serverDir, 'logs'), { recursive: true });
+
+                // Mod environment map (disabled/client-only mods)
+                if (zipEntries['modenv.json']) {
+                    try {
+                        const modEnv = JSON.parse((await zip.entryData('modenv.json')).toString('utf8'));
+                        if (modEnv && typeof modEnv === 'object') await setModEnvMap(finalId, modEnv);
+                    } catch { /* non-fatal */ }
+                }
+
+                // Backups — records are always re-keyed; filenames validated
+                if (zipEntries['backups.json']) {
+                    let backupRecords = [];
+                    try { backupRecords = JSON.parse((await zip.entryData('backups.json')).toString('utf8')); } catch { /* skip */ }
+                    if (Array.isArray(backupRecords)) {
+                        ensureBackupDir(finalId);
+                        for (const record of backupRecords) {
+                            if (!record || typeof record.filename !== 'string') continue;
+                            if (!zipEntries[`backups/${record.filename}`]) continue;
+                            let backupPath;
+                            try { backupPath = resolveBackupPath(finalId, record.filename); } catch { continue; }
+                            await streamEntryTo(`backups/${record.filename}`, backupPath);
+                            const newBackupId = uuidv4();
+                            await backupsDb.set(`backup_${newBackupId}`, { ...record, id: newBackupId, serverId: finalId });
+                        }
+                    }
+                }
+
+                // Event history — re-keyed, capped at the pruneEvents limit
+                if (zipEntries['events.json']) {
+                    let eventRecords = [];
+                    try { eventRecords = JSON.parse((await zip.entryData('events.json')).toString('utf8')); } catch { /* skip */ }
+                    if (Array.isArray(eventRecords)) {
+                        for (const record of eventRecords.slice(0, 500)) {
+                            if (!record || typeof record !== 'object') continue;
+                            const newEventId = uuidv4();
+                            await eventsDb.set(`event_${newEventId}`, { ...record, id: newEventId, serverId: finalId });
+                        }
+                    }
+                }
+
+                // Keep DB ↔ server.properties/eula.txt consistent on the new host
+                await syncServerConfig(finalId);
+
+                if (importedServer.backupSchedule?.enabled) {
+                    const backupScheduler = req.app.get('backupScheduler');
+                    if (backupScheduler) {
+                        await backupScheduler.restartSchedule(finalId);
+                    }
+                }
+
+                if (serverManager) {
+                    await serverManager.setOperationalState(finalId, STATES.STOPPED);
+                    serverManager.broadcastOperation(finalId, 'import', 'complete', { warnings });
+                }
+                logEvent(finalId, 'action', 'Imported from Craftbox export archive', { initiatedBy }).catch(() => {});
+                log('info', `Server "${trimmedName}" (${finalId}) imported from export archive.`);
+            } catch (err) {
+                log('error', `Failed to import server ${finalId}: ${err.message}`);
+                logEvent(finalId, 'action', `Import failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                if (serverManager) {
+                    try {
+                        await serverManager.setOperationalState(finalId, STATES.CRASHED, {
+                            crashReason: 'Import failed: ' + err.message
+                        });
+                    } catch (_) {}
+                    serverManager.broadcastOperation(finalId, 'import', 'failed', err.message);
+                }
+            } finally {
+                await discard();
+            }
+        })();
+    } catch (err) {
+        await discard();
+        log('error', `Failed to import server: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to import server: ${err.message}` });
+        }
+    }
+});
+
 // POST /servers/:id/duplicate
 router.post('/servers/:id/duplicate', async (req, res) => {
     const id = req.params.id;
@@ -964,6 +1299,7 @@ router.post('/servers/:id/duplicate', async (req, res) => {
         };
 
         await serversDb.set(`server_${newId}`, newServer);
+        notifyDashboard(req);
         res.status(201).json({ success: true, server: newServer, warning: null });
 
         (async () => {
@@ -1052,24 +1388,30 @@ router.delete('/servers/:id', async (req, res) => {
         await serversDb.delete(`server_${id}`);
         log('info', `Server "${server.name}" (${id}) marked for deletion.`);
 
+        notifyDashboard(req);
         res.json({ success: true });
 
-        // Background cleanup. Failures here orphan files on disk but do not
-        // affect the user's view, so we only log.
+        // Background cleanup. Each step is isolated so a failure in one (e.g. a
+        // locked file on Windows) can't skip the DB cleanup or group prune that
+        // follow. Failures only orphan data; they don't affect the user's view.
         (async () => {
-            try {
-                const { deleteAllBackups } = require('../../mc/BackupManager');
-                await deleteAllBackups(id);
-                await deleteServerEvents(id);
-                await clearStatsHistory(id);
-                await clearAllModEnv(id);
+            const step = async (label, fn) => {
+                try {
+                    await fn();
+                } catch (err) {
+                    log('error', `Cleanup step "${label}" failed for ${server.name} (${id}): ${err.message}`);
+                }
+            };
 
-                const serverDir = path.join(SERVERS_DIR, id);
-                await fs.promises.rm(serverDir, { recursive: true, force: true });
-                log('info', `Server "${server.name}" (${id}) cleanup complete.`);
-            } catch (err) {
-                log('error', `Background cleanup failed for ${server.name} (${id}): ${err.message}`);
-            }
+            const { deleteAllBackups } = require('../../mc/BackupManager');
+            await step('backups', () => deleteAllBackups(id));
+            await step('events', () => deleteServerEvents(id));
+            await step('stats', () => clearStatsHistory(id));
+            await step('mod metadata', () => clearAllModEnv(id));
+            if (server.group) await step('group', () => pruneGroupMetaIfEmpty(server.group));
+            await step('files', () => fs.promises.rm(path.join(SERVERS_DIR, id), { recursive: true, force: true }));
+
+            log('info', `Server "${server.name}" (${id}) cleanup complete.`);
         })();
     } catch (err) {
         log('error', `Failed to delete server ${id}: ${err.message}`);
@@ -1085,7 +1427,7 @@ router.post('/servers/:id/edit', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
 
-    const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl } = req.body;
+    const { name, port, memory, javaArgs, gamemode, difficulty, seed, version, customJarUrl, group } = req.body;
 
     const trimmedName = String(name).trim();
     if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
@@ -1108,6 +1450,11 @@ router.post('/servers/:id/edit', async (req, res) => {
     const difficultyStr = validDifficulties.includes(difficulty) ? difficulty : server.difficulty;
     const seedStr = String(seed || '').trim();
     const safeJavaArgs = String(javaArgs || '').trim();
+
+    const groupResult = normalizeGroupName(group);
+    if (!groupResult.valid) {
+        return res.status(400).json({ error: GROUP_NAME_ERROR });
+    }
 
     const type = server.serverType || 'vanilla';
     const newVersion = String(version || '').trim();
@@ -1197,6 +1544,7 @@ router.post('/servers/:id/edit', async (req, res) => {
         }
     }
 
+    const previousGroup = server.group || null;
     server.name = trimmedName;
     server.port = portNum;
     server.memory = memoryNum;
@@ -1204,7 +1552,18 @@ router.post('/servers/:id/edit', async (req, res) => {
     server.gamemode = gamemodeStr;
     server.difficulty = difficultyStr;
     server.seed = seedStr;
+    server.group = groupResult.value;
     await serversDb.set(`server_${id}`, server);
+
+    // Best-effort cleanup of the old group's color if it emptied — a failure
+    // here must not fail the edit, which already saved.
+    if (previousGroup && previousGroup !== server.group) {
+        try {
+            await pruneGroupMetaIfEmpty(previousGroup);
+        } catch (err) {
+            log('error', `Group cleanup failed for "${previousGroup}": ${err.message}`);
+        }
+    }
 
     const serverDir = path.join(SERVERS_DIR, id);
     if (fs.existsSync(path.join(serverDir, 'server.properties'))) {
@@ -1220,6 +1579,7 @@ router.post('/servers/:id/edit', async (req, res) => {
     const proc = serverManager?.getProcess(id);
     if (proc) Object.assign(proc.config, server);
 
+    notifyDashboard(req);
     res.json({ success: true, server, versionChanged, jarChanged });
 });
 

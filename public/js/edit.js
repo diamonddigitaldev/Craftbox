@@ -512,6 +512,77 @@ function _formToBody(form) {
     }
 })();
 
+// ── Export / Transfer ──
+(function () {
+    var controls = document.getElementById('export-controls');
+    if (!controls) return;
+    var serverId = controls.dataset.serverId;
+    var exportBtn = document.getElementById('export-btn');
+
+    function exportUrl(startAfter) {
+        var backups = document.getElementById('export-backups').checked ? 'true' : 'false';
+        var events = document.getElementById('export-events').checked ? 'true' : 'false';
+        var url = '/servers/' + serverId + '/export?backups=' + backups + '&events=' + events;
+        if (startAfter) url += '&start=true';
+        return url;
+    }
+
+    function startDownload(startAfter) {
+        showToast('Export download starting...', 'info');
+        window.location.href = exportUrl(startAfter);
+    }
+
+    async function stopThenExport() {
+        var startAfter = document.getElementById('exportStartAfter')?.checked || false;
+        showOverlay('Stopping server...', 'The export download will begin once the server has stopped.');
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/stop', { method: 'POST', body: {} });
+        if (!res.ok) {
+            hideOverlay();
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to stop server.', 'danger');
+            return;
+        }
+
+        var deadline = Date.now() + 60000;
+        (function poll() {
+            setTimeout(async function () {
+                var stateRes = await apiFetch('/api/v1/servers/' + serverId);
+                var state = stateRes.ok && stateRes.data && stateRes.data.server && stateRes.data.server.state;
+                if (state === 'stopped' || state === 'crashed') {
+                    hideOverlay();
+                    startDownload(startAfter);
+                    return;
+                }
+                if (Date.now() > deadline) {
+                    hideOverlay();
+                    showToast('Server did not stop in time. Try exporting again once it has stopped.', 'danger');
+                    return;
+                }
+                poll();
+            }, 2000);
+        })();
+    }
+
+    var stopExportModalEl = document.getElementById('stopExportModal');
+    var confirmStopExportBtn = document.getElementById('confirm-stop-export-btn');
+    confirmStopExportBtn?.addEventListener('click', function () {
+        bootstrap.Modal.getInstance(stopExportModalEl)?.hide();
+        stopThenExport();
+    });
+    stopExportModalEl?.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        confirmStopExportBtn?.click();
+    });
+
+    exportBtn.addEventListener('click', function () {
+        if (exportBtn.dataset.serverStopped === 'true') {
+            startDownload(false);
+        } else {
+            new bootstrap.Modal(stopExportModalEl).show();
+        }
+    });
+})();
+
 // ── Update Checker ──
 (function () {
     const checkBtn = document.getElementById('check-update-btn');

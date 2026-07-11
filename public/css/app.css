@@ -249,6 +249,101 @@ td > .material-icons-outlined {
     vertical-align: middle;
 }
 
+/* ---- Server card action buttons ---- */
+/* The card is a size container so the button layout can respond to the card's
+   own width rather than the viewport (cards span different widths per column). */
+.server-actions {
+    container-type: inline-size;
+}
+
+.server-actions-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+/* Wide enough: lifecycle controls on the left, the Assign Group / Manage group
+   pushed to the right on the same row. Narrow: they stack left underneath. */
+@container (min-width: 420px) {
+    .server-actions-inner {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .server-actions-secondary {
+        margin-left: auto;
+    }
+}
+
+/* ---- Dashboard Server Groups ---- */
+/* --group-color is set inline per tile from the group's stored colour. */
+.group-tile {
+    --group-color: var(--craftbox-green);
+    background: color-mix(in srgb, var(--group-color) 12%, transparent);
+    border-color: color-mix(in srgb, var(--group-color) 30%, transparent);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+}
+
+.group-tile:hover {
+    transform: translateY(-3px);
+    background: color-mix(in srgb, var(--group-color) 22%, transparent);
+    border-color: color-mix(in srgb, var(--group-color) 65%, transparent);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--group-color) 30%, transparent);
+}
+
+.group-tile .group-tile-icon {
+    color: var(--group-color);
+    transition: transform 0.2s ease;
+}
+
+.group-tile:hover .group-tile-icon {
+    transform: scale(1.12) rotate(-6deg);
+}
+
+.group-color-swatch.form-control-color {
+    width: 3rem;
+    height: 3rem;
+    padding: 0.25rem;
+    border-radius: 0.5rem;
+    flex-shrink: 0;
+}
+
+#group-color-hex {
+    font-family: var(--bs-font-monospace);
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+}
+
+.group-picker-list .list-group-item {
+    cursor: pointer;
+    /* Fixed item height so the list can show exactly 3.5 rows before scrolling.
+       flex-shrink: 0 stops the flex-column list from squishing rows to fit the
+       max-height instead of scrolling. */
+    height: 2.5rem;
+    flex-shrink: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.group-picker-list {
+    /* 3.5 items (2.5rem each) visible, then scroll — the half-row hints there's more. */
+    max-height: 8.75rem;
+    overflow-y: auto;
+}
+
+/* Inline variant (create/edit forms): floats below the input */
+.group-picker-wrap {
+    position: relative;
+}
+
+.group-picker-inline {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+}
+
 /* ---- Advanced Options Toggle ---- */
 .advanced-toggle .advanced-arrow {
     transition: transform 0.25s ease;
@@ -288,7 +383,10 @@ td > .material-icons-outlined {
 }
 
 /* ---- Toasts ---- */
-.toast.text-bg-warning .btn-close {
+/* warning/info toasts have light backgrounds; the dark theme would otherwise
+   render .btn-close white and invisible, so undo the inversion. */
+.toast.text-bg-warning .btn-close,
+.toast.text-bg-info .btn-close {
     filter: none;
 }
 

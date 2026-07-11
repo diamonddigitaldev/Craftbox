@@ -4,25 +4,27 @@
 
 <!-- Action Buttons -->
 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-<div class="d-flex flex-wrap gap-2 mb-3" id="server-controls" data-server-id="<%= server.id %>">
-    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="start"
-        <%= !['stopped', 'crashed'].includes(server.state) ? 'disabled' : '' %>>
-        <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
-    </button>
-    <button type="button" class="btn btn-warning btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="stop"
-        <%= !['running', 'starting'].includes(server.state) ? 'disabled' : '' %>>
-        <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
-    </button>
-    <button type="button" class="btn btn-info btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="restart"
-        <%= server.state !== 'running' ? 'disabled' : '' %>>
-        <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
-    </button>
-    <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="kill"
-        <%= !['running', 'starting', 'stopping'].includes(server.state) ? 'disabled' : '' %>>
-        <span class="material-icons-outlined" style="font-size: 1rem;">dangerous</span> Kill
-    </button>
+<div class="d-flex flex-column flex-md-row gap-2 mb-3" id="server-controls" data-server-id="<%= server.id %>">
+    <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="start"
+            <%= !['stopped', 'crashed'].includes(server.state) ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">play_arrow</span> Start
+        </button>
+        <button type="button" class="btn btn-warning btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="stop"
+            <%= !['running', 'starting'].includes(server.state) ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">stop</span> Stop
+        </button>
+        <button type="button" class="btn btn-info btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="restart"
+            <%= server.state !== 'running' ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">restart_alt</span> Restart
+        </button>
+        <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1 server-action-btn" data-action="kill"
+            <%= !['running', 'starting', 'stopping'].includes(server.state) ? 'disabled' : '' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">dangerous</span> Kill
+        </button>
+    </div>
 
-    <div class="ms-auto d-flex gap-2 align-items-center">
+    <div class="d-flex flex-wrap gap-2 align-items-center ms-md-auto">
         <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
             <input class="form-check-input" type="checkbox" id="autoRestart"
                 <%= server.autoRestart ? 'checked' : '' %>>

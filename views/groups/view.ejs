@@ -1,0 +1,73 @@
+<%- include('../partials/head', { title: groupName, navbar: true, fluid: true }) %>
+
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+<div class="d-flex justify-content-between align-items-center mb-4" id="group-page-header"
+    data-group-name="<%= groupName %>">
+    <div class="d-flex align-items-center gap-2">
+        <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
+            <span class="material-icons-outlined" style="font-size: 1.2rem;">arrow_back</span>
+        </a>
+        <h4 class="mb-0 d-flex align-items-center gap-2">
+            <span class="material-icons-outlined group-page-icon" style="color: <%= groupColor %>;">folder</span>
+            <%= groupName %>
+        </h4>
+        <span class="badge bg-secondary ms-2 me-2 flex-shrink-0" id="group-page-count"><%= servers.length %></span>
+    </div>
+    <button type="button" class="btn btn-outline-light d-flex align-items-center gap-1"
+        id="group-edit-btn" title="Rename or recolor this group">
+        <span class="material-icons-outlined" style="font-size: 1.2rem;">edit</span>
+        Edit
+    </button>
+</div>
+
+<div id="server-grid">
+    <div class="row">
+        <% servers.forEach(function(server) { %>
+            <%- include('../partials/serverCard', { server, csrfToken, groupNames }) %>
+        <% }) %>
+    </div>
+</div>
+
+<%- include('../partials/addGroupModal', { groupNames }) %>
+
+<!-- Group edit modal (rename + color) -->
+<div class="modal fade" id="groupEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined">edit</span>
+                    Edit Group
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="group-rename-input" class="form-label">Group name</label>
+                    <input type="text" class="form-control" id="group-rename-input" maxlength="50"
+                        pattern="[a-zA-Z0-9 _\-]+" value="<%= groupName %>" autocomplete="off">
+                    <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+                </div>
+                <div>
+                    <label class="form-label">Folder color</label>
+                    <div class="d-flex align-items-center gap-3">
+                        <input type="color" class="form-control form-control-color group-color-swatch"
+                            id="group-color-input" value="<%= groupColor %>" title="Choose folder color">
+                        <span class="fw-bold text-uppercase" id="group-color-hex"><%= groupColor %></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1"
+                    id="group-edit-confirm">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">check</span>
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('../partials/foot', { scripts: ['/js/dashboard.js', '/js/group-picker.js', '/js/groups.js'] }) %>

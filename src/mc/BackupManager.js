@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
-const AdmZip = require('adm-zip');
+const StreamZip = require('node-stream-zip');
 const { v4: uuidv4 } = require('uuid');
 const { backupsDb, serversDb, BACKUPS_DIR, SERVERS_DIR } = require('../db');
 const { log } = require('../utils/log');
@@ -174,43 +174,47 @@ async function restoreBackup(serverId, backupId) {
     log('info', `[${server.name}] Restoring backup: ${backup.filename}`);
 
     // Clear server directory contents (preserve logs/ folder)
-    const entries = fs.readdirSync(serverDir);
-    for (const entry of entries) {
+    const dirEntries = fs.readdirSync(serverDir);
+    for (const entry of dirEntries) {
         if (entry === 'logs') continue;
         const entryPath = path.join(serverDir, entry);
         fs.rmSync(entryPath, { recursive: true, force: true });
     }
 
-    // Extract backup with zip-slip protection
-    const zip = new AdmZip(zipPath);
-    const zipEntries = zip.getEntries();
-    const resolvedServerDir = path.resolve(serverDir) + path.sep;
-    for (const entry of zipEntries) {
-        const target = path.resolve(serverDir, entry.entryName);
-        if (!target.startsWith(resolvedServerDir)) {
-            throw new Error(`Zip entry escapes target directory: ${entry.entryName}`);
-        }
-    }
-    zip.extractAllTo(serverDir, true);
-
-    // Restore server DB config from backup if present
-    const configEntry = zip.getEntry('craftbox-config.json');
-    if (configEntry) {
-        try {
-            const savedConfig = JSON.parse(configEntry.getData().toString('utf8'));
-            // Fields that must NOT be overwritten (runtime/identity)
-            const preserve = ['id', 'directory', 'jarFile', 'state', 'exitCode',
-                'crashReason', 'crashDetected', 'lastStarted', 'createdAt'];
-            for (const key of Object.keys(savedConfig)) {
-                if (!preserve.includes(key)) {
-                    server[key] = savedConfig[key];
-                }
+    // Extract backup with zip-slip protection. node-stream-zip streams entries
+    // from disk, so archive size is not limited by process memory.
+    const zip = new StreamZip.async({ file: zipPath });
+    try {
+        const zipEntries = await zip.entries();
+        const resolvedServerDir = path.resolve(serverDir) + path.sep;
+        for (const entry of Object.values(zipEntries)) {
+            const target = path.resolve(serverDir, entry.name);
+            if (!target.startsWith(resolvedServerDir)) {
+                throw new Error(`Zip entry escapes target directory: ${entry.name}`);
             }
-            await serversDb.set(`server_${serverId}`, server);
-            log('info', `[${server.name}] Server configuration restored from backup.`);
-        } catch (err) {
-            log('warn', `[${server.name}] Failed to restore config from backup: ${err.message}`);
         }
+        await zip.extract(null, serverDir);
+
+        // Restore server DB config from backup if present
+        if (zipEntries['craftbox-config.json']) {
+            try {
+                const savedConfig = JSON.parse((await zip.entryData('craftbox-config.json')).toString('utf8'));
+                // Fields that must NOT be overwritten (runtime/identity)
+                const preserve = ['id', 'directory', 'jarFile', 'state', 'exitCode',
+                    'crashReason', 'crashDetected', 'lastStarted', 'createdAt'];
+                for (const key of Object.keys(savedConfig)) {
+                    if (!preserve.includes(key)) {
+                        server[key] = savedConfig[key];
+                    }
+                }
+                await serversDb.set(`server_${serverId}`, server);
+                log('info', `[${server.name}] Server configuration restored from backup.`);
+            } catch (err) {
+                log('warn', `[${server.name}] Failed to restore config from backup: ${err.message}`);
+            }
+        }
+    } finally {
+        try { await zip.close(); } catch { /* ignore */ }
     }
 
     // Remove craftbox-config.json from the server directory (it's metadata, not a server file)

@@ -123,7 +123,7 @@
                                             <div class="col-md-6">
                                                 <label for="memory" class="form-label required-star">Memory (MB)</label>
                                                 <input type="number" class="form-control" id="memory" name="memory"
-                                                    value="<%= server.memory %>" min="512" max="65536" step="256"
+                                                    value="<%= server.memory %>" min="512" max="65536" step="1"
                                                     required>
                                                 <div class="form-text">RAM allocated to the server (-Xmx).</div>
                                             </div>
@@ -133,6 +133,20 @@
                                                 <input type="text" class="form-control" id="javaArgs" name="javaArgs"
                                                     value="<%= server.javaArgs || '' %>" placeholder="-XX:+UseG1GC">
                                                 <div class="form-text">Optional. Extra Java flags.</div>
+                                            </div>
+                                        </div>
+                                        <div class="row mt-3">
+                                            <div class="col-md-6">
+                                                <label for="group" class="form-label">Assign Group</label>
+                                                <div class="group-picker-wrap">
+                                                    <input type="text" class="form-control" id="group" name="group"
+                                                        value="<%= server.group || '' %>" maxlength="50"
+                                                        pattern="[a-zA-Z0-9 _\-]+" placeholder="Optional"
+                                                        autocomplete="off" data-group-picker
+                                                        data-groups="<%= JSON.stringify(typeof groupNames !== 'undefined' ? groupNames : []) %>">
+                                                    <div class="list-group group-picker-list group-picker-inline d-none"></div>
+                                                </div>
+                                                <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
                                             </div>
                                         </div>
                                     </div>
@@ -514,6 +528,41 @@
                                             </form>
                                         </div>
                                     </div>
+
+                                    <!-- Export / Transfer -->
+                                    <div class="card mt-3">
+                                        <div class="card-body p-4">
+                                            <h6 class="mb-3 d-flex align-items-center gap-2">
+                                                <span class="material-icons-outlined"
+                                                    style="font-size: 1.2rem;">ios_share</span>
+                                                Export / Transfer
+                                            </h6>
+                                            <p class="text-body-secondary mb-3" style="font-size: 0.85rem;">
+                                                Download this server as a transfer archive that can be imported on
+                                                another Craftbox instance. Server files and Craftbox settings are
+                                                always included.
+                                            </p>
+                                            <div id="export-controls" data-server-id="<%= server.id %>">
+                                                <div class="form-check mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="export-backups">
+                                                    <label class="form-check-label" for="export-backups"
+                                                        style="font-size: 0.9rem;">Include backups</label>
+                                                </div>
+                                                <div class="form-check mb-3">
+                                                    <input class="form-check-input" type="checkbox" id="export-events">
+                                                    <label class="form-check-label" for="export-events"
+                                                        style="font-size: 0.9rem;">Include event history</label>
+                                                </div>
+                                                <button type="button"
+                                                    class="btn btn-outline-secondary d-flex align-items-center gap-1"
+                                                    id="export-btn" data-server-stopped="<%= _serverStopped %>">
+                                                    <span class="material-icons-outlined"
+                                                        style="font-size: 1rem;">ios_share</span>
+                                                    Export
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                 </div>
             </div>
 
@@ -568,6 +617,36 @@
                                 data-bs-dismiss="modal">Cancel</button>
                             <button type="button" class="btn btn-warning btn-sm" id="confirm-stop-template-btn">Stop &
                                 Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stop & Export Modal -->
+            <div class="modal fade" id="stopExportModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content">
+                        <div class="modal-header border-0 pb-0">
+                            <h5 class="modal-title d-flex align-items-center gap-2">
+                                <span class="material-icons-outlined text-warning">warning</span>
+                                Server Running
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>The server must be stopped to export. Stop the server and start the export
+                                download?</p>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="exportStartAfter" checked>
+                                <label class="form-check-label" for="exportStartAfter">Start server after
+                                    export</label>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-warning btn-sm" id="confirm-stop-export-btn">Stop &
+                                Export</button>
                         </div>
                     </div>
                 </div>
@@ -664,4 +743,4 @@
 
 
             <%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/edit.js' , '/js/motd.js'
-                , '/js/restart-modal.js' ] }) %>
+                , '/js/restart-modal.js', '/js/group-picker.js' ] }) %>
