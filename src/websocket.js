@@ -103,6 +103,19 @@ function initWebSocket(httpServer, sessionMiddleware, serverManager) {
         clearInterval(heartbeat);
     });
 
+    // Broadcast a message to every authenticated (non-public) client. Used for
+    // dashboard-level structural changes — servers created/deleted, group
+    // membership or metadata updated — so open dashboard/group pages refresh
+    // without a manual reload.
+    serverManager.broadcastGlobal = (message) => {
+        const data = JSON.stringify(message);
+        wss.clients.forEach((ws) => {
+            if (!ws.isPublic && ws.readyState === WebSocket.OPEN) {
+                try { ws.send(data); } catch { /* ignore */ }
+            }
+        });
+    };
+
     return wss;
 }
 

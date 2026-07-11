@@ -1,5 +1,10 @@
 // Global Craftbox scripts — loaded on every page
 
+// Per-tab id, sent with every mutation so the tab that made a change can ignore
+// its own live-update broadcast (it already updated its own DOM / navigated).
+window.CRAFTBOX_CLIENT_ID = window.CRAFTBOX_CLIENT_ID
+    || (Date.now().toString(36) + Math.random().toString(36).slice(2));
+
 // ── apiFetch: shared wrapper for /api/v1 calls from the frontend ──
 // Automatically sets Content-Type + X-CSRF-Token on mutations and JSON-parses
 // the response. Returns { ok, status, data }. Never throws on HTTP errors.
@@ -11,6 +16,7 @@ async function apiFetch(path, options) {
     options = options || {};
     var method = (options.method || 'GET').toUpperCase();
     var headers = Object.assign({}, options.headers || {});
+    headers['X-Client-Id'] = headers['X-Client-Id'] || window.CRAFTBOX_CLIENT_ID;
     if (method !== 'GET' && method !== 'HEAD') {
         headers['X-CSRF-Token'] = headers['X-CSRF-Token'] || _findCsrfToken();
     }
@@ -98,7 +104,8 @@ function showToast(message, type) {
     type = type || 'danger';
     var icons = { danger: 'error', success: 'check_circle', warning: 'warning', info: 'info' };
     var icon = icons[type] || 'error';
-    var btnClass = type === 'warning' ? 'btn-close' : 'btn-close btn-close-white';
+    // warning/info render dark text on a light background — match the X to the text
+    var btnClass = (type === 'warning' || type === 'info') ? 'btn-close' : 'btn-close btn-close-white';
 
     var container = document.querySelector('.toast-container');
     if (!container) {

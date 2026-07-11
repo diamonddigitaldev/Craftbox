@@ -15,6 +15,22 @@
     let ws = null;
     let reconnectAttempts = 0;
 
+    // Debounced reload so a burst of structural changes coalesces into one refresh.
+    var reloadTimer = null;
+    function scheduleDashboardReload() {
+        if (reloadTimer) return;
+        var attempt = function () {
+            // Don't yank the page out from under an open modal (e.g. the user is
+            // mid Add-to-Group) — wait for it to close first.
+            if (document.querySelector('.modal.show')) {
+                reloadTimer = setTimeout(attempt, 1000);
+                return;
+            }
+            window.location.reload();
+        };
+        reloadTimer = setTimeout(attempt, 400);
+    }
+
     // Collect all server IDs on the page
     function getServerIds() {
         const cards = grid.querySelectorAll('.server-card');
@@ -53,6 +69,14 @@
                     updateCardStat(msg.serverId, 'players', msg.playerCount);
                 }
                 updateLastStarted(msg.serverId, msg.state, msg.lastStarted);
+            }
+            if (msg.type === 'dashboard-changed') {
+                // A server was created/deleted or a group changed somewhere else.
+                // The tab that made the change already updated itself (or navigated),
+                // so it skips its own broadcast; every other view refreshes.
+                if (!msg.origin || msg.origin !== window.CRAFTBOX_CLIENT_ID) {
+                    scheduleDashboardReload();
+                }
             }
         };
 
@@ -149,105 +173,6 @@
     }
 
     connect();
-
-    // ── Server group sections: collapse persistence (per browser) ──
-    var COLLAPSED_GROUPS_KEY = 'craftbox.dashboard.collapsedGroups';
-
-    function getCollapsedGroups() {
-        try {
-            var stored = JSON.parse(localStorage.getItem(COLLAPSED_GROUPS_KEY) || '[]');
-            return Array.isArray(stored) ? stored : [];
-        } catch (_) {
-            return [];
-        }
-    }
-
-    function setCollapsedGroups(names) {
-        try {
-            localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(names));
-        } catch (_) { }
-    }
-
-    (function initGroupCollapse() {
-        var sections = grid.querySelectorAll('.group-section');
-        if (!sections.length) return;
-
-        var collapsed = getCollapsedGroups();
-        var presentNames = [];
-
-        sections.forEach(function (section) {
-            var name = section.dataset.groupName;
-            presentNames.push(name);
-            var toggle = document.querySelector('[data-bs-target="#' + section.id + '"]');
-
-            if (collapsed.indexOf(name) !== -1) {
-                section.classList.remove('show');
-                if (toggle) toggle.setAttribute('aria-expanded', 'false');
-            }
-
-            section.addEventListener('hidden.bs.collapse', function () {
-                var names = getCollapsedGroups();
-                if (names.indexOf(name) === -1) names.push(name);
-                setCollapsedGroups(names);
-            });
-            section.addEventListener('shown.bs.collapse', function () {
-                setCollapsedGroups(getCollapsedGroups().filter(function (n) { return n !== name; }));
-            });
-        });
-
-        // Prune groups that no longer exist so the stored list can't grow forever.
-        setCollapsedGroups(getCollapsedGroups().filter(function (n) { return presentNames.indexOf(n) !== -1; }));
-    })();
-
-    // ── Server group moves (card dropdown + "New group…" modal) ──
-    async function moveServerToGroup(serverId, group) {
-        var res = await apiFetch('/api/v1/servers/' + serverId + '/group', { method: 'POST', body: { group: group } });
-        if (!res.ok) {
-            showToast((res.data && res.data.error) || 'Failed to move server.', 'danger');
-            return false;
-        }
-        flashToast(group ? 'Server moved to "' + group + '".' : 'Server removed from group.', 'success');
-        location.reload();
-        return true;
-    }
-
-    var pendingGroupServerId = null;
-    var assignGroupModal = document.getElementById('assignGroupModal');
-
-    grid.addEventListener('click', function (e) {
-        var moveItem = e.target.closest('.group-move-item');
-        if (moveItem) {
-            var serverId = moveItem.closest('.server-card')?.dataset.serverId;
-            if (serverId) moveServerToGroup(serverId, moveItem.dataset.group || '');
-            return;
-        }
-
-        var newItem = e.target.closest('.group-new-item');
-        if (newItem && assignGroupModal) {
-            pendingGroupServerId = newItem.closest('.server-card')?.dataset.serverId || null;
-            var input = document.getElementById('assign-group-name');
-            if (input) input.value = '';
-            new bootstrap.Modal(assignGroupModal).show();
-        }
-    });
-
-    if (assignGroupModal) {
-        assignGroupModal.addEventListener('shown.bs.modal', function () {
-            document.getElementById('assign-group-name')?.focus();
-        });
-
-        var confirmBtn = document.getElementById('assign-group-confirm');
-        confirmBtn?.addEventListener('click', async function () {
-            var input = document.getElementById('assign-group-name');
-            var name = (input?.value || '').trim();
-            if (!name || !pendingGroupServerId) return;
-
-            confirmBtn.disabled = true;
-            var moved = await moveServerToGroup(pendingGroupServerId, name);
-            confirmBtn.disabled = false;
-            if (moved) bootstrap.Modal.getInstance(assignGroupModal)?.hide();
-        });
-    }
 
     // ── Server action buttons (start/stop/restart) on each card ──
     grid.addEventListener('click', async function (e) {

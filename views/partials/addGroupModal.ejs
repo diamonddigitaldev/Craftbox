@@ -1,0 +1,36 @@
+<!-- Assign Group modal (shared by the dashboard and group pages; driven by /js/groups.js) -->
+<div class="modal fade" id="addGroupModal" tabindex="-1" aria-hidden="true"
+    data-groups="<%= JSON.stringify(groupNames || []) %>">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined">drive_file_move</span>
+                    Assign Group
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label for="add-group-input" class="form-label">Group name</label>
+                <div class="group-picker-wrap">
+                    <input type="text" class="form-control" id="add-group-input" maxlength="50"
+                        pattern="[a-zA-Z0-9 _\-]+" placeholder="Search groups or enter a new name..."
+                        autocomplete="off">
+                    <div class="list-group group-picker-list group-picker-inline d-none" id="add-group-list"></div>
+                </div>
+                <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-danger btn-sm me-auto d-none" id="add-group-remove">
+                    Remove from group
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1"
+                    id="add-group-confirm" disabled>
+                    <span class="material-icons-outlined" style="font-size: 1rem;">check</span>
+                    Add
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

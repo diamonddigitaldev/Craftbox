@@ -63,7 +63,8 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 | Field | Rule |
 |---|---|
 | Server / template name | 1–50 chars, `^[a-zA-Z0-9 _\-]+$` |
-| Group name | 1–30 chars, `^[a-zA-Z0-9 _\-]+$` (empty = ungrouped) |
+| Group name | 1–50 chars, `^[a-zA-Z0-9 _\-]+$` (empty = ungrouped) |
+| Group color | hex, `^#[0-9a-fA-F]{6}$` |
 | Port | integer 1024–65535 |
 | Memory | integer 512–65536 (MB, any whole value) |
 | Version | `latest` or `^\d+\.\d+(\.\d+)?(-\w+)?$` (e.g. `1.21.4`) |
@@ -118,7 +119,7 @@ The server object returned by these endpoints contains the full configuration (n
 | Method | Path | Description |
 |---|---|---|
 | POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, seed?, group?, version?, customJarUrl?}`. Version changes must be upgrades and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool}` |
-| POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ...}` |
+| POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ..., "color": ...}` — `color` is the group's folder color (null when ungrouped) |
 | POST | `/servers/:id/autorestart` | Body: `{enabled: bool}`. Returns `{"autoRestart": bool}` |
 | POST | `/servers/:id/autostart` | Body: `{enabled: bool}`. Returns `{"autoStart": bool}` |
 | POST | `/servers/:id/statuspublic` | Toggle the public status page. Body: `{enabled: bool}` |
@@ -164,7 +165,7 @@ Move a server — files, Craftbox settings, and optionally backups and event his
 
 ### Export
 
-`GET /servers/:id/export?backups=1&events=1` (browser-facing panel route, session auth, outside `/api/v1`) streams a zip download. The server must be `stopped` or `crashed`. Query flags `backups` and `events` (`1` to include) select the optional payloads.
+`GET /servers/:id/export?backups=true&events=true&start=true` (browser-facing panel route, session auth, outside `/api/v1`) streams a zip download. The server must be `stopped` or `crashed`. Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option).
 
 Archive layout (`formatVersion` 1):
 
@@ -179,15 +180,26 @@ events.json              event history (optional)
 
 ### Import
 
-`POST /servers/import` — multipart upload, field `archive`, `.zip` only, **max 4 GB**.
+`POST /servers/import` — multipart upload, field `archive`, `.zip` only. There is no size cap: the archive is streamed to disk on upload and streamed out of the zip on extraction, so size is bounded by disk space rather than memory.
 
 Returns `201 {"success": true, "server": {...}, "warnings": [...]}`; extraction continues in the background and completes via WS `operation: "import"`. Validation failures return `400` (not a zip, not a Craftbox export, corrupt manifest, newer `formatVersion`, unsafe paths).
 
 Import behavior:
 
 - The source server UUID is kept when free on the target instance, otherwise a new UUID is generated. Backup and event records always get fresh IDs.
-- Runtime state is reset (`exitCode`, `crashReason`, timestamps); `advertisedIp` is cleared and **auto-start is always disabled** — a warning in `warnings` reminds you to re-enable it.
+- All settings (including `autoStart` and the dashboard group) are preserved; runtime state is reset (`exitCode`, `crashReason`, timestamps) and `advertisedIp` is cleared (host-specific). The server stays stopped after import until started.
 - A port collision with an existing server does not block the import; a warning is returned instead.
+
+
+## Groups
+
+Server groups organize the dashboard. Groups are implicit — they exist while at least one server belongs to them (assign via `POST /servers/:id/group` or the `group` field on create/edit).
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/groups` | All groups: `{"groups": [{name, color, count}]}` |
+| POST | `/groups/:name` | Set a group's folder color. Body: `{color}` (hex, e.g. `#4caf50`). `404` if the group has no servers |
+| POST | `/groups/:name/rename` | Rename a group (repoints every member server + its color). Body: `{name}`. `404` if the group has no servers, `409` if the new name is already taken by another group |
 
 
 ## Events

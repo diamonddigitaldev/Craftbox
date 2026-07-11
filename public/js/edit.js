@@ -519,18 +519,21 @@ function _formToBody(form) {
     var serverId = controls.dataset.serverId;
     var exportBtn = document.getElementById('export-btn');
 
-    function exportUrl() {
-        var backups = document.getElementById('export-backups').checked ? '1' : '0';
-        var events = document.getElementById('export-events').checked ? '1' : '0';
-        return '/servers/' + serverId + '/export?backups=' + backups + '&events=' + events;
+    function exportUrl(startAfter) {
+        var backups = document.getElementById('export-backups').checked ? 'true' : 'false';
+        var events = document.getElementById('export-events').checked ? 'true' : 'false';
+        var url = '/servers/' + serverId + '/export?backups=' + backups + '&events=' + events;
+        if (startAfter) url += '&start=true';
+        return url;
     }
 
-    function startDownload() {
+    function startDownload(startAfter) {
         showToast('Export download starting...', 'info');
-        window.location.href = exportUrl();
+        window.location.href = exportUrl(startAfter);
     }
 
     async function stopThenExport() {
+        var startAfter = document.getElementById('exportStartAfter')?.checked || false;
         showOverlay('Stopping server...', 'The export download will begin once the server has stopped.');
         var res = await apiFetch('/api/v1/servers/' + serverId + '/stop', { method: 'POST', body: {} });
         if (!res.ok) {
@@ -546,7 +549,7 @@ function _formToBody(form) {
                 var state = stateRes.ok && stateRes.data && stateRes.data.server && stateRes.data.server.state;
                 if (state === 'stopped' || state === 'crashed') {
                     hideOverlay();
-                    startDownload();
+                    startDownload(startAfter);
                     return;
                 }
                 if (Date.now() > deadline) {
@@ -565,10 +568,15 @@ function _formToBody(form) {
         bootstrap.Modal.getInstance(stopExportModalEl)?.hide();
         stopThenExport();
     });
+    stopExportModalEl?.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        confirmStopExportBtn?.click();
+    });
 
     exportBtn.addEventListener('click', function () {
         if (exportBtn.dataset.serverStopped === 'true') {
-            startDownload();
+            startDownload(false);
         } else {
             new bootstrap.Modal(stopExportModalEl).show();
         }

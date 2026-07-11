@@ -130,15 +130,14 @@
                                 </div>
                                 <div class="row mt-3">
                                     <div class="col-md-6">
-                                        <label for="group" class="form-label">Add to Group</label>
-                                        <input type="text" class="form-control" id="group" name="group"
-                                            list="group-options" maxlength="30" pattern="[a-zA-Z0-9 _\-]+"
-                                            placeholder="Optional">
-                                        <datalist id="group-options">
-                                            <% (typeof groupNames !== 'undefined' ? groupNames : []).forEach(function(g) { %>
-                                            <option value="<%= g %>"></option>
-                                            <% }) %>
-                                        </datalist>
+                                        <label for="group" class="form-label">Assign Group</label>
+                                        <div class="group-picker-wrap">
+                                            <input type="text" class="form-control" id="group" name="group"
+                                                maxlength="50" pattern="[a-zA-Z0-9 _\-]+" placeholder="Optional"
+                                                autocomplete="off" data-group-picker
+                                                data-groups="<%= JSON.stringify(typeof groupNames !== 'undefined' ? groupNames : []) %>">
+                                            <div class="list-group group-picker-list group-picker-inline d-none"></div>
+                                        </div>
                                         <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
                                     </div>
                                 </div>
@@ -169,4 +168,4 @@
     </div>
 
 
-    <%- include('../partials/foot', { scripts: ['/js/create.js'] }) %>
+    <%- include('../partials/foot', { scripts: ['/js/create.js', '/js/group-picker.js'] }) %>

@@ -316,8 +316,10 @@ router.get('/servers/:id/export', ensureAuth, async (req, res) => {
     const serverDir = path.join(SERVERS_DIR, server.id);
     if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Directory not found' });
 
-    const includeBackups = req.query.backups === '1';
-    const includeEvents = req.query.events === '1';
+    const includeBackups = req.query.backups === 'true';
+    const includeEvents = req.query.events === 'true';
+    const startAfter = req.query.start === 'true';
+    const initiatedBy = req.user?.username;
 
     // Hold the backup lock while streaming so a scheduled backup can't write a
     // partial zip into the archive mid-export.
@@ -334,6 +336,18 @@ router.get('/servers/:id/export', ensureAuth, async (req, res) => {
             releaseBackupLock(server.id);
             lockHeld = false;
         }
+    };
+
+    // Optional restart once the archive has fully streamed — by then every
+    // server file has been read, so starting the server can no longer corrupt
+    // the export.
+    let startRequested = false;
+    const startServerAfterExport = () => {
+        if (!startAfter || startRequested || !serverManager) return;
+        startRequested = true;
+        serverManager.startServer(server.id, { initiatedBy }).catch((err) => {
+            log('error', `Failed to start server after export: ${err.message}`);
+        });
     };
 
     try {
@@ -373,6 +387,7 @@ router.get('/servers/:id/export', ensureAuth, async (req, res) => {
         });
         res.on('close', releaseLock);
         archive.on('end', releaseLock);
+        res.on('finish', startServerAfterExport);
 
         archive.pipe(res);
         archive.append(JSON.stringify(manifest, null, 2), { name: 'craftbox-manifest.json' });

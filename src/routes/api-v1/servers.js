@@ -3,7 +3,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
-const AdmZip = require('adm-zip');
+const StreamZip = require('node-stream-zip');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 const { serversDb, backupsDb, eventsDb, SERVERS_DIR } = require('../../db');
@@ -24,7 +24,7 @@ const { isZipFile } = require('../../utils/uploadSafety');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
-const { normalizeGroupName, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
+const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
 
 // Shared 404 helper — returns the server record or sends 404 JSON and returns null.
 // The caller must `return` after a null result.
@@ -35,6 +35,15 @@ async function loadServerOr404(req, res) {
         return null;
     }
     return server;
+}
+
+// Notify all open dashboard/group pages that the server list or grouping changed
+// so they can live-refresh. `origin` lets the initiating tab skip its own event.
+function notifyDashboard(req) {
+    req.app.get('serverManager')?.broadcastGlobal?.({
+        type: 'dashboard-changed',
+        origin: req.get('x-client-id') || null
+    });
 }
 
 const TEXT_EXTENSIONS = new Set([
@@ -49,12 +58,11 @@ function isTextFile(filename) {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Multer config for transfer archive import — .zip only. Capped at 4 GB: the
-// zip library reads the whole archive into one Buffer, which tops out around
-// 4 GiB on 64-bit Node.
+// Multer config for transfer archive import — .zip only, no size cap (the
+// archive is streamed to disk on upload and streamed out of the zip on
+// extraction, so size is bounded by disk space, not memory).
 const importUpload = multer({
     dest: os.tmpdir(),
-    limits: { fileSize: 4 * 1024 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         if (file.originalname.toLowerCase().endsWith('.zip')) {
             cb(null, true);
@@ -220,6 +228,7 @@ router.post('/servers/:id/group', async (req, res) => {
             return res.status(400).json({ error: GROUP_NAME_ERROR });
         }
 
+        const previousGroup = server.group || null;
         server.group = value;
         await serversDb.set(`server_${server.id}`, server);
 
@@ -227,7 +236,14 @@ router.post('/servers/:id/group', async (req, res) => {
         const proc = serverManager?.getProcess(server.id);
         if (proc) proc.config.group = server.group;
 
-        res.json({ group: server.group });
+        // Groups are implicit — drop the old group's stored color if it emptied.
+        if (previousGroup && previousGroup !== server.group) {
+            await pruneGroupMetaIfEmpty(previousGroup);
+        }
+
+        const color = server.group ? await getGroupColor(server.group) : null;
+        notifyDashboard(req);
+        res.json({ group: server.group, color });
     } catch (err) {
         res.status(500).json({ error: 'Failed to update setting.' });
     }
@@ -762,6 +778,7 @@ router.post('/servers', async (req, res) => {
 
         await serversDb.set(`server_${id}`, server);
 
+        notifyDashboard(req);
         res.status(201).json({ success: true, server });
 
         const serverManager = req.app.get('serverManager');
@@ -969,78 +986,87 @@ router.post('/servers/import', function (req, res, next) {
         return res.status(400).json({ error: 'No archive uploaded.' });
     }
 
-    try {
-        if (!isZipFile(tmpPath)) {
-            cleanupTemp();
-            return res.status(400).json({ error: 'Not a valid zip archive.' });
-        }
+    if (!isZipFile(tmpPath)) {
+        cleanupTemp();
+        return res.status(400).json({ error: 'Not a valid zip archive.' });
+    }
 
-        let zip;
+    // node-stream-zip reads entry data from disk on demand — archive size is
+    // bounded by disk space, not process memory.
+    const zip = new StreamZip.async({ file: tmpPath });
+    const discard = async () => {
+        // Close the zip's file handle before unlinking — Windows cannot delete
+        // an open file.
+        try { await zip.close(); } catch { /* ignore */ }
+        cleanupTemp();
+    };
+
+    try {
+        let zipEntries;
         try {
-            zip = new AdmZip(tmpPath);
+            zipEntries = await zip.entries();
         } catch {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Failed to read archive.' });
         }
 
-        const manifestEntry = zip.getEntry('craftbox-manifest.json');
-        if (!manifestEntry) {
-            cleanupTemp();
+        if (!zipEntries['craftbox-manifest.json']) {
+            await discard();
             return res.status(400).json({ error: 'Not a Craftbox export archive.' });
         }
 
         let manifest;
         try {
-            manifest = JSON.parse(manifestEntry.getData().toString('utf8'));
+            manifest = JSON.parse((await zip.entryData('craftbox-manifest.json')).toString('utf8'));
         } catch {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Export manifest is corrupted.' });
         }
         if (manifest.format !== 'craftbox-server-export') {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Not a Craftbox export archive.' });
         }
         if (manifest.formatVersion !== 1) {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'This archive was created by a newer version of Craftbox and cannot be imported.' });
         }
 
         // Sanity-check the embedded server object before touching disk or DB.
         const source = manifest.server;
         if (!source || typeof source !== 'object' || !UUID_RE.test(String(source.id))) {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Export manifest is invalid.' });
         }
         const trimmedName = String(source.name || '').trim();
         if (trimmedName.length < 1 || trimmedName.length > 50 || !/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Export manifest contains an invalid server name.' });
         }
         if (!getProvider(source.serverType || 'vanilla')) {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Export manifest contains an unknown server type.' });
         }
         const portNum = parseInt(source.port, 10);
         if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Export manifest contains an invalid port.' });
         }
         const memoryNum = parseInt(source.memory, 10);
         if (isNaN(memoryNum) || memoryNum < 512 || memoryNum > 65536) {
-            cleanupTemp();
+            await discard();
             return res.status(400).json({ error: 'Export manifest contains an invalid memory value.' });
         }
 
         // Reject unsafe or unexpected archive entries up front (zip-slip).
         const knownRootFiles = new Set(['craftbox-manifest.json', 'modenv.json', 'backups.json', 'events.json']);
-        for (const entry of zip.getEntries()) {
-            const entryName = String(entry.entryName).replace(/\\/g, '/');
+        for (const entry of Object.values(zipEntries)) {
+            const entryName = String(entry.name).replace(/\\/g, '/');
             if (entryName.startsWith('/') || /^[a-zA-Z]:/.test(entryName) || entryName.split('/').includes('..')) {
-                cleanupTemp();
+                await discard();
                 return res.status(400).json({ error: 'Archive contains unsafe paths.' });
             }
             if (!entryName.startsWith('server/') && !entryName.startsWith('backups/') && !knownRootFiles.has(entryName)) {
-                cleanupTemp();
+                await discard();
                 return res.status(400).json({ error: `Archive contains an unexpected entry: ${entryName}` });
             }
         }
@@ -1057,9 +1083,6 @@ router.post('/servers/import', function (req, res, next) {
         if (portClash) {
             warnings.push(`Port ${portNum} is already used by "${portClash.name}". Edit this server's port before starting it.`);
         }
-        if (source.autoStart) {
-            warnings.push('Auto-start was disabled on import. Re-enable it once the server is confirmed working.');
-        }
 
         const groupResult = normalizeGroupName(source.group);
         const importedServer = {
@@ -1071,7 +1094,7 @@ router.post('/servers/import', function (req, res, next) {
             memory: memoryNum,
             jarFile: typeof source.jarFile === 'string' && source.jarFile ? source.jarFile : 'server.jar',
             group: groupResult.valid ? groupResult.value : null,
-            autoStart: false,
+            autoStart: !!source.autoStart,
             exitCode: null,
             crashReason: null,
             crashDetected: false,
@@ -1083,6 +1106,7 @@ router.post('/servers/import', function (req, res, next) {
         if (importedServer.backupSchedule) delete importedServer.backupSchedule.nextBackupAt;
 
         await serversDb.set(`server_${finalId}`, importedServer);
+        notifyDashboard(req);
         res.status(201).json({ success: true, server: importedServer, warnings });
 
         const serverManager = req.app.get('serverManager');
@@ -1093,49 +1117,57 @@ router.post('/servers/import', function (req, res, next) {
                 const resolvedServerDir = path.resolve(serverDir);
                 await fs.promises.mkdir(serverDir, { recursive: true });
 
-                // Extract server files, stripping the server/ prefix and
-                // re-checking every resolved path (belt and braces vs the scan above).
-                for (const entry of zip.getEntries()) {
-                    const entryName = String(entry.entryName).replace(/\\/g, '/');
+                // Extract server files (streamed, so any archive size works),
+                // stripping the server/ prefix and re-checking every resolved
+                // path (belt and braces vs the scan above).
+                const streamEntryTo = (entryName, target) => new Promise((resolve, reject) => {
+                    zip.stream(entryName).then((stm) => {
+                        const out = fs.createWriteStream(target);
+                        stm.on('error', reject);
+                        out.on('error', reject);
+                        out.on('finish', resolve);
+                        stm.pipe(out);
+                    }).catch(reject);
+                });
+
+                for (const entry of Object.values(zipEntries)) {
+                    const entryName = String(entry.name).replace(/\\/g, '/');
                     if (!entryName.startsWith('server/')) continue;
                     const relative = entryName.slice('server/'.length);
                     if (!relative) continue;
                     const target = path.resolve(serverDir, relative);
                     if (target !== resolvedServerDir && !target.startsWith(resolvedServerDir + path.sep)) {
-                        throw new Error(`Zip entry escapes target directory: ${entry.entryName}`);
+                        throw new Error(`Zip entry escapes target directory: ${entry.name}`);
                     }
                     if (entry.isDirectory) {
                         await fs.promises.mkdir(target, { recursive: true });
                     } else {
                         await fs.promises.mkdir(path.dirname(target), { recursive: true });
-                        await fs.promises.writeFile(target, entry.getData());
+                        await streamEntryTo(entry.name, target);
                     }
                 }
                 await fs.promises.mkdir(path.join(serverDir, 'logs'), { recursive: true });
 
                 // Mod environment map (disabled/client-only mods)
-                const modEnvEntry = zip.getEntry('modenv.json');
-                if (modEnvEntry) {
+                if (zipEntries['modenv.json']) {
                     try {
-                        const modEnv = JSON.parse(modEnvEntry.getData().toString('utf8'));
+                        const modEnv = JSON.parse((await zip.entryData('modenv.json')).toString('utf8'));
                         if (modEnv && typeof modEnv === 'object') await setModEnvMap(finalId, modEnv);
                     } catch { /* non-fatal */ }
                 }
 
                 // Backups — records are always re-keyed; filenames validated
-                const backupsEntry = zip.getEntry('backups.json');
-                if (backupsEntry) {
+                if (zipEntries['backups.json']) {
                     let backupRecords = [];
-                    try { backupRecords = JSON.parse(backupsEntry.getData().toString('utf8')); } catch { /* skip */ }
+                    try { backupRecords = JSON.parse((await zip.entryData('backups.json')).toString('utf8')); } catch { /* skip */ }
                     if (Array.isArray(backupRecords)) {
                         ensureBackupDir(finalId);
                         for (const record of backupRecords) {
                             if (!record || typeof record.filename !== 'string') continue;
-                            const zipEntry = zip.getEntry(`backups/${record.filename}`);
-                            if (!zipEntry) continue;
+                            if (!zipEntries[`backups/${record.filename}`]) continue;
                             let backupPath;
                             try { backupPath = resolveBackupPath(finalId, record.filename); } catch { continue; }
-                            await fs.promises.writeFile(backupPath, zipEntry.getData());
+                            await streamEntryTo(`backups/${record.filename}`, backupPath);
                             const newBackupId = uuidv4();
                             await backupsDb.set(`backup_${newBackupId}`, { ...record, id: newBackupId, serverId: finalId });
                         }
@@ -1143,10 +1175,9 @@ router.post('/servers/import', function (req, res, next) {
                 }
 
                 // Event history — re-keyed, capped at the pruneEvents limit
-                const eventsEntry = zip.getEntry('events.json');
-                if (eventsEntry) {
+                if (zipEntries['events.json']) {
                     let eventRecords = [];
-                    try { eventRecords = JSON.parse(eventsEntry.getData().toString('utf8')); } catch { /* skip */ }
+                    try { eventRecords = JSON.parse((await zip.entryData('events.json')).toString('utf8')); } catch { /* skip */ }
                     if (Array.isArray(eventRecords)) {
                         for (const record of eventRecords.slice(0, 500)) {
                             if (!record || typeof record !== 'object') continue;
@@ -1184,11 +1215,11 @@ router.post('/servers/import', function (req, res, next) {
                     serverManager.broadcastOperation(finalId, 'import', 'failed', err.message);
                 }
             } finally {
-                cleanupTemp();
+                await discard();
             }
         })();
     } catch (err) {
-        cleanupTemp();
+        await discard();
         log('error', `Failed to import server: ${err.message}`);
         if (!res.headersSent) {
             res.status(500).json({ error: `Failed to import server: ${err.message}` });
@@ -1262,6 +1293,7 @@ router.post('/servers/:id/duplicate', async (req, res) => {
         };
 
         await serversDb.set(`server_${newId}`, newServer);
+        notifyDashboard(req);
         res.status(201).json({ success: true, server: newServer, warning: null });
 
         (async () => {
@@ -1350,6 +1382,7 @@ router.delete('/servers/:id', async (req, res) => {
         await serversDb.delete(`server_${id}`);
         log('info', `Server "${server.name}" (${id}) marked for deletion.`);
 
+        notifyDashboard(req);
         res.json({ success: true });
 
         // Background cleanup. Failures here orphan files on disk but do not
@@ -1361,6 +1394,7 @@ router.delete('/servers/:id', async (req, res) => {
                 await deleteServerEvents(id);
                 await clearStatsHistory(id);
                 await clearAllModEnv(id);
+                if (server.group) await pruneGroupMetaIfEmpty(server.group);
 
                 const serverDir = path.join(SERVERS_DIR, id);
                 await fs.promises.rm(serverDir, { recursive: true, force: true });
@@ -1500,6 +1534,7 @@ router.post('/servers/:id/edit', async (req, res) => {
         }
     }
 
+    const previousGroup = server.group || null;
     server.name = trimmedName;
     server.port = portNum;
     server.memory = memoryNum;
@@ -1509,6 +1544,10 @@ router.post('/servers/:id/edit', async (req, res) => {
     server.seed = seedStr;
     server.group = groupResult.value;
     await serversDb.set(`server_${id}`, server);
+
+    if (previousGroup && previousGroup !== server.group) {
+        await pruneGroupMetaIfEmpty(previousGroup);
+    }
 
     const serverDir = path.join(SERVERS_DIR, id);
     if (fs.existsSync(path.join(serverDir, 'server.properties'))) {
@@ -1524,6 +1563,7 @@ router.post('/servers/:id/edit', async (req, res) => {
     const proc = serverManager?.getProcess(id);
     if (proc) Object.assign(proc.config, server);
 
+    notifyDashboard(req);
     res.json({ success: true, server, versionChanged, jarChanged });
 });
 
