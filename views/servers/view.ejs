@@ -46,7 +46,7 @@
      style="display: <%= server.state === 'crashed' ? 'flex' : 'none' %>;">
     <span class="material-icons-outlined">error</span>
     <div id="crash-banner-text">
-        <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar update interrupted') || server.crashReason.startsWith('Provisioning interrupted'))) { %>
+        <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar update interrupted') || server.crashReason.startsWith('Provisioning interrupted') || server.crashReason.startsWith('Modpack install failed'))) { %>
             <%= server.crashReason %>
         <% } else { %>
             Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.

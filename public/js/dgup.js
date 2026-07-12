@@ -5,6 +5,11 @@
 //   baseUrl   the upload endpoint, e.g. '/api/v1/servers/import'
 //   opts:
 //     fieldName   multipart field name for the small-file path (required)
+//     fields      optional plain object of extra form fields. Small path:
+//                 appended to the multipart FormData (multer puts them on
+//                 req.body). Chunked path: merged into the /complete body,
+//                 which the DGUP server passes through as req.body — the
+//                 wrapped handler sees the same req.body either way.
 //     onProgress  function(loadedBytes, totalBytes) — optional
 //     csrfToken   optional; defaults to _findCsrfToken()
 //     signal      optional AbortSignal — aborting stops the transfer, frees
@@ -71,10 +76,14 @@ async function uploadFile(baseUrl, file, opts) {
     var csrf = opts.csrfToken || _findCsrfToken();
     var onProgress = opts.onProgress || function () {};
     var signal = opts.signal || null;
+    var fields = opts.fields || null;
 
     // ── Small file: today's single multipart POST, unchanged ──
     if (file.size <= DGUP_THRESHOLD) {
         var formData = new FormData();
+        if (fields) {
+            Object.keys(fields).forEach(function (k) { formData.append(k, fields[k]); });
+        }
         formData.append(opts.fieldName, file);
         var res = await _dgupXhr(baseUrl, {
             'X-CSRF-Token': csrf,
@@ -92,9 +101,9 @@ async function uploadFile(baseUrl, file, opts) {
     // DGUP lives at <endpoint>/upload/* — endpoints already ending in /upload
     // (plugins) host it at themselves, so don't double the segment.
     var dgupBase = /\/upload$/.test(baseUrl) ? baseUrl : baseUrl + '/upload';
-    var result = await _dgupAttempt(dgupBase, file, csrf, onProgress, signal);
+    var result = await _dgupAttempt(dgupBase, file, csrf, onProgress, signal, fields);
     if (result.restart) {
-        result = await _dgupAttempt(dgupBase, file, csrf, onProgress, signal);
+        result = await _dgupAttempt(dgupBase, file, csrf, onProgress, signal, fields);
         if (result.restart) {
             return { ok: false, status: 410, data: { error: 'Upload session was lost. Please try again.' } };
         }
@@ -102,7 +111,7 @@ async function uploadFile(baseUrl, file, opts) {
     return result;
 }
 
-async function _dgupAttempt(dgupBase, file, csrf, onProgress, signal) {
+async function _dgupAttempt(dgupBase, file, csrf, onProgress, signal, fields) {
     // init — server dictates chunk size and chunk count
     var initRes = await apiFetch(dgupBase + '/init', {
         method: 'POST',
@@ -191,10 +200,12 @@ async function _dgupAttempt(dgupBase, file, csrf, onProgress, signal) {
         if (cAttempt > 0) {
             await _dgupSleep(Math.min(DGUP_BACKOFF_MS * Math.pow(2, cAttempt - 1), DGUP_BACKOFF_MAX_MS));
         }
+        // Extra form fields ride along in the complete body (uploadId wins any
+        // name collision) so the wrapped handler sees them on req.body.
         var completeRes = await apiFetch(dgupBase + '/complete', {
             method: 'POST',
             headers: { 'X-CSRF-Token': csrf },
-            body: { uploadId: uploadId }
+            body: Object.assign({}, fields || {}, { uploadId: uploadId })
         });
         if (completeRes.status === 0 || completeRes.status >= 500 || completeRes.status === 409) {
             continue; // transient — safe to retry, see above

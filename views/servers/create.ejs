@@ -23,8 +23,39 @@
                             </select>
                         </div>
 
+                        <!-- Modpack summary (replaces type/version selection when
+                             creating from a Modrinth modpack or local .mrpack) -->
+                        <div class="mb-4 d-none" id="modpack-summary">
+                            <label class="form-label">Modpack</label>
+                            <div class="card">
+                                <div class="card-body d-flex align-items-center gap-3 p-3">
+                                    <img src="" alt="" class="modpack-icon d-none" id="modpack-icon">
+                                    <span class="modpack-icon modpack-icon-placeholder" id="modpack-icon-placeholder">
+                                        <span class="material-icons-outlined">widgets</span>
+                                    </span>
+                                    <div class="overflow-hidden flex-grow-1">
+                                        <div class="fw-semibold text-truncate" id="modpack-title">Loading modpack...</div>
+                                        <small class="text-body-secondary d-block text-truncate" id="modpack-subtitle"></small>
+                                    </div>
+                                    <div class="d-none d-sm-flex gap-1" id="modpack-badges"></div>
+                                    <button type="button" class="btn-close flex-shrink-0" id="modpack-clear"
+                                        title="Choose a different setup"></button>
+                                </div>
+                            </div>
+                            <div class="form-text">The mod loader, Minecraft version, and mods come from the modpack.</div>
+                            <input type="hidden" id="modpackProject">
+                            <input type="hidden" id="modpackVersion">
+                        </div>
+
+                        <!-- Local .mrpack upload (shown for ?mrpack=local) -->
+                        <div class="mb-4 d-none" id="mrpack-file-group">
+                            <label for="mrpack-file" class="form-label required-star">Modpack File (.mrpack)</label>
+                            <input type="file" class="form-control" id="mrpack-file" accept=".mrpack">
+                            <div class="form-text">A Modrinth modpack file. The mod loader and mods are installed from it.</div>
+                        </div>
+
                         <!-- Server Type Selection -->
-                        <div class="mb-4">
+                        <div class="mb-4" id="type-select-group">
                             <label class="form-label">Server Type</label>
                             <div class="row g-2" id="type-selector">
                                 <div class="col-12 text-center text-body-secondary py-3">

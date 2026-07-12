@@ -339,4 +339,224 @@
             });
         }
     }
+
+    // ── Browse Modrinth ──
+
+    var modrinthModalEl = document.getElementById('modrinthModal');
+    var modrinthBrowseBtn = document.getElementById('modrinth-browse-btn');
+
+    if (modrinthModalEl && modrinthBrowseBtn) {
+        var bsModrinthModal = new bootstrap.Modal(modrinthModalEl);
+        var mrSearchInput = document.getElementById('modrinth-search');
+        var mrSortSelect = document.getElementById('modrinth-sort');
+        var mrLoading = document.getElementById('modrinth-loading');
+        var mrEmpty = document.getElementById('modrinth-empty');
+        var mrWrap = document.getElementById('modrinth-results-wrap');
+        var mrResults = document.getElementById('modrinth-results');
+        var mrLoadMore = document.getElementById('modrinth-load-more');
+
+        var mrServerType = modrinthModalEl.dataset.serverType;
+        var mrGameVersion = modrinthModalEl.dataset.serverVersion;
+        var MR_PAGE = 20;
+        var mrOffset = 0;
+        var mrTotal = 0;
+        var mrSeq = 0;
+        var mrInstalledCount = 0;
+        var mrLoadedOnce = false;
+
+        function mrCompactNumber(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            return String(n || 0);
+        }
+
+        modrinthBrowseBtn.addEventListener('click', function () {
+            bsModrinthModal.show();
+            if (!mrLoadedOnce) {
+                mrLoadedOnce = true;
+                mrSearch(false);
+            }
+        });
+
+        async function mrSearch(append) {
+            var seq = ++mrSeq;
+            if (!append) {
+                mrWrap.classList.add('d-none');
+                mrEmpty.classList.add('d-none');
+                mrLoadMore.classList.add('d-none');
+                mrLoading.classList.remove('d-none');
+            } else {
+                mrLoadMore.disabled = true;
+            }
+
+            var p = new URLSearchParams();
+            p.set('projectType', 'mod');
+            p.set('loader', mrServerType);
+            if (mrGameVersion && mrGameVersion !== 'latest') p.set('gameVersion', mrGameVersion);
+            var q = mrSearchInput.value.trim();
+            if (q) p.set('query', q);
+            p.set('index', mrSortSelect.value);
+            p.set('offset', String(mrOffset));
+            p.set('limit', String(MR_PAGE));
+
+            var res = await apiFetch('/api/v1/modrinth/search?' + p.toString());
+            if (seq !== mrSeq) return;
+            mrLoading.classList.add('d-none');
+            mrLoadMore.disabled = false;
+
+            if (!res.ok) {
+                showToast((res.data && (res.data.message || res.data.error)) || 'Failed to search Modrinth.', 'danger');
+                if (!append) mrEmpty.classList.remove('d-none');
+                return;
+            }
+
+            mrTotal = res.data.totalHits || 0;
+            var hits = res.data.hits || [];
+            if (!append) mrResults.innerHTML = '';
+            if (hits.length === 0 && !append) {
+                mrEmpty.classList.remove('d-none');
+                return;
+            }
+            hits.forEach(function (hit) {
+                mrResults.appendChild(mrBuildRow(hit));
+            });
+            mrWrap.classList.remove('d-none');
+            mrLoadMore.classList.toggle('d-none', mrOffset + MR_PAGE >= mrTotal);
+        }
+
+        // Modrinth strings are external data — always set via textContent.
+        function mrBuildRow(hit) {
+            var tr = document.createElement('tr');
+
+            var iconTd = document.createElement('td');
+            iconTd.style.width = '48px';
+            if (hit.iconUrl) {
+                var img = document.createElement('img');
+                img.className = 'modpack-icon-sm';
+                img.alt = '';
+                img.src = hit.iconUrl;
+                iconTd.appendChild(img);
+            } else {
+                var ph = document.createElement('span');
+                ph.className = 'modpack-icon-sm modpack-icon-placeholder';
+                var phIcon = document.createElement('span');
+                phIcon.className = 'material-icons-outlined';
+                phIcon.style.fontSize = '1.2rem';
+                phIcon.textContent = 'extension';
+                ph.appendChild(phIcon);
+                iconTd.appendChild(ph);
+            }
+            tr.appendChild(iconTd);
+
+            // Primary cell absorbs leftover width and truncates (no phone h-scroll)
+            var nameTd = document.createElement('td');
+            nameTd.className = 'mr-primary-cell';
+            var nameRow = document.createElement('div');
+            nameRow.className = 'd-flex align-items-baseline gap-2';
+            var nameEl = document.createElement('span');
+            nameEl.className = 'fw-semibold text-truncate';
+            nameEl.style.minWidth = '0';
+            nameEl.textContent = hit.title || '(untitled)';
+            nameRow.appendChild(nameEl);
+            if (hit.author) {
+                var authorEl = document.createElement('small');
+                authorEl.className = 'text-body-secondary text-nowrap flex-shrink-0';
+                authorEl.textContent = 'by ' + hit.author;
+                nameRow.appendChild(authorEl);
+            }
+            nameTd.appendChild(nameRow);
+            var descEl = document.createElement('small');
+            descEl.className = 'text-body-secondary d-block text-truncate';
+            descEl.textContent = hit.description || '';
+            nameTd.appendChild(descEl);
+            tr.appendChild(nameTd);
+
+            var dlTd = document.createElement('td');
+            dlTd.className = 'text-body-secondary small text-nowrap d-none d-md-table-cell';
+            dlTd.style.width = '110px';
+            var dlIcon = document.createElement('span');
+            dlIcon.className = 'material-icons-outlined me-1';
+            dlIcon.style.fontSize = '1rem';
+            dlIcon.textContent = 'download';
+            dlTd.appendChild(dlIcon);
+            dlTd.appendChild(document.createTextNode(mrCompactNumber(hit.downloads)));
+            tr.appendChild(dlTd);
+
+            var btnTd = document.createElement('td');
+            btnTd.className = 'text-end';
+            btnTd.style.width = '130px';
+            var installBtn = document.createElement('button');
+            installBtn.type = 'button';
+            installBtn.className = 'btn btn-success btn-sm d-inline-flex align-items-center gap-1';
+            installBtn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">download</span>Install';
+            installBtn.addEventListener('click', function () {
+                mrInstall(installBtn, hit);
+            });
+            btnTd.appendChild(installBtn);
+            tr.appendChild(btnTd);
+
+            return tr;
+        }
+
+        function mrMarkInstalled(btn) {
+            btn.className = 'btn btn-outline-success btn-sm d-inline-flex align-items-center gap-1';
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">check</span>Installed';
+        }
+
+        async function mrInstall(btn, hit) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Installing...';
+
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/modrinth-install', {
+                method: 'POST',
+                body: { projectId: hit.projectId }
+            });
+            if (!res.ok) {
+                showToast((res.data && (res.data.message || res.data.error)) || 'Install failed.',
+                    res.status === 409 ? 'warning' : 'danger');
+                if (res.status === 409) {
+                    mrMarkInstalled(btn);
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">download</span>Install';
+                }
+                return;
+            }
+
+            var files = (res.data && res.data.installed) || [];
+            mrInstalledCount += files.length;
+            var msg = files.length > 1
+                ? files[0].filename + ' installed (+' + (files.length - 1) + ' ' + (files.length === 2 ? 'dependency' : 'dependencies') + ').'
+                : ((files[0] ? files[0].filename : contentSingularCap) + ' installed.');
+            showToast(msg, 'success');
+            mrMarkInstalled(btn);
+        }
+
+        var mrDebounce = null;
+        mrSearchInput.addEventListener('input', function () {
+            clearTimeout(mrDebounce);
+            mrDebounce = setTimeout(function () {
+                mrOffset = 0;
+                mrSearch(false);
+            }, 400);
+        });
+        mrSortSelect.addEventListener('change', function () {
+            mrOffset = 0;
+            mrSearch(false);
+        });
+        mrLoadMore.addEventListener('click', function () {
+            mrOffset += MR_PAGE;
+            mrSearch(true);
+        });
+
+        // Reload once the user is done so the installed files table refreshes
+        modrinthModalEl.addEventListener('hidden.bs.modal', function () {
+            if (mrInstalledCount > 0) {
+                var noun = mrInstalledCount === 1 ? contentSingular : contentLabel;
+                flashToast(mrInstalledCount + ' ' + noun + ' installed.', 'success');
+                window.location.reload();
+            }
+        });
+    }
 })();

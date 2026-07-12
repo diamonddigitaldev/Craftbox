@@ -194,7 +194,8 @@
                     crashReason.indexOf('Provisioning failed') === 0 ||
                     crashReason.indexOf('Duplication failed') === 0 ||
                     crashReason.indexOf('Jar update interrupted') === 0 ||
-                    crashReason.indexOf('Provisioning interrupted') === 0
+                    crashReason.indexOf('Provisioning interrupted') === 0 ||
+                    crashReason.indexOf('Modpack install failed') === 0
                 )) {
                     crashText.textContent = crashReason;
                 } else {
@@ -607,6 +608,37 @@
     // Fetch stats immediately and every 10 seconds (matches background collector interval)
     fetchStats();
     setInterval(fetchStats, 10000);
+
+    // ── Modpack install progress ──
+    // While the server is provisioning from a modpack, per-phase progress
+    // arrives over the 'modpack-install' operation and refines the generic
+    // provisioning banner text. Completion/failure state changes arrive via
+    // the normal 'state' broadcast; the toast here is the immediate feedback.
+    var modpackPhaseText = {
+        download: 'Downloading the modpack...',
+        parse: 'Reading the modpack manifest...',
+        loader: 'Installing the mod loader server...',
+        overrides: 'Applying modpack configuration files...',
+        finalize: 'Finishing up...'
+    };
+    document.addEventListener('craftbox:operation', function (e) {
+        var op = e.detail;
+        if (!op || op.operation !== 'modpack-install') return;
+        if (op.status === 'progress') {
+            var opText = document.getElementById('operation-banner-text');
+            if (!opText) return;
+            var p = op.payload || {};
+            if (p.phase === 'files' && typeof p.total === 'number') {
+                opText.textContent = 'Downloading mods (' + (p.done || 0) + '/' + p.total + ')...';
+            } else if (modpackPhaseText[p.phase]) {
+                opText.textContent = modpackPhaseText[p.phase];
+            }
+        } else if (op.status === 'complete') {
+            showToast('Modpack installed successfully.', 'success');
+        } else if (op.status === 'failed') {
+            showToast('Modpack install failed: ' + (op.error || 'Unknown error'), 'danger');
+        }
+    });
 
     // Start connection
     connect();

@@ -21,7 +21,7 @@ function securityHeaders(req, res, next) {
             "font-src 'self'",
             `script-src 'self' 'nonce-${nonce}'`,
             "connect-src 'self'",
-            "img-src 'self' data:",
+            "img-src 'self' data: https://cdn.modrinth.com",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'"
