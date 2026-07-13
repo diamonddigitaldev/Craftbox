@@ -47,15 +47,12 @@ function setCached(url, data, ttlMs) {
     cache.set(url, { expires: Date.now() + ttlMs, data });
 }
 
-async function mrFetch(pathAndQuery, ttlMs) {
-    const url = BASE + pathAndQuery;
-    const cached = getCached(url);
-    if (cached !== undefined) return cached;
-
+async function mrRequest(pathAndQuery, options) {
     let res;
     try {
-        res = await fetch(url, {
-            headers: { 'User-Agent': USER_AGENT },
+        res = await fetch(BASE + pathAndQuery, {
+            ...options,
+            headers: { 'User-Agent': USER_AGENT, ...(options && options.headers) },
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
         });
     } catch (err) {
@@ -69,12 +66,19 @@ async function mrFetch(pathAndQuery, ttlMs) {
     }
     if (!res.ok) throw new ModrinthApiError(`Modrinth returned HTTP ${res.status}.`, res.status);
 
-    let data;
     try {
-        data = await res.json();
+        return await res.json();
     } catch {
         throw new ModrinthApiError('Modrinth returned an invalid response.', 502);
     }
+}
+
+async function mrFetch(pathAndQuery, ttlMs) {
+    const url = BASE + pathAndQuery;
+    const cached = getCached(url);
+    if (cached !== undefined) return cached;
+
+    const data = await mrRequest(pathAndQuery);
     setCached(url, data, ttlMs);
     return data;
 }
@@ -127,6 +131,23 @@ async function getVersion(versionId) {
 }
 
 /**
+ * Look up which known Modrinth versions a set of file hashes correspond to
+ * (how launchers detect installed mods). Returns a map keyed by hash — only
+ * matched hashes are present; each value is a full version object with
+ * `project_id`. Not cached: the file set changes with every install.
+ * @param {string[]} hashes - hex digests
+ * @param {'sha512'|'sha1'} algorithm
+ */
+async function getVersionsByHashes(hashes, algorithm) {
+    if (!hashes.length) return {};
+    return mrRequest('/version_files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hashes, algorithm })
+    });
+}
+
+/**
  * List a project's versions, optionally filtered by loader / game version
  * (Modrinth expects both filters as JSON-encoded arrays).
  */
@@ -145,5 +166,6 @@ module.exports = {
     getProject,
     getVersion,
     getProjectVersions,
+    getVersionsByHashes,
     isQuiltOnly
 };

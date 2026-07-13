@@ -7,17 +7,17 @@
         <span class="material-icons-outlined">dns</span>
         Servers
     </h4>
-    <div class="d-flex gap-2">
-        <a href="/modpacks" class="btn btn-outline-light d-flex align-items-center gap-1">
-            <span class="material-icons-outlined" style="font-size: 1.2rem;">widgets</span>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="/modpacks" class="btn btn-outline-light btn-sm text-nowrap d-flex align-items-center gap-1">
+            <span class="material-icons-outlined" style="font-size: 1rem;">widgets</span>
             Create from modpack...
         </a>
-        <button type="button" class="btn btn-outline-light d-flex align-items-center gap-1" id="import-server-btn">
-            <span class="material-icons-outlined" style="font-size: 1.2rem;">upload</span>
+        <button type="button" class="btn btn-outline-light btn-sm text-nowrap d-flex align-items-center gap-1" id="import-server-btn">
+            <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
             Import
         </button>
-        <a href="/servers/create" class="btn btn-success d-flex align-items-center gap-1">
-            <span class="material-icons-outlined" style="font-size: 1.2rem;">add</span>
+        <a href="/servers/create" class="btn btn-success btn-sm text-nowrap d-flex align-items-center gap-1">
+            <span class="material-icons-outlined" style="font-size: 1rem;">add</span>
             New Server
         </a>
     </div>
@@ -122,12 +122,73 @@
     </div>
 </div>
 
+<!-- Create server from a dropped .mrpack -->
+<div class="modal fade" id="mrpackCreateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-success">widgets</span>
+                    Create Server from Modpack
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="mrpack-create-form">
+                <div class="modal-body">
+                    <p class="text-body-secondary d-flex align-items-center gap-2 mb-3" style="font-size: 0.85rem;">
+                        <span class="material-icons-outlined" style="font-size: 1rem;">upload_file</span>
+                        <span class="text-truncate" id="mrpack-drop-filename"></span>
+                    </p>
+                    <div class="mb-3">
+                        <label for="mrpack-name" class="form-label required-star">Server Name</label>
+                        <input type="text" class="form-control" id="mrpack-name" required minlength="1"
+                            maxlength="50" pattern="[a-zA-Z0-9 _\-]+">
+                        <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label for="mrpack-port" class="form-label required-star">Server Port</label>
+                            <input type="number" class="form-control" id="mrpack-port" value="25565"
+                                min="1024" max="65535" required>
+                        </div>
+                        <div class="col-6">
+                            <label for="mrpack-memory" class="form-label required-star">Memory (MB)</label>
+                            <input type="number" class="form-control" id="mrpack-memory" value="4096"
+                                min="512" max="65536" required>
+                            <div class="form-text">RAM allocated to the server (-Xmx). Modpacks usually need 4-8 GB.</div>
+                        </div>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="mrpack-eula" required>
+                        <label class="form-check-label required-star" for="mrpack-eula">
+                            I agree to the <a href="https://aka.ms/MinecraftEULA" target="_blank"
+                                rel="noopener noreferrer">Minecraft End User License Agreement</a>
+                        </label>
+                        <div class="form-text">You must accept the EULA before creating a server.</div>
+                    </div>
+                    <div class="progress mt-3 d-none" id="mrpack-progress" style="height: 6px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success btn-sm d-flex align-items-center gap-1"
+                        id="mrpack-create-confirm" data-validate-required disabled>
+                        <span class="material-icons-outlined" style="font-size: 1rem;">add</span>
+                        Create Server
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Drop zone overlay (hidden until drag) -->
 <div id="import-drop-overlay" class="d-none position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
     style="z-index: 1050; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: none;">
     <div class="text-center">
         <span class="material-icons-outlined text-success" style="font-size: 4rem;">upload_file</span>
-        <h4 class="text-white mt-2">Drop a Craftbox export .zip to import...</h4>
+        <h4 class="text-white mt-2">Drop a .zip to import a server, or a .mrpack to create one...</h4>
     </div>
 </div>
 

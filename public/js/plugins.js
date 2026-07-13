@@ -363,6 +363,9 @@
         var mrSeq = 0;
         var mrInstalledCount = 0;
         var mrLoadedOnce = false;
+        // projectId -> filename for files already in the content folder,
+        // matched by hash server-side. null until the lookup lands.
+        var mrInstalledProjects = null;
 
         function mrCompactNumber(n) {
             if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -374,9 +377,27 @@
             bsModrinthModal.show();
             if (!mrLoadedOnce) {
                 mrLoadedOnce = true;
+                loadInstalledProjects();
                 mrSearch(false);
             }
         });
+
+        // Already-installed detection: rows render immediately from the search,
+        // then get re-marked once the hash lookup answers (whichever is slower).
+        async function loadInstalledProjects() {
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/modrinth-installed');
+            mrInstalledProjects = (res.ok && res.data && res.data.projects) || {};
+            markInstalledRows();
+        }
+
+        function markInstalledRows() {
+            if (!mrInstalledProjects) return;
+            mrResults.querySelectorAll('button[data-project-id]').forEach(function (btn) {
+                if (!btn.disabled && mrInstalledProjects[btn.dataset.projectId]) {
+                    mrMarkInstalled(btn);
+                }
+            });
+        }
 
         async function mrSearch(append) {
             var seq = ++mrSeq;
@@ -420,6 +441,7 @@
             hits.forEach(function (hit) {
                 mrResults.appendChild(mrBuildRow(hit));
             });
+            markInstalledRows();
             mrWrap.classList.remove('d-none');
             mrLoadMore.classList.toggle('d-none', mrOffset + MR_PAGE >= mrTotal);
         }
@@ -489,9 +511,13 @@
             installBtn.type = 'button';
             installBtn.className = 'btn btn-success btn-sm d-inline-flex align-items-center gap-1';
             installBtn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">download</span>Install';
+            installBtn.dataset.projectId = hit.projectId;
             installBtn.addEventListener('click', function () {
                 mrInstall(installBtn, hit);
             });
+            if (mrInstalledProjects && mrInstalledProjects[hit.projectId]) {
+                mrMarkInstalled(installBtn);
+            }
             btnTd.appendChild(installBtn);
             tr.appendChild(btnTd);
 
@@ -531,6 +557,14 @@
                 : ((files[0] ? files[0].filename : contentSingularCap) + ' installed.');
             showToast(msg, 'success');
             mrMarkInstalled(btn);
+            // Fold the new files (incl. auto-installed dependencies) into the
+            // installed set so their rows flip to "Installed" too.
+            if (mrInstalledProjects) {
+                files.forEach(function (f) {
+                    if (f.projectId) mrInstalledProjects[f.projectId] = f.filename;
+                });
+                markInstalledRows();
+            }
         }
 
         var mrDebounce = null;
@@ -550,11 +584,10 @@
             mrSearch(true);
         });
 
-        // Reload once the user is done so the installed files table refreshes
+        // Reload once the user is done so the installed files table refreshes.
+        // No toast — each install already announced itself when it happened.
         modrinthModalEl.addEventListener('hidden.bs.modal', function () {
             if (mrInstalledCount > 0) {
-                var noun = mrInstalledCount === 1 ? contentSingular : contentLabel;
-                flashToast(mrInstalledCount + ' ' + noun + ' installed.', 'success');
                 window.location.reload();
             }
         });

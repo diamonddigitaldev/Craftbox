@@ -4,6 +4,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const router = express.Router();
 const modrinth = require('../../services/modrinth');
 const { serversDb, SERVERS_DIR } = require('../../db');
@@ -173,6 +174,72 @@ router.get('/modrinth/projects/:idOrSlug/versions', async (req, res) => {
                 .filter(v => !modrinth.isQuiltOnly(v.loaders))
                 .map(mapVersion)
         });
+    } catch (err) {
+        sendModrinthError(res, err);
+    }
+});
+
+// Per-file digest memo for the installed-projects lookup — hashing a large
+// modpack's mods folder on every modal open would be wasteful. Keyed by
+// path+size+mtime so an edited or replaced jar re-hashes.
+const jarHashCache = new Map();
+const JAR_HASH_CACHE_MAX = 5000;
+
+function sha512File(filePath) {
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha512');
+        fs.createReadStream(filePath)
+            .on('error', reject)
+            .on('data', (chunk) => hash.update(chunk))
+            .on('end', () => resolve(hash.digest('hex')));
+    });
+}
+
+async function hashJarCached(filePath) {
+    const stat = await fs.promises.stat(filePath);
+    const key = `${filePath}|${stat.size}|${stat.mtimeMs}`;
+    if (jarHashCache.has(key)) return jarHashCache.get(key);
+    const digest = await sha512File(filePath);
+    if (jarHashCache.size >= JAR_HASH_CACHE_MAX) jarHashCache.clear();
+    jarHashCache.set(key, digest);
+    return digest;
+}
+
+// GET /servers/:id/modrinth-installed — which Modrinth projects are already
+// present in the server's content folder, matched by file hash the way
+// launchers do it. Locally-built or modified jars simply won't match — the
+// 409 on install remains the fallback for those.
+router.get('/servers/:id/modrinth-installed', async (req, res) => {
+    const server = await serversDb.get(`server_${req.params.id}`);
+    if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+    const contentType = getContentType(server.serverType);
+    if (!contentType) {
+        return res.status(400).json({ error: 'This server type does not support plugins or mods.' });
+    }
+
+    const contentDir = path.join(SERVERS_DIR, server.id, contentType.folder);
+    let files = [];
+    try {
+        files = (await fs.promises.readdir(contentDir)).filter(f => f.toLowerCase().endsWith('.jar'));
+    } catch { /* no content dir yet — nothing installed */ }
+    if (files.length === 0) return res.json({ projects: {} });
+
+    try {
+        const hashToFile = new Map();
+        for (const name of files) {
+            try {
+                hashToFile.set(await hashJarCached(path.join(contentDir, name)), name);
+            } catch { /* unreadable file — skip it */ }
+        }
+        const matches = await modrinth.getVersionsByHashes([...hashToFile.keys()], 'sha512');
+        const projects = {};
+        for (const [hash, version] of Object.entries(matches || {})) {
+            if (version && version.project_id) {
+                projects[version.project_id] = hashToFile.get(hash) || true;
+            }
+        }
+        res.json({ projects });
     } catch (err) {
         sendModrinthError(res, err);
     }

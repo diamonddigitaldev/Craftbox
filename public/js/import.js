@@ -12,8 +12,11 @@
     var uploading = false;
     var currentUpload = null; // AbortController while an upload is running
 
+    var mrpackModalEl = document.getElementById('mrpackCreateModal');
+
     function isModalOpen() {
-        return modalEl.classList.contains('show');
+        return modalEl.classList.contains('show')
+            || (mrpackModalEl && mrpackModalEl.classList.contains('show'));
     }
 
     function resetModal() {
@@ -142,15 +145,24 @@
         });
 
         document.addEventListener('drop', function (e) {
-            if (isOverlayVisible() || uploading) return;
+            if (isOverlayVisible() || uploading || mrpackUploading) return;
             hideDropOverlay();
             if (!e.dataTransfer || e.dataTransfer.files.length === 0) return;
+
+            // .mrpack -> create a new server from the modpack; .zip -> import
+            var mrpackFile = Array.prototype.find.call(e.dataTransfer.files, function (f) {
+                return f.name.toLowerCase().endsWith('.mrpack');
+            });
+            if (mrpackFile) {
+                openMrpackModal(mrpackFile);
+                return;
+            }
 
             var zipFile = Array.prototype.find.call(e.dataTransfer.files, function (f) {
                 return f.name.toLowerCase().endsWith('.zip');
             });
             if (!zipFile) {
-                showToast('Only .zip transfer archives can be imported.', 'danger');
+                showToast('Drop a .zip transfer archive to import, or a .mrpack modpack to create a server.', 'danger');
                 return;
             }
 
@@ -167,6 +179,95 @@
             } catch (_) { /* input stays empty — upload proceeds regardless */ }
             bootstrap.Modal.getOrCreateInstance(modalEl).show();
             startImport(zipFile);
+        });
+    }
+
+    // ── Create server from a dropped .mrpack ──
+
+    var mrpackForm = document.getElementById('mrpack-create-form');
+    var mrpackConfirmBtn = document.getElementById('mrpack-create-confirm');
+    var mrpackConfirmHtml = mrpackConfirmBtn ? mrpackConfirmBtn.innerHTML : '';
+    var mrpackProgressWrap = document.getElementById('mrpack-progress');
+    var mrpackProgressBar = mrpackProgressWrap ? mrpackProgressWrap.querySelector('.progress-bar') : null;
+    var mrpackDroppedFile = null;
+    var mrpackUploading = false;
+    var mrpackUpload = null; // AbortController while an upload is running
+
+    function openMrpackModal(file) {
+        if (!mrpackModalEl || !mrpackForm) return;
+        mrpackDroppedFile = file;
+        mrpackUploading = false;
+        mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
+        mrpackProgressWrap.classList.add('d-none');
+        mrpackProgressBar.style.width = '0%';
+        document.getElementById('mrpack-drop-filename').textContent = file.name;
+
+        // Suggest a server name from the pack filename (allowed charset only)
+        var nameInput = document.getElementById('mrpack-name');
+        if (!nameInput.value.trim()) {
+            nameInput.value = file.name
+                .replace(/\.mrpack$/i, '')
+                .replace(/[^a-zA-Z0-9 _\-]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 50);
+        }
+        // Re-run the shared data-validate-required check against the new values
+        mrpackForm.dispatchEvent(new Event('input'));
+        bootstrap.Modal.getOrCreateInstance(mrpackModalEl).show();
+    }
+
+    if (mrpackForm) {
+        mrpackForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (mrpackUploading || !mrpackDroppedFile) return;
+            if (!mrpackForm.reportValidity()) return;
+
+            mrpackUploading = true;
+            mrpackUpload = new AbortController();
+            mrpackConfirmBtn.disabled = true;
+            mrpackConfirmBtn.innerHTML =
+                '<span class="spinner-border spinner-border-sm" role="status"></span> Creating...';
+            mrpackProgressWrap.classList.remove('d-none');
+
+            uploadFile('/api/v1/servers/from-mrpack', mrpackDroppedFile, {
+                fieldName: 'mrpack',
+                signal: mrpackUpload.signal,
+                fields: {
+                    name: document.getElementById('mrpack-name').value.trim(),
+                    port: document.getElementById('mrpack-port').value,
+                    memory: document.getElementById('mrpack-memory').value,
+                    eula: document.getElementById('mrpack-eula').checked ? 'true' : 'false'
+                },
+                onProgress: function (loaded, total) {
+                    mrpackProgressBar.style.width = Math.round((loaded / total) * 100) + '%';
+                }
+            }).then(function (res) {
+                mrpackUpload = null;
+                mrpackUploading = false;
+                if (res.aborted) {
+                    showToast('Upload cancelled.', 'info');
+                    mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
+                    mrpackForm.dispatchEvent(new Event('input'));
+                    return;
+                }
+                if (res.status !== 201) {
+                    showToast((res.data && (res.data.message || res.data.error)) || 'Failed to create server from modpack.', 'danger');
+                    mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
+                    mrpackProgressWrap.classList.add('d-none');
+                    mrpackProgressBar.style.width = '0%';
+                    mrpackForm.dispatchEvent(new Event('input'));
+                    return;
+                }
+                flashToast('Modpack uploaded — installing...', 'info');
+                var serverId = res.data && res.data.server && res.data.server.id;
+                window.location.href = serverId ? '/servers/' + serverId : '/dashboard';
+            });
+        });
+
+        // Closing the modal mid-upload aborts the transfer, like import
+        mrpackModalEl.addEventListener('hide.bs.modal', function () {
+            if (mrpackUpload) mrpackUpload.abort();
         });
     }
 })();

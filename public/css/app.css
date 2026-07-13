@@ -220,6 +220,11 @@ td > .material-icons-outlined {
     box-shadow: 0 0 0 1px var(--craftbox-green);
 }
 
+.type-card.type-card-disabled {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
 .type-card .material-icons-outlined {
     color: rgba(255, 255, 255, 0.6);
 }
@@ -408,13 +413,16 @@ td > .material-icons-outlined {
 }
 
 /* ---- Modpack Browser ---- */
+/* Same look and feel as .status-card (grey border set via border-secondary
+   in the markup, ring + lift on hover). */
 .modpack-card {
     cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
 }
 
 .modpack-card:hover {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
 }
 
 .modpack-icon {

@@ -127,7 +127,7 @@
         col.className = 'col-md-6 col-xl-4';
 
         var card = document.createElement('div');
-        card.className = 'card modpack-card h-100';
+        card.className = 'card modpack-card h-100 border-secondary';
         card.setAttribute('role', 'button');
         card.addEventListener('click', function () {
             openVersionModal(hit.projectId, hit.title);

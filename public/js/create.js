@@ -5,6 +5,9 @@ let typesData = [];
 // ── DOM refs ──
 const eulaCheck = document.getElementById('eula');
 const createBtn = document.getElementById('create-btn');
+// Original markup (icon + label) — restored after a failed submit; assigning
+// textContent instead would silently drop the "+" icon.
+const CREATE_BTN_HTML = createBtn.innerHTML;
 const form = document.getElementById('create-server-form');
 const typeInput = document.getElementById('serverType');
 const typeSelector = document.getElementById('type-selector');
@@ -16,14 +19,22 @@ const typeSelectGroup = document.getElementById('type-select-group');
 const modpackSummary = document.getElementById('modpack-summary');
 const mrpackFileGroup = document.getElementById('mrpack-file-group');
 const mrpackFileInput = document.getElementById('mrpack-file');
+const createSourceGroup = document.getElementById('create-source-group');
+const sourceCards = document.querySelectorAll('#create-source-group .type-card');
+const sourceTemplateCard = document.getElementById('source-template-card');
 
 // ── Creation mode ──
-// 'normal' (pick a type/version), 'modpack' (?modpack=ID&version=ID from the
-// browse page), or 'mrpack' (?mrpack=local — upload a .mrpack file).
+// 'modpack' when arriving from the browse page with a chosen pack
+// (?modpack=ID&version=ID); otherwise 'normal', where the in-page
+// Template/Modpack source cards drive what the form shows (neither
+// selected = create from scratch).
 const _createParams = new URLSearchParams(window.location.search);
-const createMode = (_createParams.get('modpack') && _createParams.get('version'))
-    ? 'modpack'
-    : (_createParams.get('mrpack') === 'local' ? 'mrpack' : 'normal');
+const createMode = (_createParams.get('modpack') && _createParams.get('version')) ? 'modpack' : 'normal';
+
+let selectedSource = 'scratch';
+function currentSource() {
+    return selectedSource;
+}
 
 function setCustomNoticeVisible(visible) {
     if (!customTypeNotice) return;
@@ -79,7 +90,7 @@ form.addEventListener('submit', async (e) => {
         '<span class="spinner-border spinner-border-sm" role="status"></span> Creating...';
 
     if (createMode === 'modpack') return submitFromModpack();
-    if (createMode === 'mrpack') return submitFromMrpack();
+    if (currentSource() === 'modpack') return submitFromMrpack();
 
     const typeName = typesData.find(t => t.id === selectedType)?.name || selectedType;
     const ver = selectedType === 'custom' ? '' : ' ' + (versionSelect.value || '');
@@ -98,8 +109,7 @@ form.addEventListener('submit', async (e) => {
     if (!res.ok) {
         hideOverlay();
         showToast((res.data && (res.data.message || res.data.error)) || 'Failed to create server.', 'danger');
-        createBtn.disabled = false;
-        createBtn.textContent = 'Create Server';
+        restoreCreateBtn();
         return;
     }
     var newId = res.data && res.data.server && res.data.server.id;
@@ -213,7 +223,10 @@ const templateGroup = document.getElementById('template-group');
         const res = await fetch('/api/v1/templates');
         const data = await res.json();
         if (data.templates && data.templates.length > 0) {
-            templateGroup.classList.remove('d-none');
+            // Unlock the Template card in the Create From picker; the select
+            // itself only shows once that source is picked.
+            sourceTemplateCard.classList.remove('type-card-disabled');
+            sourceTemplateCard.removeAttribute('title');
             for (const t of data.templates) {
                 const opt = document.createElement('option');
                 opt.value = t.id;
@@ -339,7 +352,7 @@ const LOADER_DISPLAY_NAMES = { fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoF
 
 function restoreCreateBtn() {
     createBtn.disabled = false;
-    createBtn.textContent = 'Create Server';
+    createBtn.innerHTML = CREATE_BTN_HTML;
     validateCreateForm();
 }
 
@@ -366,21 +379,48 @@ function hideTypeAndVersionPickers() {
     customUrlGroup.classList.add('d-none');
 }
 
-// Modpacks are heavy — suggest more memory than the 2 GB default
+// Modpacks are heavy — suggest more memory than the 2 GB default. The
+// suggestion is undone by revertModpackMemory() when the Modpack source is
+// deselected, unless the user has edited the value themselves since.
+let memorySuggestion = null; // { previousValue, previousHint, expandedAdvanced }
+
 function suggestModpackMemory() {
     const memoryInput = document.getElementById('memory');
-    if (parseInt(memoryInput.value, 10) < 4096) {
-        memoryInput.value = 4096;
-        const hint = memoryInput.parentElement.querySelector('.form-text');
-        if (hint) hint.textContent = 'RAM allocated to the server (-Xmx). Modpacks usually need 4-8 GB.';
-        const collapse = document.getElementById('advancedOptions');
-        if (collapse && !collapse.classList.contains('show')) {
-            new bootstrap.Collapse(collapse, { toggle: true });
+    if (memorySuggestion || parseInt(memoryInput.value, 10) >= 4096) return;
+    const hint = memoryInput.parentElement.querySelector('.form-text');
+    const collapse = document.getElementById('advancedOptions');
+    const expandAdvanced = !!(collapse && !collapse.classList.contains('show'));
+    memorySuggestion = {
+        previousValue: memoryInput.value,
+        previousHint: hint ? hint.textContent : null,
+        expandedAdvanced: expandAdvanced
+    };
+    memoryInput.value = 4096;
+    if (hint) hint.textContent = 'RAM allocated to the server (-Xmx). Modpacks usually need 4-8 GB.';
+    if (expandAdvanced) new bootstrap.Collapse(collapse, { toggle: true });
+}
+
+function revertModpackMemory() {
+    if (!memorySuggestion) return;
+    const memoryInput = document.getElementById('memory');
+    const hint = memoryInput.parentElement.querySelector('.form-text');
+    // Only undo what is still untouched — a user-edited value stays put.
+    if (memoryInput.value === '4096') {
+        memoryInput.value = memorySuggestion.previousValue;
+        if (memorySuggestion.expandedAdvanced) {
+            const collapse = document.getElementById('advancedOptions');
+            if (collapse && collapse.classList.contains('show')) {
+                new bootstrap.Collapse(collapse, { toggle: true });
+            }
         }
     }
+    if (hint && memorySuggestion.previousHint) hint.textContent = memorySuggestion.previousHint;
+    memorySuggestion = null;
 }
 
 async function enterModpackMode() {
+    // The pack was already chosen on the browse page — no source toggle here
+    createSourceGroup.classList.add('d-none');
     hideTypeAndVersionPickers();
     modpackSummary.classList.remove('d-none');
     suggestModpackMemory();
@@ -453,13 +493,50 @@ async function enterModpackMode() {
     validateCreateForm();
 }
 
-function enterMrpackMode() {
-    hideTypeAndVersionPickers();
-    mrpackFileGroup.classList.remove('d-none');
-    mrpackFileInput.setAttribute('required', '');
-    suggestModpackMemory();
+// ── Create From toggle (Scratch / Template / Modpack) ──
+function applySource(source) {
+    // Template select only for the Template source
+    templateGroup.classList.toggle('d-none', source !== 'template');
+    if (source !== 'template' && templateSelect.value) {
+        templateSelect.value = '';
+        setTypeAndVersionLocked(false);
+    }
+
+    // Modpack source: the pack decides the loader + version, so those pickers go
+    mrpackFileGroup.classList.toggle('d-none', source !== 'modpack');
+    if (source === 'modpack') {
+        mrpackFileInput.setAttribute('required', '');
+        typeSelectGroup.classList.add('d-none');
+        versionGroup.classList.add('d-none');
+        versionSelect.removeAttribute('required');
+        customUrlGroup.classList.add('d-none');
+        setCustomNoticeVisible(false);
+        suggestModpackMemory();
+    } else {
+        mrpackFileInput.removeAttribute('required');
+        typeSelectGroup.classList.remove('d-none');
+        if (selectedType === 'custom') {
+            customUrlGroup.classList.remove('d-none');
+            setCustomNoticeVisible(true);
+        } else {
+            versionGroup.classList.remove('d-none');
+            versionSelect.setAttribute('required', '');
+        }
+        revertModpackMemory();
+    }
     validateCreateForm();
 }
+
+sourceCards.forEach(function (card) {
+    card.addEventListener('click', function () {
+        // Toggle: clicking the active card deselects it (back to from-scratch)
+        selectedSource = (selectedSource === card.dataset.source) ? 'scratch' : card.dataset.source;
+        sourceCards.forEach(function (c) {
+            c.classList.toggle('selected', c.dataset.source === selectedSource);
+        });
+        applySource(selectedSource);
+    });
+});
 
 async function submitFromModpack() {
     const packName = document.getElementById('modpack-title').textContent || 'modpack';
@@ -486,7 +563,7 @@ async function submitFromMrpack() {
     const file = mrpackFileInput.files[0];
     if (!file) { restoreCreateBtn(); return; }
 
-    showOverlay('Uploading "' + file.name + '"...', 'Preparing upload...');
+    showOverlay('Preparing upload...', file.name + ' (0%)');
 
     const fields = collectBaseFields();
     fields.eula = eulaCheck.checked ? 'true' : 'false';
@@ -496,7 +573,7 @@ async function submitFromMrpack() {
         fields: fields,
         onProgress: (loaded, total) => {
             const pct = total ? Math.round((loaded / total) * 100) : 0;
-            showOverlay('Uploading "' + file.name + '"...', pct + '% uploaded');
+            showOverlay('Uploading...', file.name + ' (' + pct + '%)');
         }
     });
     if (res.aborted) { hideOverlay(); restoreCreateBtn(); return; }
@@ -512,4 +589,3 @@ async function submitFromMrpack() {
 }
 
 if (createMode === 'modpack') enterModpackMode();
-else if (createMode === 'mrpack') enterMrpackMode();

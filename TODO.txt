@@ -14,7 +14,10 @@ Modrinth — Manual Test Checklist
 
 [ Browse page (/modpacks) ]
 - Navbar shows "Modpacks" between Templates and Status Page; dashboard has a
-  "Browse Modpacks" button next to Import. Both land on /modpacks.
+  "Create from modpack..." button next to Import. Both land on /modpacks.
+- (RETEST — changed) Dashboard header buttons are now btn-sm and never wrap
+  their labels onto two lines, even at narrow widths (they wrap as whole
+  buttons instead).
 - Page loads with popular modpacks (relevance, no query). Cards show icon,
   title, author, 2-line description, compact download count, loader badges.
 - Card hover elevates like server cards; icons load from cdn.modrinth.com
@@ -36,9 +39,34 @@ Modrinth — Manual Test Checklist
 - "Select" navigates to /servers/create?modpack=<id>&version=<id>.
 - Stop the app / block network -> search shows danger toast + failed state.
 
+[ Create page — Create From cards (RETEST — redesigned) ]
+- Top of the form shows two "Create From" cards styled like the server-type
+  selector (hover border, green .selected state): Template (bookmark icon,
+  "Start from a saved template") and Modpack (widgets icon, "Install a
+  Modrinth modpack"), with "Optional — pick one, or configure everything
+  below from scratch." underneath. No more ?mrpack=local URL param.
+- Neither card selected = plain from-scratch form. Clicking a selected card
+  DESELECTS it and returns to the scratch form.
+- Template card is faded/disabled with a "No templates saved yet" tooltip
+  until templates exist; picking it reveals the template select (which then
+  locks type/version as before). Switching away resets and unlocks.
+- Modpack card hides the type/version pickers and shows the .mrpack file
+  input (required), then an "── or ──" divider and a full-width
+  outline-success "Browse Modpacks on Modrinth" button linking to /modpacks.
+  Memory suggestion bumps to 4096 + Advanced expands.
+- Deselecting the Modpack card UNDOES the memory suggestion: value returns
+  to what it was, the hint text reverts, and Advanced collapses again (only
+  if the suggestion opened it). If you edited memory yourself while Modpack
+  was selected, your value is kept (only the hint reverts).
+- Deselecting back to scratch restores the pickers (including the custom-jar
+  URL field if Custom was selected) and re-requires the version select.
+- After a FAILED create (e.g. duplicate port), the Create Server button gets
+  its "+" icon back, not just the text.
+
 [ Create page — modpack mode ]
-- Arriving via Select: template/type/version pickers hidden; modpack summary
-  card shows icon, title, "Version x.y.z", loader + MC badges.
+- Arriving via Select on /modpacks: source toggle + template/type/version
+  pickers hidden; modpack summary card shows icon, title, "Version x.y.z",
+  loader + MC badges.
 - Server name pre-filled from pack title (filtered to allowed charset);
   memory bumped to 4096 with Advanced auto-expanded and the "Modpacks usually
   need 4-8 GB." hint (only if memory was below 4096).
@@ -77,8 +105,8 @@ Modrinth — Manual Test Checklist
 - Dashboard live-updates the new server card during/after install.
 
 [ .mrpack upload ]
-- /modpacks header "Install from .mrpack" -> create page with file input
-  (required; Create disabled until a file is picked + fields valid).
+- Create page -> Create From: Modpack -> pick a .mrpack (Create disabled
+  until a file is picked + fields valid).
 - Small .mrpack (<5 MB) uploads via single multipart request; large one
   (>5 MB) goes chunked (watch /upload/init + /chunk requests) — test through
   the Cloudflare tunnel if available. Overlay shows upload % + filename.
@@ -90,6 +118,17 @@ Modrinth — Manual Test Checklist
   * a non-zip file renamed .mrpack ("Not a valid .mrpack file.")
   * a Quilt pack ("Quilt modpacks are not supported by Craftbox.")
 - Verify no orphaned server appears on the dashboard after a rejected upload.
+
+[ Dashboard .mrpack drop (NEW) ]
+- Dragging a file over the dashboard shows the drop overlay with the new
+  text ("Drop a .zip to import a server, or a .mrpack to create one...").
+- Dropping a .mrpack opens the "Create Server from Modpack" modal: filename
+  shown, server name pre-suggested from the filename, port 25565, memory
+  4096, EULA checkbox; Create disabled until all fields + EULA valid.
+- Submit uploads with a progress bar, then redirects to the new server's
+  console with the install running. Enter submits; Cancel/X mid-upload
+  aborts cleanly. Dropping a non-zip/non-mrpack file shows the updated
+  error toast. Dropping a .zip still runs the normal import flow.
 
 [ Mods/plugins for existing servers ]
 - On a STOPPED Fabric/Forge/NeoForge server: Mods tab -> "Browse Modrinth"
@@ -103,8 +142,16 @@ Modrinth — Manual Test Checklist
   Fabric API): toast reports "+N dependencies", both jars land in mods/.
 - Install button flips to disabled "Installed ✓"; installing the same mod
   again from a fresh modal -> 409 warning toast + button marked Installed.
-- Close the modal after installing -> "N mods installed." toast + page
-  reloads with the new files in the table.
+- (RETEST — fixed) Mods already in the content folder show "Installed" in
+  search results up front: files are hash-matched against Modrinth on modal
+  open (GET /servers/:id/modrinth-installed). Reload the page, reopen the
+  modal, search for an installed mod — it must say Installed, including
+  dependencies that were auto-installed earlier. A locally-modified jar
+  won't hash-match and still falls back to the 409 -> Installed flow.
+- (RETEST — changed) Browse-page modpack cards now have the status-page
+  look: grey border-secondary border and the same lift-on-hover animation.
+- Close the modal after installing -> page reloads with the new files in
+  the table, with NO extra summary toast (each install already toasted).
 - "Load more" appends the next page of results.
 - On a Paper/Purpur server the same flow searches PLUGINS (bukkit/spigot/
   paper family) and installs into plugins/.
@@ -119,6 +166,18 @@ Modrinth — Manual Test Checklist
   * plugins modal hides the downloads column below md; title + description
     truncate.
 - Desktop width still shows all columns as before.
+
+[ Group picker (RETEST — fixed) ]
+- In the Assign Group dropdown (dashboard card modal, create page, edit
+  page), a very long group name truncates with an ellipsis on one line
+  (hover shows the full name) instead of wrapping into a squashed row.
+
+[ API docs ]
+- docs/API.md: new "Modrinth" section (proxied search/lookups,
+  from-modpack, from-mrpack incl. DGUP mount + fields-in-complete note,
+  modrinth-install with dependency behavior), WS operation table gains
+  modpack-install + progress status, validation table gains Modrinth ids —
+  give it a read-through for accuracy.
 
 [ Regression checks ]
 - Plain create-server flow (every type incl. custom jar + templates) still
