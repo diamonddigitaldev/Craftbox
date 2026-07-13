@@ -1049,8 +1049,9 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
         const clientNote = result.clientOnlyMods.length > 0
             ? `, ${result.clientOnlyMods.length} client-only`
             : '';
-        logEvent(id, 'action', `Installed modpack "${packLabel}"${result.manifestVersionId ? ` ${result.manifestVersionId}` : ''} (${result.filesInstalled} files${clientNote})`, { initiatedBy }).catch(() => {});
-        log('info', `Server "${name}" (${id}) provisioned from modpack "${packLabel}" (${result.filesInstalled} files).`);
+        const summary = `${result.filesInstalled} files, ${result.modsInstalled} mods${clientNote}`;
+        logEvent(id, 'action', `Installed modpack "${packLabel}"${result.manifestVersionId ? ` ${result.manifestVersionId}` : ''} (${summary})`, { initiatedBy }).catch(() => {});
+        log('info', `Server "${name}" (${id}) provisioned from modpack "${packLabel}" (${summary}).`);
     } catch (err) {
         log('error', `Modpack install failed for "${name}" (${id}): ${err.message}`);
         await markProvisionFailed(req, id, 'modpack-install', err.message, 'Modpack install failed');
