@@ -13,6 +13,7 @@ const { downloadServerJar } = require('./downloader');
 const { writeServerProperties, writeEula } = require('./serverProperties');
 const { downloadToFile, assertWhitelistedUrl } = require('../utils/httpDownload');
 const { setServerIcon } = require('../utils/serverIcon');
+const { DISABLED_SUFFIX } = require('../utils/modEnvironment');
 const { SERVERS_DIR } = require('../db');
 const { log } = require('../utils/log');
 
@@ -21,6 +22,10 @@ const MAX_PACK_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 const FILE_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 const DOWNLOAD_CONCURRENCY = 4;
 const DISK_HEADROOM_BYTES = 512 * 1024 * 1024;
+
+// Only jars directly in mods/ take part in the mod environment map (it is keyed
+// by the filename listModFiles() reports for that folder).
+const MOD_JAR_RE = /^mods\/[^/]+\.jar$/i;
 
 // Loader dependency keys in install-preference order. quilt-loader is known
 // but unsupported — detected separately for a clearer error.
@@ -150,7 +155,9 @@ async function runPool(items, concurrency, worker) {
  * @param {object} opts.baseConfig - { port, gamemode, difficulty, seed } for server.properties
  * @param {string|null} [opts.iconUrl] - Modrinth CDN icon to use as the server icon (non-fatal)
  * @param {function} [opts.onProgress] - (phase, done, total)
- * @returns {Promise<{serverType, mcVersion, loaderBuild, build, filesInstalled, manifestName, manifestVersionId, warnings}>}
+ * @returns {Promise<{serverType, mcVersion, loaderBuild, build, filesInstalled, clientOnlyMods, manifestName, manifestVersionId, warnings}>}
+ *   clientOnlyMods holds the filenames written pre-disabled; the caller persists
+ *   them to the mod environment map.
  */
 async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl, onProgress }) {
     const emit = onProgress || (() => {});
@@ -183,10 +190,9 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
 
         const files = [];
         const seenPaths = new Set();
-        let skippedClientOnly = 0;
+        const clientOnlyMods = [];
         let totalBytes = 0;
         for (const f of manifest.files) {
-            if (f?.env?.server === 'unsupported') { skippedClientOnly++; continue; }
             const rel = String(f?.path || '').replace(/\\/g, '/');
             const relKey = rel.toLowerCase(); // Windows filesystems are case-insensitive
             if (seenPaths.has(relKey)) {
@@ -195,7 +201,14 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
                 continue;
             }
             seenPaths.add(relKey);
-            const dest = sanitizeEntryPath(serverDir, rel);
+            let dest = sanitizeEntryPath(serverDir, rel);
+            // Client-only mods are still installed, but land pre-disabled and
+            // tagged 'client' so the loader ignores them while players can pull
+            // them from the status page's mods download.
+            if (f?.env?.server === 'unsupported' && MOD_JAR_RE.test(rel)) {
+                clientOnlyMods.push(path.basename(rel));
+                dest += DISABLED_SUFFIX;
+            }
             const url = (f.downloads || []).find((u) => {
                 try { assertWhitelistedUrl(u); return true; } catch { return false; }
             });
@@ -211,10 +224,10 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
             return name.startsWith('overrides/') || name.startsWith('server-overrides/');
         });
         if (files.length === 0 && overrideEntries.length === 0) {
-            throw new Error('This modpack contains no server-side files.');
+            throw new Error('This modpack contains no files to install.');
         }
-        if (skippedClientOnly > 0) {
-            log('info', `Modpack install ${serverId}: skipping ${skippedClientOnly} client-only file(s).`);
+        if (clientOnlyMods.length > 0) {
+            log('info', `Modpack install ${serverId}: installing ${clientOnlyMods.length} client-only mod(s) disabled.`);
         }
 
         // Disk preflight (same approach as DGUP init) — fail fast rather than
@@ -327,6 +340,7 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
             loaderBuild,
             build: dl?.build ?? loaderBuild ?? null,
             filesInstalled: files.length,
+            clientOnlyMods,
             manifestName: manifest.name || null,
             manifestVersionId: manifest.versionId || null,
             warnings

@@ -1013,6 +1013,15 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
             }
         });
 
+        // Client-only mods were installed pre-disabled — tag them so the
+        // /plugins page shows them as Client Only and the status page offers
+        // them in its mods download. The server dir is new, so no merge needed.
+        if (result.clientOnlyMods.length > 0) {
+            await setModEnvMap(id, Object.fromEntries(
+                result.clientOnlyMods.map(name => [name, 'client'])
+            ));
+        }
+
         // The manifest is authoritative for loader + MC version; the record's
         // provisional values (from Modrinth version metadata) are replaced.
         const fresh = await serversDb.get(`server_${id}`);
@@ -1037,7 +1046,10 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
             });
         }
         const packLabel = result.manifestName || 'modpack';
-        logEvent(id, 'action', `Installed modpack "${packLabel}"${result.manifestVersionId ? ` ${result.manifestVersionId}` : ''} (${result.filesInstalled} files)`, { initiatedBy }).catch(() => {});
+        const clientNote = result.clientOnlyMods.length > 0
+            ? `, ${result.clientOnlyMods.length} client-only`
+            : '';
+        logEvent(id, 'action', `Installed modpack "${packLabel}"${result.manifestVersionId ? ` ${result.manifestVersionId}` : ''} (${result.filesInstalled} files${clientNote})`, { initiatedBy }).catch(() => {});
         log('info', `Server "${name}" (${id}) provisioned from modpack "${packLabel}" (${result.filesInstalled} files).`);
     } catch (err) {
         log('error', `Modpack install failed for "${name}" (${id}): ${err.message}`);

@@ -176,6 +176,7 @@ module.exports = {
     DISABLED_SUFFIX,
     isModServerType,
     getModEnvMap,
+    setModEnvMap,
     getModEnv,
     setModEnv,
     clearModEnv,
