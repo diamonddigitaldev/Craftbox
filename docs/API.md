@@ -58,6 +58,8 @@ Long-running operations respond immediately and finish in the background:
 
 Completion is signalled over the WebSocket as an `operation` message (see [WebSocket protocol](#websocket-protocol)); modpack installs additionally stream `status: "progress"` messages while running. Clients that cannot hold a WebSocket open should poll `GET /servers/:id` and watch `state` (`provisioning`/`backing_up`/`restoring`/`updating_jar` → `stopped`, or `crashed` on failure).
 
+> **Failed provisioning is not left behind.** When a *create* / *from-modpack* / *from-mrpack* provision fails, the half-built server is removed automatically rather than parked in `crashed` — so a polling client sees the server return `404` shortly after the failure (the `operation` message carries the reason). Failed *import*, *duplicate*, *backup*, *restore*, and *jar-update* operations instead leave the server in `crashed` for inspection.
+
 ### Validation constants
 
 | Field | Rule |
@@ -279,10 +281,10 @@ Craftbox proxies the [Modrinth](https://modrinth.com) API server-side and instal
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file |
+| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack`. Multipart, file field `mrpack`, max 2 GiB, plus the same base fields as text fields. The pack is parsed and the loader resolved **before** any server record is created, so malformed or Quilt packs fail with a clean `400`. Returns `201` + background install. Also accepts [chunked uploads](#chunked-uploads-dgup) at `/servers/from-mrpack/upload/*` |
 
-The background install downloads the pack's server-side files (SHA-512 verified; download hosts restricted to the mrpack spec whitelist), installs the loader server pinned to the pack's loader version, applies `overrides/` then `server-overrides/`, and skips client-only files. Progress streams over the WebSocket as `operation: "modpack-install"`, `status: "progress"` messages with payload `{phase, done?, total?}` — phases: `download`, `parse`, `loader`, `files` (with `done`/`total` counts), `overrides`, `finalize` — ending in `complete` or `failed`. The created server records a `modpack` block (`{projectId, versionId, name, versionNumber, iconUrl, source: "modrinth"|"file", installedAt}`) for future tooling; it survives export/import.
+The background install downloads the pack's server-side files (SHA-512 verified; download hosts restricted to the mrpack spec whitelist), installs the loader server pinned to the pack's loader version, applies `overrides/` then `server-overrides/`, and skips client-only files. Progress streams over the WebSocket as `operation: "modpack-install"`, `status: "progress"` messages with payload `{phase, done?, total?}` — phases: `download`, `parse`, `loader`, `files` (with `done`/`total` counts), `overrides`, `finalize` — ending in `complete` or `failed`. On `failed` the half-built server is removed automatically (see [Asynchronous operations](#asynchronous-operations)). The created server records a `modpack` block (`{projectId, versionId, name, versionNumber, iconUrl, source: "modrinth"|"file", installedAt}`) for future tooling; it survives export/import.
 
 ### Install a mod or plugin into an existing server
 
