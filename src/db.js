@@ -68,6 +68,36 @@ async function markAllServersStopped({ reason } = {}) {
     }
 }
 
+// A server whose provisioning failed is flagged (provisionFailed) and
+// auto-removed by the API layer after a short grace period. If the panel
+// restarts inside that window the in-memory timer is lost, so sweep them here
+// at boot too — they are useless half-built state with no recoverable data.
+async function purgeFailedProvisions() {
+    try {
+        const rows = await serversDb.all();
+        const failed = rows
+            .map(row => row?.value)
+            .filter(s => s && typeof s === 'object' && s.provisionFailed && s.id);
+        if (failed.length === 0) return { purged: 0 };
+
+        // Lazily required to avoid a load-order cycle (serverCleanup → db).
+        const { cleanupServerData } = require('./utils/serverCleanup');
+        for (const s of failed) {
+            try {
+                await serversDb.delete(`server_${s.id}`);
+                await cleanupServerData(s.id, s.group);
+            } catch (err) {
+                log('warn', `Failed to purge incomplete server ${s.id}: ${err.message}`);
+            }
+        }
+        log('info', `Purged ${failed.length} failed-provision server(s) at startup.`);
+        return { purged: failed.length };
+    } catch (err) {
+        log('warn', `Failed to sweep incomplete provisions: ${err.message}`);
+        return { purged: 0, error: err };
+    }
+}
+
 async function initDb() {
     await db.init();
     await usersDb.init();
@@ -86,8 +116,11 @@ async function initDb() {
     // Ensure the DB doesn't keep servers locked in RUNNING forever after a crash.
     await markAllServersStopped({ reason: 'startup' });
 
+    // Remove servers whose provisioning was interrupted before it completed.
+    await purgeFailedProvisions();
+
     // Clear stale resource stats from any previous session
     await statsDb.deleteAll();
 }
 
-module.exports = { db, usersDb, serversDb, configDb, backupsDb, eventsDb, templatesDb, sessionsDb, statsDb, modMetadataDb, apiKeysDb, groupsDb, initDb, markAllServersStopped, DATA_DIR, SERVERS_DIR, BACKUPS_DIR };
+module.exports = { db, usersDb, serversDb, configDb, backupsDb, eventsDb, templatesDb, sessionsDb, statsDb, modMetadataDb, apiKeysDb, groupsDb, initDb, markAllServersStopped, purgeFailedProvisions, DATA_DIR, SERVERS_DIR, BACKUPS_DIR };

@@ -11,7 +11,7 @@ const { ensureBackupDir, resolveBackupPath } = require('../../mc/BackupManager')
 const { getProvider, listProviders } = require('../../mc/serverTypes');
 const { downloadServerJar } = require('../../mc/downloader');
 const { log } = require('../../utils/log');
-const { logEvent, deleteServerEvents } = require('../../utils/eventLogger');
+const { logEvent } = require('../../utils/eventLogger');
 const { getEvents } = require('../../utils/eventLogger');
 const { getProcessMemory, getProcessCpu, getDirectorySize, getUptime, formatSize, formatUptime } = require('../../utils/resourceStats');
 const { clearStatsHistory, getStatsHistory } = require('../../utils/statsHistory');
@@ -19,13 +19,14 @@ const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath, copyDefau
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../../mc/serverProperties');
 const { PROPERTY_META } = require('../../mc/propertyMeta');
 const { getContentType } = require('../../utils/contentType');
-const { copyModEnvMap, clearAllModEnv, setModEnvMap } = require('../../utils/modEnvironment');
+const { copyModEnvMap, setModEnvMap } = require('../../utils/modEnvironment');
 const { isZipFile } = require('../../utils/uploadSafety');
 const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
 const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
+const { cleanupServerData } = require('../../utils/serverCleanup');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
 const modrinth = require('../../services/modrinth');
@@ -880,15 +881,7 @@ router.post('/servers', async (req, res) => {
                 log('info', `Server "${trimmedName}" (${id}) provisioned successfully.`);
             } catch (err) {
                 log('error', `Failed to provision server "${trimmedName}" (${id}): ${err.message}`);
-                logEvent(id, 'action', `Server provisioning failed: ${err.message}`, { initiatedBy }).catch(() => {});
-                if (serverManager) {
-                    try {
-                        await serverManager.setOperationalState(id, STATES.CRASHED, {
-                            crashReason: 'Provisioning failed: ' + err.message
-                        });
-                    } catch (_) {}
-                    serverManager.broadcastOperation(id, 'create', 'failed', err.message);
-                }
+                await markProvisionFailed(req, id, 'create', err.message, 'Provisioning failed');
             }
         })();
     } catch (err) {
@@ -898,6 +891,67 @@ router.post('/servers', async (req, res) => {
         }
     }
 });
+
+// A server that failed provisioning is useless half-built state. Rather than
+// leave it parked in CRASHED for the user to puzzle over, flag it as a failed
+// provision: the console page shows a blocking "Server Setup Failed" modal —
+// rendered from this persisted state on page load AND pushed live over the
+// WebSocket — and the modal deletes the server on the user's behalf.
+//
+// The record is deliberately KEPT here rather than deleted. Deleting now would
+// race the client's page load / WebSocket subscribe: a fast failure (e.g. a
+// Folia version with no stable build) throws before any subscriber exists, so
+// the live broadcast reaches nobody and an immediate delete leaves the
+// freshly-loaded page with a 404 and no way to explain what happened.
+//
+// Import/duplicate failures keep the ordinary crash banner instead — their
+// on-disk state comes from user archives and may be worth inspecting.
+// Grace period before a failed-provision server is auto-removed. Long enough
+// not to race a normal console-page load (whose modal deletes it immediately),
+// short enough to feel like automatic cleanup for a user who never opens it.
+const PROVISION_FAIL_PURGE_MS = 10000;
+
+async function markProvisionFailed(req, id, operation, errMessage, crashPrefix) {
+    const serverManager = req.app.get('serverManager');
+    const crashReason = `${crashPrefix}: ${errMessage}`;
+
+    if (serverManager) {
+        try {
+            await serverManager.setOperationalState(id, STATES.CRASHED, { crashReason });
+        } catch (_) { /* ignore */ }
+    }
+    // Flag it so the console page shows the failure MODAL (auto-delete flow)
+    // rather than the ordinary crash banner. Written after setOperationalState
+    // so it survives that call's own state write.
+    const fresh = await serversDb.get(`server_${id}`);
+    if (fresh) {
+        fresh.provisionFailed = true;
+        await serversDb.set(`server_${id}`, fresh);
+    }
+    logEvent(id, 'action', crashReason, { initiatedBy: req.user.username }).catch(() => {});
+    if (serverManager) serverManager.broadcastOperation(id, operation, 'failed', errMessage);
+    notifyDashboard(req);
+    log('info', `Server ${id} flagged as failed provisioning: ${errMessage}`);
+
+    // Safety net: if nobody opens the console page (its modal deletes the
+    // server on the user's behalf), auto-purge after the grace period. A
+    // present user's delete usually wins, making this a no-op.
+    const timer = setTimeout(async () => {
+        try {
+            const current = await serversDb.get(`server_${id}`);
+            if (!current || !current.provisionFailed) return; // already removed
+            serverManager?.removeProcess(id);
+            req.app.get('backupScheduler')?.stopSchedule(id);
+            await serversDb.delete(`server_${id}`);
+            notifyDashboard(req);
+            await cleanupServerData(id, current.group);
+            log('info', `Auto-removed failed-provision server ${id} after grace period.`);
+        } catch (err) {
+            log('error', `Auto-removal of failed server ${id} failed: ${err.message}`);
+        }
+    }, PROVISION_FAIL_PURGE_MS);
+    timer.unref?.(); // don't keep the process alive for this
+}
 
 // ── Modpack server creation (Modrinth) ──
 
@@ -987,15 +1041,7 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
         log('info', `Server "${name}" (${id}) provisioned from modpack "${packLabel}" (${result.filesInstalled} files).`);
     } catch (err) {
         log('error', `Modpack install failed for "${name}" (${id}): ${err.message}`);
-        logEvent(id, 'action', `Modpack install failed: ${err.message}`, { initiatedBy }).catch(() => {});
-        if (serverManager) {
-            try {
-                await serverManager.setOperationalState(id, STATES.CRASHED, {
-                    crashReason: 'Modpack install failed: ' + err.message
-                });
-            } catch (_) {}
-            serverManager.broadcastOperation(id, 'modpack-install', 'failed', err.message);
-        }
+        await markProvisionFailed(req, id, 'modpack-install', err.message, 'Modpack install failed');
     } finally {
         if (cleanup) cleanup();
     }
@@ -1786,26 +1832,10 @@ router.delete('/servers/:id', async (req, res) => {
         notifyDashboard(req);
         res.json({ success: true });
 
-        // Background cleanup. Each step is isolated so a failure in one (e.g. a
-        // locked file on Windows) can't skip the DB cleanup or group prune that
-        // follow. Failures only orphan data; they don't affect the user's view.
+        // Background cleanup — failures only orphan data, they don't affect the
+        // user's view (the record is already gone).
         (async () => {
-            const step = async (label, fn) => {
-                try {
-                    await fn();
-                } catch (err) {
-                    log('error', `Cleanup step "${label}" failed for ${server.name} (${id}): ${err.message}`);
-                }
-            };
-
-            const { deleteAllBackups } = require('../../mc/BackupManager');
-            await step('backups', () => deleteAllBackups(id));
-            await step('events', () => deleteServerEvents(id));
-            await step('stats', () => clearStatsHistory(id));
-            await step('mod metadata', () => clearAllModEnv(id));
-            if (server.group) await step('group', () => pruneGroupMetaIfEmpty(server.group));
-            await step('files', () => fs.promises.rm(path.join(SERVERS_DIR, id), { recursive: true, force: true }));
-
+            await cleanupServerData(id, server.group);
             log('info', `Server "${server.name}" (${id}) cleanup complete.`);
         })();
     } catch (err) {

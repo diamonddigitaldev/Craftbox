@@ -220,13 +220,15 @@
     <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title d-flex align-items-center gap-2">
-                    <span class="material-icons-outlined text-success">travel_explore</span>
-                    Browse <%= contentType.label %> on Modrinth
-                    <small class="text-body-secondary fw-normal" style="font-size: 0.8rem;">
+                <div>
+                    <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                        <span class="material-icons-outlined text-success">travel_explore</span>
+                        Browse <%= contentType.label %> on Modrinth
+                    </h5>
+                    <small class="text-body-secondary d-block mt-1">
                         Compatible with <%= (server.serverType || '').charAt(0).toUpperCase() + (server.serverType || '').slice(1) %> <%= server.version %>
                     </small>
-                </h5>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
