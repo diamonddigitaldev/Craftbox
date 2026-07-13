@@ -458,6 +458,25 @@ td > .material-icons-outlined {
     max-width: 0;
 }
 
+/* Search + sort row in the Modrinth browse modal. The scroll container is the
+   .modal-body (.modal-dialog-scrollable), so pinning the row there keeps it
+   reachable however far the results are scrolled. The negative margins bleed
+   the row across the body's padding so scrolled rows can't show through beside
+   it; the matching padding puts the controls back where they were. */
+.mr-sticky-search {
+    position: sticky;
+    /* Sticky offsets are resolved against the scrollport's *content* box, so
+       top:0 would park the row one padding-length below the body's top edge and
+       let results scroll through the gap above it. Pulling top up by the same
+       padding lands the row flush with the top edge instead. */
+    top: calc(-1 * var(--bs-modal-padding));
+    z-index: 3;
+    background-color: var(--bs-modal-bg);
+    border-bottom: 1px solid var(--bs-border-color);
+    margin: calc(-1 * var(--bs-modal-padding)) calc(-1 * var(--bs-modal-padding)) 1rem;
+    padding: var(--bs-modal-padding) var(--bs-modal-padding) 0.75rem;
+}
+
 /* Two-line clamped description; min-height keeps single-line cards level */
 .modpack-desc {
     display: -webkit-box;

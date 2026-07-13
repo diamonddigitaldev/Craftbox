@@ -83,6 +83,11 @@
                 <p class="text-body-secondary mb-3" style="font-size: 0.85rem;">
                     Pick the modpack version to build the server from.
                 </p>
+                <div class="alert alert-secondary d-none d-flex align-items-center gap-2 py-2 px-3 mb-3"
+                     id="pack-versions-filter-note" style="font-size: 0.85rem;">
+                    <span class="material-icons-outlined" style="font-size: 1.1rem;">filter_alt</span>
+                    <span id="pack-versions-filter-text"></span>
+                </div>
                 <div class="text-center py-4" id="pack-versions-loading">
                     <div class="spinner-border text-success" role="status">
                         <span class="visually-hidden">Loading...</span>
@@ -90,7 +95,7 @@
                 </div>
                 <div class="text-center py-4 d-none" id="pack-versions-empty">
                     <span class="material-icons-outlined text-body-secondary mb-2" style="font-size: 3rem;">search_off</span>
-                    <p class="text-body-secondary mb-0">No server-compatible versions found.</p>
+                    <p class="text-body-secondary mb-0" id="pack-versions-empty-text">No server-compatible versions found.</p>
                 </div>
                 <div class="table-responsive d-none" id="pack-versions-wrap" style="max-height: 50vh; overflow-y: auto;">
                     <table class="table table-hover mb-0 align-middle">

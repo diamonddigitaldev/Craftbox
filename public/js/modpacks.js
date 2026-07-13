@@ -27,8 +27,11 @@
     var packModalTitle = document.getElementById('pack-modal-title');
     var packVersionsLoading = document.getElementById('pack-versions-loading');
     var packVersionsEmpty = document.getElementById('pack-versions-empty');
+    var packVersionsEmptyText = document.getElementById('pack-versions-empty-text');
     var packVersionsWrap = document.getElementById('pack-versions-wrap');
     var packVersionsTbody = document.getElementById('pack-versions-tbody');
+    var packVersionsFilterNote = document.getElementById('pack-versions-filter-note');
+    var packVersionsFilterText = document.getElementById('pack-versions-filter-text');
 
     // ── State (restored from the URL so back-navigation returns to results) ──
     var params = new URLSearchParams(window.location.search);
@@ -260,12 +263,32 @@
     sortSelect.addEventListener('change', onFilterChange);
 
     // ── Version picker modal ──
+    // The version list is filtered by the same loader / Minecraft version the
+    // search was filtered by, so a pack that ships several loaders can only be
+    // built with the one that was actually searched for.
     var versionSeq = 0;
+
+    // "Forge", "Minecraft 1.20.1", or "Forge, Minecraft 1.20.1" — null when unfiltered.
+    function activeFilterLabel() {
+        var parts = [];
+        if (state.loader) parts.push(LOADER_NAMES[state.loader] || state.loader);
+        if (state.gameVersion) parts.push('Minecraft ' + state.gameVersion);
+        return parts.length ? parts.join(', ') : null;
+    }
+
     async function openVersionModal(projectId, title) {
         packModalTitle.textContent = title || 'Modpack';
         hide(packVersionsEmpty);
         hide(packVersionsWrap);
         show(packVersionsLoading);
+
+        var filterLabel = activeFilterLabel();
+        if (filterLabel) {
+            packVersionsFilterText.textContent = 'Showing ' + filterLabel + ' versions only, to match your search filters.';
+            show(packVersionsFilterNote);
+        } else {
+            hide(packVersionsFilterNote);
+        }
         versionModal.show();
 
         var seq = ++versionSeq;
@@ -279,12 +302,16 @@
 
         if (!res.ok) {
             showToast((res.data && (res.data.message || res.data.error)) || 'Failed to load modpack versions.', 'danger');
+            packVersionsEmptyText.textContent = 'Modpack versions could not be loaded.';
             show(packVersionsEmpty);
             return;
         }
 
         var versions = (res.data && res.data.versions) || [];
         if (versions.length === 0) {
+            packVersionsEmptyText.textContent = filterLabel
+                ? 'This modpack has no ' + filterLabel + ' versions. Change the filters to see its other versions.'
+                : 'No server-compatible versions found.';
             show(packVersionsEmpty);
             return;
         }
@@ -312,6 +339,17 @@
             subEl.textContent = v.name;
             nameTd.appendChild(subEl);
         }
+        // The Loader column is hidden below md — repeat the loader here so the
+        // one thing that decides Forge vs NeoForge is never off-screen.
+        var mobileLoaders = document.createElement('div');
+        mobileLoaders.className = 'd-md-none mt-1';
+        (v.loaders || []).forEach(function (l) {
+            var badge = document.createElement('span');
+            badge.className = 'badge bg-info me-1';
+            badge.textContent = LOADER_NAMES[l] || l;
+            mobileLoaders.appendChild(badge);
+        });
+        nameTd.appendChild(mobileLoaders);
         tr.appendChild(nameTd);
 
         var mcTd = document.createElement('td');

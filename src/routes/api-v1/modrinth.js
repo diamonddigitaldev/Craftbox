@@ -110,8 +110,17 @@ router.get('/modrinth/search', async (req, res) => {
     let limit = parseInt(req.query.limit, 10) || 20;
     if (limit < 1 || limit > 50) limit = 20;
 
+    // Modrinth's OR'd loader facet drops whole loaders' results for some text
+    // queries (see searchProjectsAcrossLoaders), so a search that spans more than
+    // one loader is unioned here instead. Without a query the facet is a plain
+    // filter and behaves, so browsing stays a single request and pages as deep as
+    // Modrinth allows.
+    const search = (query && loaders.length > 1)
+        ? modrinth.searchProjectsAcrossLoaders
+        : modrinth.searchProjects;
+
     try {
-        const data = await modrinth.searchProjects({ query, projectType, loaders, gameVersion, index, offset, limit });
+        const data = await search({ query, projectType, loaders, gameVersion, index, offset, limit });
         res.json({
             hits: (data.hits || []).map(mapHit),
             totalHits: data.total_hits || 0,
