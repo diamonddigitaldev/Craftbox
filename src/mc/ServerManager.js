@@ -191,16 +191,16 @@ class ServerManager {
      * Only authenticated subscribers receive these (the broadcast filter in
      * ServerProcess generates no publicMsg for unknown types).
      * @param {string} serverId
-     * @param {'backup'|'restore'|'jar-update'|'create'|'duplicate'|'import'} operation
-     * @param {'complete'|'failed'} status
-     * @param {object|string} payloadOrError - object on complete, error message on failed
+     * @param {'backup'|'restore'|'jar-update'|'create'|'duplicate'|'import'|'modpack-install'} operation
+     * @param {'complete'|'failed'|'progress'} status
+     * @param {object|string} payloadOrError - error message on failed, payload object otherwise
      */
     broadcastOperation(serverId, operation, status, payloadOrError) {
         const proc = this.getProcess(serverId);
         if (!proc) return;
         const data = { type: 'operation', serverId, operation, status };
-        if (status === 'complete') data.payload = payloadOrError || {};
-        else data.error = String(payloadOrError);
+        if (status === 'failed') data.error = String(payloadOrError);
+        else data.payload = payloadOrError || {};
         proc.broadcast(data);
     }
 

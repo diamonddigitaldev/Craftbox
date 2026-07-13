@@ -29,14 +29,18 @@ module.exports = {
     },
 
     async downloadJar(version, build, destPath) {
-        // Get the latest stable loader version
-        const loaderRes = await fetch(`${BASE}/versions/loader`);
-        if (!loaderRes.ok) throw new Error(`Failed to fetch Fabric loader versions: HTTP ${loaderRes.status}`);
-        const loaders = await loaderRes.json();
+        // Honor a pinned loader version (modpacks pin fabric-loader exactly);
+        // otherwise use the latest stable loader.
+        let loaderVersion = build || null;
+        if (!loaderVersion) {
+            const loaderRes = await fetch(`${BASE}/versions/loader`);
+            if (!loaderRes.ok) throw new Error(`Failed to fetch Fabric loader versions: HTTP ${loaderRes.status}`);
+            const loaders = await loaderRes.json();
 
-        const stableLoader = loaders.find(l => l.stable) || loaders[0];
-        if (!stableLoader) throw new Error('No Fabric loader versions available.');
-        const loaderVersion = stableLoader.version;
+            const stableLoader = loaders.find(l => l.stable) || loaders[0];
+            if (!stableLoader) throw new Error('No Fabric loader versions available.');
+            loaderVersion = stableLoader.version;
+        }
 
         // Get the latest installer version
         const installerRes = await fetch(`${BASE}/versions/installer`);
@@ -63,5 +67,6 @@ module.exports = {
         fs.writeFileSync(destPath, buffer);
 
         log('info', `Fabric server jar downloaded (${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
+        return { build: loaderVersion };
     }
 };

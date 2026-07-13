@@ -11,7 +11,7 @@ const { ensureBackupDir, resolveBackupPath } = require('../../mc/BackupManager')
 const { getProvider, listProviders } = require('../../mc/serverTypes');
 const { downloadServerJar } = require('../../mc/downloader');
 const { log } = require('../../utils/log');
-const { logEvent, deleteServerEvents } = require('../../utils/eventLogger');
+const { logEvent } = require('../../utils/eventLogger');
 const { getEvents } = require('../../utils/eventLogger');
 const { getProcessMemory, getProcessCpu, getDirectorySize, getUptime, formatSize, formatUptime } = require('../../utils/resourceStats');
 const { clearStatsHistory, getStatsHistory } = require('../../utils/statsHistory');
@@ -19,13 +19,18 @@ const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath, copyDefau
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../../mc/serverProperties');
 const { PROPERTY_META } = require('../../mc/propertyMeta');
 const { getContentType } = require('../../utils/contentType');
-const { copyModEnvMap, clearAllModEnv, setModEnvMap } = require('../../utils/modEnvironment');
+const { copyModEnvMap, setModEnvMap } = require('../../utils/modEnvironment');
 const { isZipFile } = require('../../utils/uploadSafety');
 const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
 const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
+const { cleanupServerData } = require('../../utils/serverCleanup');
+const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
+const { assertWhitelistedUrl } = require('../../utils/httpDownload');
+const modrinth = require('../../services/modrinth');
+const { sendModrinthError } = require('./modrinth');
 
 // Shared 404 helper — returns the server record or sends 404 JSON and returns null.
 // The caller must `return` after a null result.
@@ -69,6 +74,19 @@ const importUpload = multer({
             cb(null, true);
         } else {
             cb(new Error('Only .zip files are allowed.'));
+        }
+    }
+});
+
+// Multer config for .mrpack modpack upload — .mrpack only, 2 GiB cap
+const mrpackUpload = multer({
+    dest: os.tmpdir(),
+    limits: { fileSize: 2 * 1024 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        if (file.originalname.toLowerCase().endsWith('.mrpack')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only .mrpack files are allowed.'));
         }
     }
 });
@@ -692,35 +710,68 @@ router.post('/servers/:id/motd', async (req, res) => {
 // Lifecycle mutations
 // ═══════════════════════════════════════════
 
-// POST /servers — Create a new server
-router.post('/servers', async (req, res) => {
-    const { name, version, port, memory, javaArgs, eula, gamemode, difficulty, seed, serverType, customJarUrl, group } = req.body;
+// Shared field validation for every server-creation route (create,
+// from-modpack, from-mrpack) so the rules cannot drift apart.
+// Returns { error } on failure, otherwise the normalized values.
+function validateBaseServerFields(body) {
+    const { name, port, memory, javaArgs, eula, gamemode, difficulty, seed, group } = body || {};
 
     if (!name || !port || !memory) {
-        return res.status(400).json({ error: 'All required fields must be filled.' });
+        return { error: 'All required fields must be filled.' };
     }
 
     const trimmedName = String(name).trim();
     if (trimmedName.length < 1 || trimmedName.length > 50) {
-        return res.status(400).json({ error: 'Server name must be 1-50 characters.' });
+        return { error: 'Server name must be 1-50 characters.' };
     }
     if (!/^[a-zA-Z0-9 _\-]+$/.test(trimmedName)) {
-        return res.status(400).json({ error: 'Server name can only contain letters, numbers, spaces, hyphens, and underscores.' });
+        return { error: 'Server name can only contain letters, numbers, spaces, hyphens, and underscores.' };
     }
 
     const portNum = parseInt(port, 10);
     if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-        return res.status(400).json({ error: 'Port must be between 1024 and 65535.' });
+        return { error: 'Port must be between 1024 and 65535.' };
     }
 
     const memoryNum = parseInt(memory, 10);
     if (isNaN(memoryNum) || memoryNum < 512 || memoryNum > 65536) {
-        return res.status(400).json({ error: 'Memory must be between 512 and 65536 MB.' });
+        return { error: 'Memory must be between 512 and 65536 MB.' };
     }
 
-    if (!eula) {
-        return res.status(400).json({ error: 'You must accept the Minecraft EULA.' });
+    // Multipart/DGUP requests carry eula as the string 'true'/'false'
+    if (!eula || eula === 'false') {
+        return { error: 'You must accept the Minecraft EULA.' };
     }
+
+    const validGamemodes = ['survival', 'creative', 'adventure', 'spectator'];
+    const validDifficulties = ['peaceful', 'easy', 'normal', 'hard'];
+
+    const groupResult = normalizeGroupName(group);
+    if (!groupResult.valid) {
+        return { error: GROUP_NAME_ERROR };
+    }
+
+    return {
+        trimmedName,
+        portNum,
+        memoryNum,
+        safeJavaArgs: String(javaArgs || '').trim(),
+        gamemodeStr: validGamemodes.includes(gamemode) ? gamemode : 'survival',
+        difficultyStr: validDifficulties.includes(difficulty) ? difficulty : 'easy',
+        seedStr: String(seed || '').trim(),
+        group: groupResult.value
+    };
+}
+
+// POST /servers — Create a new server
+router.post('/servers', async (req, res) => {
+    const { version, serverType, customJarUrl } = req.body;
+
+    const base = validateBaseServerFields(req.body);
+    if (base.error) {
+        return res.status(400).json({ error: base.error });
+    }
+    const { trimmedName, portNum, memoryNum, safeJavaArgs, gamemodeStr, difficultyStr, seedStr } = base;
 
     const type = serverType || 'vanilla';
     const provider = getProvider(type);
@@ -745,18 +796,6 @@ router.post('/servers', async (req, res) => {
         if (!versionStr || (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(versionStr) && versionStr !== 'latest')) {
             return res.status(400).json({ error: 'Invalid Minecraft version format.' });
         }
-    }
-
-    const safeJavaArgs = String(javaArgs || '').trim();
-    const validGamemodes = ['survival', 'creative', 'adventure', 'spectator'];
-    const validDifficulties = ['peaceful', 'easy', 'normal', 'hard'];
-    const gamemodeStr = validGamemodes.includes(gamemode) ? gamemode : 'survival';
-    const difficultyStr = validDifficulties.includes(difficulty) ? difficulty : 'easy';
-    const seedStr = String(seed || '').trim();
-
-    const groupResult = normalizeGroupName(group);
-    if (!groupResult.valid) {
-        return res.status(400).json({ error: GROUP_NAME_ERROR });
     }
 
     const id = uuidv4();
@@ -797,7 +836,7 @@ router.post('/servers', async (req, res) => {
             autoRestart: false,
             autoStart: false,
             statusPagePublic: false,
-            group: groupResult.value,
+            group: base.group,
             createdAt: new Date().toISOString(),
             lastStarted: null,
             lastStopped: null,
@@ -842,15 +881,7 @@ router.post('/servers', async (req, res) => {
                 log('info', `Server "${trimmedName}" (${id}) provisioned successfully.`);
             } catch (err) {
                 log('error', `Failed to provision server "${trimmedName}" (${id}): ${err.message}`);
-                logEvent(id, 'action', `Server provisioning failed: ${err.message}`, { initiatedBy }).catch(() => {});
-                if (serverManager) {
-                    try {
-                        await serverManager.setOperationalState(id, STATES.CRASHED, {
-                            crashReason: 'Provisioning failed: ' + err.message
-                        });
-                    } catch (_) {}
-                    serverManager.broadcastOperation(id, 'create', 'failed', err.message);
-                }
+                await markProvisionFailed(req, id, 'create', err.message, 'Provisioning failed');
             }
         })();
     } catch (err) {
@@ -860,6 +891,361 @@ router.post('/servers', async (req, res) => {
         }
     }
 });
+
+// A server that failed provisioning is useless half-built state. Rather than
+// leave it parked in CRASHED for the user to puzzle over, flag it as a failed
+// provision: the console page shows a blocking "Server Setup Failed" modal —
+// rendered from this persisted state on page load AND pushed live over the
+// WebSocket — and the modal deletes the server on the user's behalf.
+//
+// The record is deliberately KEPT here rather than deleted. Deleting now would
+// race the client's page load / WebSocket subscribe: a fast failure (e.g. a
+// Folia version with no stable build) throws before any subscriber exists, so
+// the live broadcast reaches nobody and an immediate delete leaves the
+// freshly-loaded page with a 404 and no way to explain what happened.
+//
+// Import/duplicate failures keep the ordinary crash banner instead — their
+// on-disk state comes from user archives and may be worth inspecting.
+// Grace period before a failed-provision server is auto-removed. Long enough
+// not to race a normal console-page load (whose modal deletes it immediately),
+// short enough to feel like automatic cleanup for a user who never opens it.
+const PROVISION_FAIL_PURGE_MS = 10000;
+
+async function markProvisionFailed(req, id, operation, errMessage, crashPrefix) {
+    const serverManager = req.app.get('serverManager');
+    const crashReason = `${crashPrefix}: ${errMessage}`;
+
+    if (serverManager) {
+        try {
+            await serverManager.setOperationalState(id, STATES.CRASHED, { crashReason });
+        } catch (_) { /* ignore */ }
+    }
+    // Flag it so the console page shows the failure MODAL (auto-delete flow)
+    // rather than the ordinary crash banner. Written after setOperationalState
+    // so it survives that call's own state write.
+    const fresh = await serversDb.get(`server_${id}`);
+    if (fresh) {
+        fresh.provisionFailed = true;
+        await serversDb.set(`server_${id}`, fresh);
+    }
+    logEvent(id, 'action', crashReason, { initiatedBy: req.user.username }).catch(() => {});
+    if (serverManager) serverManager.broadcastOperation(id, operation, 'failed', errMessage);
+    notifyDashboard(req);
+    log('info', `Server ${id} flagged as failed provisioning: ${errMessage}`);
+
+    // Safety net: if nobody opens the console page (its modal deletes the
+    // server on the user's behalf), auto-purge after the grace period. A
+    // present user's delete usually wins, making this a no-op.
+    const timer = setTimeout(async () => {
+        try {
+            const current = await serversDb.get(`server_${id}`);
+            if (!current || !current.provisionFailed) return; // already removed
+            serverManager?.removeProcess(id);
+            req.app.get('backupScheduler')?.stopSchedule(id);
+            await serversDb.delete(`server_${id}`);
+            notifyDashboard(req);
+            await cleanupServerData(id, current.group);
+            log('info', `Auto-removed failed-provision server ${id} after grace period.`);
+        } catch (err) {
+            log('error', `Auto-removal of failed server ${id} failed: ${err.message}`);
+        }
+    }, PROVISION_FAIL_PURGE_MS);
+    timer.unref?.(); // don't keep the process alive for this
+}
+
+// ── Modpack server creation (Modrinth) ──
+
+// Builds the DB record both modpack creation routes share. Same shape as the
+// plain create route plus the modpack metadata block (kept for a future
+// "update modpack" feature).
+function buildModpackServerRecord({ id, base, serverType, version, modpackMeta }) {
+    return {
+        id,
+        name: base.trimmedName,
+        serverType,
+        build: null,
+        state: STATES.PROVISIONING,
+        port: base.portNum,
+        memory: base.memoryNum,
+        javaArgs: base.safeJavaArgs,
+        version,
+        gamemode: base.gamemodeStr,
+        difficulty: base.difficultyStr,
+        seed: base.seedStr,
+        customJarUrl: null,
+        jarFile: 'server.jar',
+        eula: true,
+        autoRestart: false,
+        autoStart: false,
+        statusPagePublic: false,
+        group: base.group,
+        createdAt: new Date().toISOString(),
+        lastStarted: null,
+        lastStopped: null,
+        exitCode: null,
+        crashReason: null,
+        directory: path.join('data', 'servers', id),
+        modpack: modpackMeta
+    };
+}
+
+// Background provisioning shared by both modpack creation routes. Runs after
+// the 201 response; streams per-phase progress over the 'modpack-install'
+// operation and finishes with STOPPED + complete or CRASHED + failed, exactly
+// like the plain create flow.
+async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, iconUrl, cleanup }) {
+    const serverManager = req.app.get('serverManager');
+    const initiatedBy = req.user.username;
+    try {
+        const result = await installModpack({
+            serverId: id,
+            serverDir,
+            mrpack,
+            baseConfig: {
+                port: base.portNum,
+                gamemode: base.gamemodeStr,
+                difficulty: base.difficultyStr,
+                seed: base.seedStr
+            },
+            iconUrl,
+            onProgress: (phase, done, total) => {
+                serverManager?.broadcastOperation(id, 'modpack-install', 'progress', { phase, done, total });
+            }
+        });
+
+        // The manifest is authoritative for loader + MC version; the record's
+        // provisional values (from Modrinth version metadata) are replaced.
+        const fresh = await serversDb.get(`server_${id}`);
+        if (fresh) {
+            fresh.serverType = result.serverType;
+            fresh.version = result.mcVersion;
+            fresh.build = result.build;
+            fresh.state = STATES.STOPPED;
+            if (fresh.modpack) {
+                fresh.modpack.installedAt = new Date().toISOString();
+                if (!fresh.modpack.name) fresh.modpack.name = result.manifestName;
+                if (!fresh.modpack.versionNumber) fresh.modpack.versionNumber = result.manifestVersionId;
+            }
+            await serversDb.set(`server_${id}`, fresh);
+        }
+
+        if (serverManager) {
+            await serverManager.setOperationalState(id, STATES.STOPPED);
+            serverManager.broadcastOperation(id, 'modpack-install', 'complete', {
+                build: result.build,
+                warnings: result.warnings
+            });
+        }
+        const packLabel = result.manifestName || 'modpack';
+        logEvent(id, 'action', `Installed modpack "${packLabel}"${result.manifestVersionId ? ` ${result.manifestVersionId}` : ''} (${result.filesInstalled} files)`, { initiatedBy }).catch(() => {});
+        log('info', `Server "${name}" (${id}) provisioned from modpack "${packLabel}" (${result.filesInstalled} files).`);
+    } catch (err) {
+        log('error', `Modpack install failed for "${name}" (${id}): ${err.message}`);
+        await markProvisionFailed(req, id, 'modpack-install', err.message, 'Modpack install failed');
+    } finally {
+        if (cleanup) cleanup();
+    }
+}
+
+// POST /servers/from-modpack — Create a server from a Modrinth modpack.
+// The client sends only { projectId, versionId } plus the base fields; all
+// pack metadata is re-fetched server-side so it cannot be spoofed.
+router.post('/servers/from-modpack', async (req, res) => {
+    const base = validateBaseServerFields(req.body);
+    if (base.error) {
+        return res.status(400).json({ error: base.error });
+    }
+
+    const { projectId, versionId } = req.body;
+    if (typeof projectId !== 'string' || !modrinth.ID_RE.test(projectId)
+        || typeof versionId !== 'string' || !modrinth.ID_RE.test(versionId)) {
+        return res.status(400).json({ error: 'Invalid modpack reference.' });
+    }
+
+    let project, version;
+    try {
+        project = await modrinth.getProject(projectId);
+        version = await modrinth.getVersion(versionId);
+    } catch (err) {
+        return sendModrinthError(res, err);
+    }
+
+    if (project.project_type !== 'modpack') {
+        return res.status(400).json({ error: 'That Modrinth project is not a modpack.' });
+    }
+    if (version.project_id !== project.id) {
+        return res.status(400).json({ error: 'That version does not belong to the selected modpack.' });
+    }
+    if (modrinth.isQuiltOnly(version.loaders)) {
+        return res.status(400).json({ error: 'Quilt modpacks are not supported by Craftbox.' });
+    }
+    const serverType = pickLoaderFromArray(version.loaders);
+    if (!serverType) {
+        return res.status(400).json({ error: 'This modpack does not target a supported server loader (Fabric, Forge, or NeoForge).' });
+    }
+
+    const file = (version.files || []).find(f => f.primary) || (version.files || [])[0];
+    if (!file || !/\.mrpack$/i.test(file.filename || '')) {
+        return res.status(400).json({ error: 'This modpack version has no installable .mrpack package.' });
+    }
+    try {
+        assertWhitelistedUrl(file.url);
+    } catch {
+        return res.status(400).json({ error: 'This modpack version has no allowed download source.' });
+    }
+
+    const id = uuidv4();
+    const serverDir = path.join(SERVERS_DIR, id);
+
+    try {
+        fs.mkdirSync(path.join(serverDir, 'logs'), { recursive: true });
+        fs.mkdirSync(path.join(serverDir, getContentType(serverType).folder), { recursive: true });
+        copyDefaultIcon(id);
+
+        const server = buildModpackServerRecord({
+            id,
+            base,
+            serverType,
+            version: String((version.game_versions || [])[0] || ''),
+            modpackMeta: {
+                projectId: project.id,
+                versionId: version.id,
+                name: project.title,
+                versionNumber: version.version_number,
+                iconUrl: project.icon_url || null,
+                source: 'modrinth',
+                installedAt: null
+            }
+        });
+        await serversDb.set(`server_${id}`, server);
+
+        log('info', `Creating server "${base.trimmedName}" (${id}) from Modrinth modpack "${project.title}" ${version.version_number}`);
+        notifyDashboard(req);
+        res.status(201).json({ success: true, server });
+
+        provisionModpackServer({
+            req,
+            id,
+            serverDir,
+            name: base.trimmedName,
+            base,
+            mrpack: { url: file.url, sha512: file.hashes?.sha512 || null },
+            iconUrl: project.icon_url || null
+        });
+    } catch (err) {
+        log('error', `Failed to create server from modpack: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to create server: ${err.message}` });
+        }
+    }
+});
+
+// POST /servers/from-mrpack — Create a server from an uploaded .mrpack file.
+// Shared by the single multipart route and the DGUP chunked mount below; the
+// pack is parsed and the loader resolved BEFORE any record exists so a
+// malformed or Quilt pack fails with a clean 400.
+const createFromMrpackHandler = async (req, res) => {
+    const tmpPath = req.file?.path;
+    const cleanupTemp = () => {
+        if (tmpPath) fs.promises.unlink(tmpPath).catch(() => {});
+    };
+    const rejectUpload = (status, message) => {
+        log('warn', `Modpack upload rejected ("${req.file?.originalname || 'unknown'}"): ${message}`);
+        return res.status(status).json({ error: message });
+    };
+
+    if (!tmpPath) {
+        return rejectUpload(400, 'No modpack uploaded.');
+    }
+
+    const base = validateBaseServerFields(req.body);
+    if (base.error) {
+        cleanupTemp();
+        return rejectUpload(400, base.error);
+    }
+
+    if (!isZipFile(tmpPath)) {
+        cleanupTemp();
+        return rejectUpload(400, 'Not a valid .mrpack file.');
+    }
+
+    let manifest;
+    let loaderInfo;
+    try {
+        const parsed = await parseMrpack(tmpPath);
+        manifest = parsed.manifest;
+        // installModpack reopens the archive itself — close this handle so the
+        // background phase has sole ownership.
+        try { await parsed.zip.close(); } catch { /* ignore */ }
+        loaderInfo = resolveLoader(manifest.dependencies);
+    } catch (err) {
+        cleanupTemp();
+        return rejectUpload(400, err.message);
+    }
+
+    const id = uuidv4();
+    const serverDir = path.join(SERVERS_DIR, id);
+
+    try {
+        fs.mkdirSync(path.join(serverDir, 'logs'), { recursive: true });
+        fs.mkdirSync(path.join(serverDir, getContentType(loaderInfo.serverType).folder), { recursive: true });
+        copyDefaultIcon(id);
+
+        const server = buildModpackServerRecord({
+            id,
+            base,
+            serverType: loaderInfo.serverType,
+            version: loaderInfo.mcVersion,
+            modpackMeta: {
+                projectId: null,
+                versionId: null,
+                name: manifest.name || null,
+                versionNumber: manifest.versionId || null,
+                iconUrl: null,
+                source: 'file',
+                installedAt: null
+            }
+        });
+        await serversDb.set(`server_${id}`, server);
+
+        log('info', `Creating server "${base.trimmedName}" (${id}) from uploaded modpack "${manifest.name || req.file.originalname}"`);
+        notifyDashboard(req);
+        res.status(201).json({ success: true, server });
+
+        provisionModpackServer({
+            req,
+            id,
+            serverDir,
+            name: base.trimmedName,
+            base,
+            mrpack: { localPath: tmpPath },
+            iconUrl: null,
+            cleanup: cleanupTemp
+        });
+    } catch (err) {
+        cleanupTemp();
+        log('error', `Failed to create server from uploaded modpack: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: `Failed to create server: ${err.message}` });
+        }
+    }
+};
+
+router.post('/servers/from-mrpack', multerShim(mrpackUpload.single('mrpack')), createFromMrpackHandler);
+
+// POST /servers/from-mrpack/upload/{init,chunk,complete,cancel} — DGUP chunked
+// upload for .mrpack files too large for a single request (e.g. behind
+// Cloudflare Tunnel's 100 MB body cap). complete() runs the handler unchanged;
+// the base form fields arrive in the complete request body.
+router.use('/servers/from-mrpack/upload', createDgupRouter({
+    routeKey: 'mrpack',
+    field: 'mrpack',
+    fileMode: 'single',
+    maxBytes: 2 * 1024 * 1024 * 1024,
+    ext: ['.mrpack'],
+    extError: 'Only .mrpack files are allowed.',
+    mimetype: 'application/x-modrinth-modpack+zip'
+}, createFromMrpackHandler));
 
 // POST /servers/:id/start
 router.post('/servers/:id/start', async (req, res) => {
@@ -1446,26 +1832,10 @@ router.delete('/servers/:id', async (req, res) => {
         notifyDashboard(req);
         res.json({ success: true });
 
-        // Background cleanup. Each step is isolated so a failure in one (e.g. a
-        // locked file on Windows) can't skip the DB cleanup or group prune that
-        // follow. Failures only orphan data; they don't affect the user's view.
+        // Background cleanup — failures only orphan data, they don't affect the
+        // user's view (the record is already gone).
         (async () => {
-            const step = async (label, fn) => {
-                try {
-                    await fn();
-                } catch (err) {
-                    log('error', `Cleanup step "${label}" failed for ${server.name} (${id}): ${err.message}`);
-                }
-            };
-
-            const { deleteAllBackups } = require('../../mc/BackupManager');
-            await step('backups', () => deleteAllBackups(id));
-            await step('events', () => deleteServerEvents(id));
-            await step('stats', () => clearStatsHistory(id));
-            await step('mod metadata', () => clearAllModEnv(id));
-            if (server.group) await step('group', () => pruneGroupMetaIfEmpty(server.group));
-            await step('files', () => fs.promises.rm(path.join(SERVERS_DIR, id), { recursive: true, force: true }));
-
+            await cleanupServerData(id, server.group);
             log('info', `Server "${server.name}" (${id}) cleanup complete.`);
         })();
     } catch (err) {

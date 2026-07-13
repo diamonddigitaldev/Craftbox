@@ -2,4 +2,15 @@ Craftbox 1.1 — TODO
 ===================
 
 - Modrinth support / create a server from a modpack.
-  (Deferred — complete later in 1.1's development.)
+  (IMPLEMENTED — manual test checklist below. Automated checks already done:
+  syntax on all touched JS, EJS render checks, real Fabric pack installed
+  end-to-end through installModpack (sha512 verified, pinned loader honored,
+  overrides applied), tampered-hash / size-cap / URL-whitelist rejections,
+  app boots with all new routes registered.)
+
+- Better version selection for mod loader.
+  Currently only renders a dropdown of stable builds for each server type.
+  (Edit page's dropdown only shows stable builds later than current server version by design)
+  A selection modal/menu similar to the search/filter/browse modal
+  in the plugins page might be better than a dropdown.
+  (version selection can be seen on the edit page and create page)

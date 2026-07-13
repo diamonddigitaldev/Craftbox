@@ -188,13 +188,28 @@
         const crashText = document.getElementById('crash-banner-text');
         if (crashBanner) {
             if (state === 'crashed') {
+                // A failed create/modpack provision is handled by the blocking
+                // "Server Setup Failed" modal + auto-delete, not the crash
+                // banner. Driving this off state (not the 'operation' event)
+                // means the initial 'subscribed' snapshot triggers it too, so
+                // a fast failure that beat the WebSocket subscription still
+                // shows the modal live — no manual reload needed.
+                if (crashReason && (
+                    crashReason.indexOf('Provisioning failed') === 0 ||
+                    crashReason.indexOf('Modpack install failed') === 0
+                )) {
+                    crashBanner.style.display = 'none';
+                    showProvisionFailedModal(crashReason.replace(/^(Provisioning failed|Modpack install failed): /, ''));
+                    return;
+                }
                 var autoRestartEl = document.getElementById('autoRestart');
                 var autoRestart = autoRestartEl ? autoRestartEl.checked : false;
                 if (crashReason && (
                     crashReason.indexOf('Provisioning failed') === 0 ||
                     crashReason.indexOf('Duplication failed') === 0 ||
                     crashReason.indexOf('Jar update interrupted') === 0 ||
-                    crashReason.indexOf('Provisioning interrupted') === 0
+                    crashReason.indexOf('Provisioning interrupted') === 0 ||
+                    crashReason.indexOf('Modpack install failed') === 0
                 )) {
                     crashText.textContent = crashReason;
                 } else {
@@ -606,7 +621,74 @@
 
     // Fetch stats immediately and every 10 seconds (matches background collector interval)
     fetchStats();
-    setInterval(fetchStats, 10000);
+    var statsInterval = setInterval(fetchStats, 10000);
+
+    // ── Provisioning progress & failure ──
+    // While the server is provisioning from a modpack, per-phase progress
+    // arrives over the 'modpack-install' operation and refines the generic
+    // provisioning banner text. A failed create/modpack provision surfaces as
+    // a blocking modal whose only exit is the dashboard — shown live here when
+    // the page is already open, or from the server-rendered flag on load when
+    // the failure happened before the page finished loading.
+    var modpackPhaseText = {
+        download: 'Downloading the modpack...',
+        parse: 'Reading the modpack manifest...',
+        loader: 'Installing the mod loader server...',
+        overrides: 'Applying modpack configuration files...',
+        finalize: 'Finishing up...'
+    };
+
+    var provisionFailedHandled = false;
+    function showProvisionFailedModal(reason) {
+        if (provisionFailedHandled) return;
+        provisionFailedHandled = true;
+
+        var opBanner = document.getElementById('operation-banner');
+        if (opBanner) opBanner.style.display = 'none';
+        clearInterval(statsInterval); // the record is about to be deleted
+
+        var modalEl = document.getElementById('provisionFailedModal');
+        var reasonEl = document.getElementById('provision-failed-reason');
+        // reason is null when the page rendered the text server-side already
+        if (reasonEl && reason) reasonEl.textContent = reason;
+        if (modalEl) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        } else {
+            showToast('Server setup failed: ' + (reason || 'Unknown error'), 'danger');
+        }
+
+        // Clean up the useless half-built server now that the user has been
+        // told why. "Back to Dashboard" just navigates; the delete is here so
+        // nothing is left behind even if they close the tab afterwards.
+        apiFetch('/api/v1/servers/' + serverId, { method: 'DELETE' });
+    }
+
+    document.addEventListener('craftbox:operation', function (e) {
+        var op = e.detail;
+        if (!op) return;
+
+        if (op.operation === 'modpack-install' && op.status === 'progress') {
+            var opText = document.getElementById('operation-banner-text');
+            if (!opText) return;
+            var p = op.payload || {};
+            if (p.phase === 'files' && typeof p.total === 'number') {
+                opText.textContent = 'Downloading mods (' + (p.done || 0) + '/' + p.total + ')...';
+            } else if (modpackPhaseText[p.phase]) {
+                opText.textContent = modpackPhaseText[p.phase];
+            }
+        } else if (op.operation === 'modpack-install' && op.status === 'complete') {
+            showToast('Modpack installed successfully.', 'success');
+        } else if ((op.operation === 'create' || op.operation === 'modpack-install') && op.status === 'failed') {
+            showProvisionFailedModal(op.error || 'Unknown error');
+        }
+    });
+
+    // Failure that happened before this page loaded — the reason is already
+    // rendered into the modal server-side, so show it straight away.
+    var provisionFailedModalEl = document.getElementById('provisionFailedModal');
+    if (provisionFailedModalEl && provisionFailedModalEl.dataset.autoShow === 'true') {
+        showProvisionFailedModal(null);
+    }
 
     // Start connection
     connect();

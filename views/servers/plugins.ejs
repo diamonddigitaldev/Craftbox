@@ -67,12 +67,22 @@
         <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
         Upload
     </button>
+    <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
+        id="modrinth-browse-btn">
+        <span class="material-icons-outlined" style="font-size: 1rem;">travel_explore</span>
+        Browse Modrinth
+    </button>
     <% } else { %>
     <input type="file" class="form-control form-control-sm" disabled style="max-width: 400px;">
     <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
         disabled title="Stop the server to upload">
         <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
         Upload
+    </button>
+    <button class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
+        disabled title="Stop the server to install">
+        <span class="material-icons-outlined" style="font-size: 1rem;">travel_explore</span>
+        Browse Modrinth
     </button>
     <% } %>
 </div>
@@ -203,5 +213,62 @@
     </div>
 </div>
 
+
+<!-- Browse Modrinth Modal -->
+<div class="modal fade" id="modrinthModal" tabindex="-1" aria-hidden="true"
+    data-server-type="<%= server.serverType %>" data-server-version="<%= server.version %>">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                        <span class="material-icons-outlined text-success">travel_explore</span>
+                        Browse <%= contentType.label %> on Modrinth
+                    </h5>
+                    <small class="text-body-secondary d-block mt-1">
+                        Compatible with <%= (server.serverType || '').charAt(0).toUpperCase() + (server.serverType || '').slice(1) %> <%= server.version %>
+                    </small>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <div class="input-group input-group-sm" style="max-width: 350px;">
+                        <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
+                        <input type="text" class="form-control" id="modrinth-search"
+                            placeholder="Search <%= contentType.label.toLowerCase() %> on Modrinth...">
+                    </div>
+                    <select class="form-select form-select-sm" id="modrinth-sort" style="width: auto;" title="Sort by">
+                        <option value="relevance" selected>Relevance</option>
+                        <option value="downloads">Downloads</option>
+                        <option value="newest">Newest</option>
+                        <option value="updated">Updated</option>
+                    </select>
+                </div>
+                <div class="text-center py-4 d-none" id="modrinth-loading">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="text-center py-4 d-none" id="modrinth-empty">
+                    <span class="material-icons-outlined text-body-secondary mb-2" style="font-size: 4rem;">extension_off</span>
+                    <h5 class="text-body-secondary">No compatible <%= contentType.label.toLowerCase() %> found</h5>
+                    <p class="text-body-secondary mb-0">Try a different search.</p>
+                </div>
+                <div class="table-responsive d-none" id="modrinth-results-wrap">
+                    <table class="table table-hover mb-0 align-middle">
+                        <tbody id="modrinth-results"></tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2 d-none" id="modrinth-load-more">
+                    Load more
+                </button>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/plugins.js'] }) %>

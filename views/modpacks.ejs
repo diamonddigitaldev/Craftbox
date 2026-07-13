@@ -1,0 +1,117 @@
+<%- include('partials/head', { title: 'Modpacks', navbar: true }) %>
+
+<input type="hidden" id="csrf-token" value="<%= csrfToken %>">
+
+<div class="d-flex align-items-center gap-2 mb-4">
+    <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
+        <span class="material-icons-outlined" style="font-size: 1.2rem;">arrow_back</span>
+    </a>
+    <h4 class="mb-0 d-flex align-items-center gap-2">
+        <span class="material-icons-outlined">widgets</span>
+        Browse Modpacks on Modrinth
+    </h4>
+</div>
+
+<!-- Search + filters -->
+<div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+    <div class="input-group input-group-sm" style="max-width: 350px;">
+        <span class="input-group-text">
+            <span class="material-icons-outlined" style="font-size: 1rem;">search</span>
+        </span>
+        <input type="text" class="form-control" id="search-input" placeholder="Search modpacks..." autofocus>
+    </div>
+    <select class="form-select form-select-sm" id="loader-filter" style="width: auto;" title="Loader">
+        <option value="" selected>All Loaders</option>
+        <option value="fabric">Fabric</option>
+        <option value="forge">Forge</option>
+        <option value="neoforge">NeoForge</option>
+    </select>
+    <select class="form-select form-select-sm" id="version-filter" style="width: auto;" title="Minecraft version">
+        <option value="" selected>All Versions</option>
+    </select>
+    <select class="form-select form-select-sm" id="sort-select" style="width: auto;" title="Sort by">
+        <option value="relevance" selected>Relevance</option>
+        <option value="downloads">Downloads</option>
+        <option value="follows">Follows</option>
+        <option value="newest">Newest</option>
+        <option value="updated">Updated</option>
+    </select>
+</div>
+
+<!-- Loading -->
+<div class="text-center py-5 d-none" id="results-loading">
+    <div class="spinner-border text-success" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
+
+<!-- Empty / error -->
+<div class="text-center py-5 d-none" id="results-empty">
+    <span class="material-icons-outlined text-body-secondary mb-3" style="font-size: 4rem;">search_off</span>
+    <h5 class="text-body-secondary" id="results-empty-title">No modpacks found</h5>
+    <p class="text-body-secondary mb-0" id="results-empty-text">Try a different search or loosen the filters.</p>
+</div>
+
+<!-- Results -->
+<div class="row g-3 d-none" id="results-grid"></div>
+
+<!-- Pagination -->
+<div class="d-flex justify-content-center align-items-center gap-3 mt-4 d-none" id="pagination">
+    <button type="button" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" id="prev-btn" disabled>
+        <span class="material-icons-outlined" style="font-size: 1rem;">chevron_left</span>
+        Previous
+    </button>
+    <span class="text-body-secondary small" id="page-info">Page 1 of 1</span>
+    <button type="button" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" id="next-btn" disabled>
+        Next
+        <span class="material-icons-outlined" style="font-size: 1rem;">chevron_right</span>
+    </button>
+</div>
+
+<!-- Version picker modal -->
+<div class="modal fade" id="packVersionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-success">widgets</span>
+                    <span id="pack-modal-title">Modpack</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-body-secondary mb-3" style="font-size: 0.85rem;">
+                    Pick the modpack version to build the server from.
+                </p>
+                <div class="text-center py-4" id="pack-versions-loading">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="text-center py-4 d-none" id="pack-versions-empty">
+                    <span class="material-icons-outlined text-body-secondary mb-2" style="font-size: 3rem;">search_off</span>
+                    <p class="text-body-secondary mb-0">No server-compatible versions found.</p>
+                </div>
+                <div class="table-responsive d-none" id="pack-versions-wrap" style="max-height: 50vh; overflow-y: auto;">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>Version</th>
+                                <th>Minecraft</th>
+                                <th class="d-none d-md-table-cell">Loader</th>
+                                <th class="d-none d-md-table-cell">Published</th>
+                                <th style="width: 110px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="pack-versions-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('partials/foot', { scripts: ['/js/modpacks.js'] }) %>

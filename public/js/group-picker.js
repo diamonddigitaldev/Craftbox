@@ -17,11 +17,17 @@ function initGroupPicker(inputEl, listEl, options) {
             item.type = 'button';
             item.className = 'list-group-item list-group-item-action d-flex align-items-center gap-2';
             var icon = document.createElement('span');
-            icon.className = 'material-icons-outlined';
+            icon.className = 'material-icons-outlined flex-shrink-0';
             icon.style.fontSize = '1rem';
             icon.textContent = 'folder';
             item.appendChild(icon);
-            item.appendChild(document.createTextNode(name));
+            // Long names must truncate, not wrap — the rows have a fixed
+            // height, so a second line renders squashed.
+            var nameEl = document.createElement('span');
+            nameEl.className = 'text-truncate';
+            nameEl.textContent = name;
+            item.title = name;
+            item.appendChild(nameEl);
             // mousedown preventDefault keeps the input focused so an inline
             // picker's blur handler can't hide the list before the click lands.
             item.addEventListener('mousedown', function (e) { e.preventDefault(); });

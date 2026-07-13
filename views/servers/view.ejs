@@ -43,10 +43,10 @@
 </div>
 
 <div class="alert alert-danger align-items-center gap-2 mb-3" id="crash-banner"
-     style="display: <%= server.state === 'crashed' ? 'flex' : 'none' %>;">
+     style="display: <%= (server.state === 'crashed' && !server.provisionFailed) ? 'flex' : 'none' %>;">
     <span class="material-icons-outlined">error</span>
     <div id="crash-banner-text">
-        <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar update interrupted') || server.crashReason.startsWith('Provisioning interrupted'))) { %>
+        <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar update interrupted') || server.crashReason.startsWith('Provisioning interrupted') || server.crashReason.startsWith('Modpack install failed'))) { %>
             <%= server.crashReason %>
         <% } else { %>
             Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.
@@ -137,6 +137,37 @@
                     style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:0.85rem;<%= server.state === 'running' ? 'display:none;' : '' %>">
                     No Data — Server Offline
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Provisioning failure — the server is auto-removed, so the only way
+     forward is back to the dashboard (static backdrop, no dismiss).
+     data-auto-show is set when the page loads AFTER the failure; when it
+     loads before, console.js shows it live from the WebSocket event. -->
+<div class="modal fade" id="provisionFailedModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false"
+     data-auto-show="<%= server.provisionFailed ? 'true' : '' %>">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-danger">error</span>
+                    Server Setup Failed
+                </h5>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2" id="provision-failed-reason"><%= server.provisionFailed && server.crashReason ? server.crashReason.replace(/^(Provisioning failed|Modpack install failed): /, '') : '' %></p>
+                <p class="text-body-secondary mb-0" style="font-size: 0.85rem;">
+                    The server and its files have been removed automatically.
+                    You can try again with a different version or setup.
+                </p>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <a href="/dashboard" class="btn btn-success btn-sm d-flex align-items-center gap-1">
+                    <span class="material-icons-outlined" style="font-size: 1rem;">arrow_back</span>
+                    Back to Dashboard
+                </a>
             </div>
         </div>
     </div>

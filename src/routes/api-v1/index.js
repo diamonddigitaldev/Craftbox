@@ -8,5 +8,6 @@ router.use(require('./backups'));
 router.use(require('./events'));
 router.use(require('./plugins'));
 router.use(require('./templates'));
+router.use(require('./modrinth'));
 
 module.exports = router;

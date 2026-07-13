@@ -9,6 +9,17 @@ const displayName = getStateDisplayName(server.state);
 const displayVersion = (server.serverType || 'vanilla') === 'custom'
     ? '(Unknown Version)'
     : (server.version || '(Unknown Version)');
+
+// Crash-footer message. A failed provision has no exit code (and is being
+// auto-removed) — show its reason; a real crash shows the exit code only when
+// one exists, so the footer never dangles an empty "Exit code:".
+let crashFooterText = 'Server crashed';
+if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Modpack install failed'))) {
+    crashFooterText = 'Setup failed: ' + server.crashReason.replace(/^(Provisioning failed|Modpack install failed): /, '');
+} else {
+    if (server.crashReason === 'oom') crashFooterText += ' (Out of Memory)';
+    if (server.exitCode != null) crashFooterText += ' — Exit code: ' + server.exitCode;
+}
 %>
 <div class="col-md-6 col-xl-4 mb-4">
     <div class="card server-card h-100 border-<%= color %>" data-server-id="<%= server.id %>" data-state="<%= server.state %>"
@@ -82,7 +93,7 @@ const displayVersion = (server.serverType || 'vanilla') === 'custom'
         </div>
         <div class="card-footer bg-danger bg-opacity-10 text-danger small server-crash-footer<%= server.state === 'crashed' ? '' : ' d-none' %>">
             <span class="material-icons-outlined align-middle me-1" style="font-size: 1rem;">warning</span>
-            Server crashed<%= server.crashReason === 'oom' ? ' (Out of Memory)' : '' %> — Exit code: <%= server.exitCode %>
+            <%= crashFooterText %>
         </div>
     </div>
 </div>

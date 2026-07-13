@@ -15,7 +15,31 @@
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                         <input type="hidden" name="serverType" id="serverType" value="vanilla">
 
-                        <!-- Load from Template -->
+                        <!-- Create source: template / modpack (neither = from scratch) -->
+                        <div class="mb-4" id="create-source-group">
+                            <label class="form-label">Quick Start (Optional)</label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <div class="card type-card text-center p-2"
+                                        id="source-modpack-card" data-source="modpack" role="button">
+                                        <span class="material-icons-outlined mb-1" style="font-size: 2rem;">widgets</span>
+                                        <div class="small fw-semibold">Modpack</div>
+                                        <div class="text-body-secondary" style="font-size: 0.7rem;">Install a Modrinth modpack</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="card type-card text-center p-2 type-card-disabled"
+                                        id="source-template-card" data-source="template" role="button"
+                                        title="No templates saved yet">
+                                        <span class="material-icons-outlined mb-1" style="font-size: 2rem;">bookmark</span>
+                                        <div class="small fw-semibold">Template</div>
+                                        <div class="text-body-secondary" style="font-size: 0.7rem;">Start from a saved template</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Load from Template (shown for the Template source) -->
                         <div class="mb-4 d-none" id="template-group">
                             <label for="template-select" class="form-label">Load from Template</label>
                             <select class="form-select" id="template-select">
@@ -23,8 +47,49 @@
                             </select>
                         </div>
 
+                        <!-- Modpack summary (replaces type/version selection when
+                             creating from a Modrinth modpack or local .mrpack) -->
+                        <div class="mb-4 d-none" id="modpack-summary">
+                            <label class="form-label">Modpack</label>
+                            <div class="card">
+                                <div class="card-body d-flex align-items-center gap-3 p-3">
+                                    <img src="" alt="" class="modpack-icon d-none" id="modpack-icon">
+                                    <span class="modpack-icon modpack-icon-placeholder" id="modpack-icon-placeholder">
+                                        <span class="material-icons-outlined">widgets</span>
+                                    </span>
+                                    <div class="overflow-hidden flex-grow-1">
+                                        <div class="fw-semibold text-truncate" id="modpack-title">Loading modpack...</div>
+                                        <small class="text-body-secondary d-block text-truncate" id="modpack-subtitle"></small>
+                                    </div>
+                                    <div class="d-none d-sm-flex gap-1" id="modpack-badges"></div>
+                                    <button type="button" class="btn-close flex-shrink-0" id="modpack-clear"
+                                        title="Choose a different setup"></button>
+                                </div>
+                            </div>
+                            <div class="form-text">The mod loader, Minecraft version, and mods come from the modpack.</div>
+                            <input type="hidden" id="modpackProject">
+                            <input type="hidden" id="modpackVersion">
+                        </div>
+
+                        <!-- Local .mrpack upload (shown for the Modpack source) -->
+                        <div class="mb-4 d-none" id="mrpack-file-group">
+                            <label for="mrpack-file" class="form-label required-star">Modpack File (.mrpack)</label>
+                            <input type="file" class="form-control" id="mrpack-file" accept=".mrpack">
+                            <div class="form-text">A Modrinth modpack file. The mod loader and mods are installed from it.</div>
+                            <div class="d-flex align-items-center gap-3 mt-3">
+                                <hr class="flex-grow-1 my-0">
+                                <span class="text-body-secondary small">or</span>
+                                <hr class="flex-grow-1 my-0">
+                            </div>
+                            <a href="/modpacks"
+                                class="btn btn-outline-success w-100 d-flex align-items-center justify-content-center gap-2 mt-3">
+                                <span class="material-icons-outlined" style="font-size: 1.2rem;">travel_explore</span>
+                                Browse Modpacks on Modrinth
+                            </a>
+                        </div>
+
                         <!-- Server Type Selection -->
-                        <div class="mb-4">
+                        <div class="mb-4" id="type-select-group">
                             <label class="form-label">Server Type</label>
                             <div class="row g-2" id="type-selector">
                                 <div class="col-12 text-center text-body-secondary py-3">

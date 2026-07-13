@@ -53,10 +53,12 @@ Common statuses: `400` invalid input, `401` unauthenticated, `403` CSRF failure 
 
 Long-running operations respond immediately and finish in the background:
 
-- `201 Created` — create, duplicate, import. The response includes the new server record in `provisioning` state.
+- `201 Created` — create, duplicate, import, create-from-modpack, create-from-mrpack. The response includes the new server record in `provisioning` state.
 - `202 Accepted` — backup, restore, jar update, restart-with-backup. The response is `{"success": true, "status": "started"}`.
 
-Completion is signalled over the WebSocket as an `operation` message (see [WebSocket protocol](#websocket-protocol)). Clients that cannot hold a WebSocket open should poll `GET /servers/:id` and watch `state` (`provisioning`/`backing_up`/`restoring`/`updating_jar` → `stopped`, or `crashed` on failure).
+Completion is signalled over the WebSocket as an `operation` message (see [WebSocket protocol](#websocket-protocol)); modpack installs additionally stream `status: "progress"` messages while running. Clients that cannot hold a WebSocket open should poll `GET /servers/:id` and watch `state` (`provisioning`/`backing_up`/`restoring`/`updating_jar` → `stopped`, or `crashed` on failure).
+
+> **Failed provisioning is not left behind.** When a *create* / *from-modpack* / *from-mrpack* provision fails, the half-built server is removed automatically rather than parked in `crashed` — so a polling client sees the server return `404` shortly after the failure (the `operation` message carries the reason). Failed *import*, *duplicate*, *backup*, *restore*, and *jar-update* operations instead leave the server in `crashed` for inspection.
 
 ### Validation constants
 
@@ -71,6 +73,7 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 | Server type | `vanilla`, `paper`, `purpur`, `folia`, `fabric`, `forge`, `neoforge`, `custom` |
 | `:id` route params | UUID v4 |
 | Console command | max 1000 chars |
+| Modrinth project / version id | 1–64 chars — a Modrinth slug (e.g. `fabric-api`) or base62 id |
 
 ### Server states
 
@@ -100,6 +103,8 @@ The server object returned by these endpoints contains the full configuration (n
 | Method | Path | Description |
 |---|---|---|
 | POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. Returns `201 {"success": true, "server": {...}}`; provisioning continues in the background |
+| POST | `/servers/from-modpack` | Create from a Modrinth modpack — see [Modrinth](#modrinth) |
+| POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack` file — see [Modrinth](#modrinth) |
 | POST | `/servers/:id/duplicate` | Clone a server. Body: `{name, port, includeWorld?, stopFirst?, startAfter?}`. `409` if running and `stopFirst` is not set. Returns `201` |
 | POST | `/servers/import` | Import a transfer archive — see [Server transfer](#server-transfer) |
 | DELETE | `/servers/:id` | Delete a server and its data. `409` unless `stopped`/`crashed` |
@@ -199,11 +204,14 @@ Each upload endpoint exposes a DGUP sub-resource:
 
 ```
 /servers/import/upload/{init,chunk,complete,cancel}
+/servers/from-mrpack/upload/{init,chunk,complete,cancel}
 /servers/:id/icon/upload/{init,chunk,complete,cancel}
 /servers/:id/plugins/upload/{init,chunk,complete,cancel}   (one file per session)
 ```
 
 All four are `POST` and require the same auth (and, for session auth, `X-CSRF-Token`) as the parent endpoint.
+
+> `/servers/from-mrpack` takes form fields alongside the file (`name`, `port`, …). On the chunked path, send them as additional keys in the `complete` request body — the handler sees the same fields either way.
 
 ### Lifecycle
 
@@ -255,6 +263,35 @@ The server must be `stopped` or `crashed` for all of these.
 | POST | `/servers/:id/plugins/delete` | Body: `{filename}` |
 | POST | `/servers/:id/plugins/delete-all` | Delete all plugins/mods |
 | POST | `/servers/:id/plugins/environment` | Mod-loader servers only. Body: `{filename, environment}` where environment is `client`, `server`, or `both`. Client-only mods are disabled on the server but still offered on the status page mods download |
+
+
+## Modrinth
+
+Craftbox proxies the [Modrinth](https://modrinth.com) API server-side and installs modpacks, mods, and plugins from it. No Modrinth account or key is needed. Upstream failures surface as `429` (`Modrinth rate limit reached. Try again shortly.`) or `502` (`Modrinth is unavailable right now.`). Quilt-only projects and versions are filtered out or rejected — Craftbox has no Quilt server support. Search and lookup responses are cached server-side for 60 s / 5 min respectively.
+
+### Search & lookups (proxied)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/modrinth/search?projectType=&query=&loader=&gameVersion=&index=&offset=&limit=` | Search projects. `projectType` ∈ `modpack` (default), `mod`. `loader` is optional for modpacks (`fabric`/`forge`/`neoforge`; omitted = all three) and **required** for mods — pass a Craftbox server type (`fabric`, `forge`, `neoforge`, `paper`, `purpur`, `folia`), which maps to the matching Modrinth loader family (`paper` also matches Spigot/Bukkit plugins). `index` ∈ `relevance` (default), `downloads`, `follows`, `newest`, `updated`. `offset` 0–10000, `limit` 1–50 (default 20). Returns `{"hits": [{projectId, slug, title, description, iconUrl, author, downloads, categories, serverSide, clientSide, dateModified}], "totalHits", "offset", "limit"}` |
+| GET | `/modrinth/projects/:idOrSlug` | One project: `{"project": {projectId, slug, title, description, iconUrl, categories, serverSide, clientSide, downloads, projectType}}` |
+| GET | `/modrinth/projects/:idOrSlug/versions?loader=&gameVersion=` | Version list, newest first, Quilt-only versions removed: `{"versions": [{id, name, versionNumber, gameVersions, loaders, datePublished, files: [{filename, size, primary}]}]}` |
+
+### Create a server from a modpack
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
+| POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack`. Multipart, file field `mrpack`, max 2 GiB, plus the same base fields as text fields. The pack is parsed and the loader resolved **before** any server record is created, so malformed or Quilt packs fail with a clean `400`. Returns `201` + background install. Also accepts [chunked uploads](#chunked-uploads-dgup) at `/servers/from-mrpack/upload/*` |
+
+The background install downloads the pack's server-side files (SHA-512 verified; download hosts restricted to the mrpack spec whitelist), installs the loader server pinned to the pack's loader version, applies `overrides/` then `server-overrides/`, and skips client-only files. Progress streams over the WebSocket as `operation: "modpack-install"`, `status: "progress"` messages with payload `{phase, done?, total?}` — phases: `download`, `parse`, `loader`, `files` (with `done`/`total` counts), `overrides`, `finalize` — ending in `complete` or `failed`. On `failed` the half-built server is removed automatically (see [Asynchronous operations](#asynchronous-operations)). The created server records a `modpack` block (`{projectId, versionId, name, versionNumber, iconUrl, source: "modrinth"|"file", installedAt}`) for future tooling; it survives export/import.
+
+### Install a mod or plugin into an existing server
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/servers/:id/modrinth-install` | Body: `{projectId, versionId?}` — omit `versionId` for the newest compatible version. Compatibility is filtered to the server's loader family and Minecraft version. The version's **required dependencies** are installed too (recursive, depth-capped, already-present files skipped). Synchronous; the server must be `stopped`/`crashed` (`400` otherwise). Returns `{"success": true, "installed": [{filename, versionNumber, projectId}]}` — the first entry is the requested project. `404` when no compatible version exists, `409` when the file is already installed |
+| GET | `/servers/:id/modrinth-installed` | Which Modrinth projects are already present in the server's content folder, matched by SHA-512 file hash against Modrinth's version database (locally modified jars won't match). Returns `{"projects": {"<projectId>": "<filename>", ...}}` |
 
 
 ## Templates
@@ -323,7 +360,7 @@ The server pings every 30 seconds and drops sockets that miss a pong.
 | `state` | `{serverId, state, lastStarted, exitCode, crashReason}` | Lifecycle change |
 | `players` | `{serverId, players, count}` | Join/leave updates |
 | `event` | `{serverId, eventType, message, createdAt}` | Public sockets only receive started/stopped/crashed/restarted |
-| `operation` | `{serverId, operation, status, payload?, error?}` | Completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-update`, `create`, `duplicate`, `import`; `status` ∈ `complete`, `failed` |
+| `operation` | `{serverId, operation, status, payload?, error?}` | Progress/completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-update`, `create`, `duplicate`, `import`, `modpack-install`; `status` ∈ `complete`, `failed`, `progress`. `progress` is currently emitted by `modpack-install` only, with `payload {phase, done?, total?}` (see [Modrinth](#modrinth)) |
 | `events_cleared` | `{serverId}` | Event log was cleared |
 | `pong` / `error` | — | Heartbeat reply / protocol errors |
 

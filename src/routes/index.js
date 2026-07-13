@@ -5,6 +5,7 @@ const backupRoutes = require('./backups');
 const eventRoutes = require('./events');
 const pluginRoutes = require('./plugins');
 const templateRoutes = require('./templates');
+const modpackRoutes = require('./modpacks');
 const apiV1Routes = require('./api-v1');
 
 module.exports = function mountRoutes(app) {
@@ -15,5 +16,6 @@ module.exports = function mountRoutes(app) {
     app.use(eventRoutes);
     app.use(pluginRoutes);
     app.use(templateRoutes);
+    app.use(modpackRoutes);
     app.use('/api/v1', apiV1Routes);
 };
