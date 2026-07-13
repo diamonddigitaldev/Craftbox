@@ -34,8 +34,9 @@ Whether you're running a single Vanilla server or maintaining multiple modded in
 - **Live Console** — Real-time server log streaming and command input via WebSocket.
 - **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
 - **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
-- **Plugin & Mod Management** — Upload and manage JAR files for plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge).
+- **Plugin & Mod Management** — Upload, manage, search, and install plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge) with an intuitive interface powered by [Modrinth](https://modrinth.com/).
 - **Server Duplication & Templates** — Clone a server with or without world data, or save configurations as reusable templates.
+- **Transferrable Servers**  — Export a Craftbox-managed server and import it into another Craftbox instance.
 - **Status & Monitoring** — Public status pages, live player tracking, resource monitoring, and event history.
 - **Crash Detection & Auto-Restart** — Watchdog detects crashes/runtime errors and optionally auto-restarts.
 - **PWA Support** — Installable as a Progressive Web App on desktop and mobile.
@@ -151,6 +152,7 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 * Built with [Node.js](https://nodejs.org/), [Express](https://expressjs.com/), and [Bootstrap](https://getbootstrap.com/)
 * Icons by [Material Icons](https://fonts.google.com/icons)
 * Java runtimes by [Eclipse Temurin](https://adoptium.net/)
+* Built-in mod/modpack/plugin search and installation powered by [Modrinth](https://modrinth.com/).
 
 
 ### AI Disclosure
