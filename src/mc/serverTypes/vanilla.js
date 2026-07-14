@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { log } = require('../../utils/log');
 const { verifyChecksum } = require('./_verifyChecksum');
+const { classifyMcId } = require('./_channels');
 
 const VERSION_MANIFEST_URL = 'https://launchermeta.mojang.com/mc/game/version_manifest.json';
 
@@ -18,6 +19,10 @@ function hasServerJar(id) {
     return patch >= 5;
 }
 
+// Snapshot ids ("25w03a") can't be parsed by hasServerJar; use the 1.2.5
+// release date as the server-jar cutoff instead.
+const SERVER_JAR_CUTOFF = '2012-03-25T00:00:00+00:00';
+
 module.exports = {
     id: 'vanilla',
     name: 'Vanilla',
@@ -25,17 +30,26 @@ module.exports = {
     icon: 'cube',
     logo: '/img/server-types/vanilla.svg',
 
-    async listVersions() {
+    async listVersions({ channel = 'stable' } = {}) {
         const res = await fetch(VERSION_MANIFEST_URL);
         if (!res.ok) throw new Error(`Failed to fetch version manifest: HTTP ${res.status}`);
         const manifest = await res.json();
 
-        return {
-            versions: manifest.versions
-                .filter(v => v.type === 'release' && hasServerJar(v.id))
-                .map(v => ({ id: v.id })),
-            latest: manifest.latest.release
-        };
+        // Manifest order is newest-first with snapshots and releases interleaved
+        // chronologically — preserve it. old_beta/old_alpha never had server jars.
+        const versions = manifest.versions
+            .filter(v => {
+                if (v.type === 'release') return hasServerJar(v.id);
+                if (channel !== 'all') return false;
+                return v.type === 'snapshot' && v.releaseTime > SERVER_JAR_CUTOFF;
+            })
+            .map(v => ({
+                id: v.id,
+                channel: v.type === 'release' ? 'stable' : classifyMcId(v.id),
+                releaseDate: v.releaseTime
+            }));
+
+        return { versions, latest: manifest.latest.release };
     },
 
     async getBuilds() {
@@ -70,5 +84,9 @@ module.exports = {
         fs.writeFileSync(destPath, buffer);
 
         log('info', `Vanilla server jar downloaded and SHA-1 verified (${(buffer.length / 1024 / 1024).toFixed(1)} MB).`);
+
+        // Mojang publishes the required Java runtime with the version details;
+        // pass it along so the downloader can skip its own lookup.
+        return { javaMajor: detail.javaVersion?.majorVersion || null };
     }
 };

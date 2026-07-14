@@ -12,7 +12,9 @@ const form = document.getElementById('create-server-form');
 const typeInput = document.getElementById('serverType');
 const typeSelector = document.getElementById('type-selector');
 const versionGroup = document.getElementById('version-group');
-const versionSelect = document.getElementById('version');
+const versionHidden = document.getElementById('version');
+const versionDisplay = document.getElementById('version-display');
+const versionBrowseBtn = document.getElementById('version-browse-btn');
 const customUrlGroup = document.getElementById('custom-url-group');
 const customTypeNotice = document.getElementById('custom-type-notice');
 const typeSelectGroup = document.getElementById('type-select-group');
@@ -35,6 +37,27 @@ let selectedSource = 'scratch';
 function currentSource() {
     return selectedSource;
 }
+
+// ── Version picker ──
+const versionPicker = CraftboxVersionPicker({
+    onSelect: (v) => {
+        setVersionField(v.id);
+        validateCreateForm();
+    }
+});
+
+function setVersionField(id) {
+    versionHidden.value = id || '';
+    versionDisplay.value = id || '';
+}
+
+function openVersionPicker() {
+    if (selectedType === 'custom') return;
+    versionPicker.open(selectedType, { selectedVersion: versionHidden.value });
+}
+
+versionBrowseBtn.addEventListener('click', openVersionPicker);
+versionDisplay.addEventListener('click', openVersionPicker);
 
 function setCustomNoticeVisible(visible) {
     if (!customTypeNotice) return;
@@ -80,6 +103,10 @@ eulaCheck.addEventListener('change', validateCreateForm);
 form.addEventListener('input', validateCreateForm);
 form.addEventListener('change', validateCreateForm);
 
+// A rejected file clears the input, and the re-fired change event bubbles to the
+// form listener above, so the Create button goes back to disabled.
+guardFileInput(mrpackFileInput, ['.mrpack'], 'Only .mrpack modpack files can be used here.');
+
 // ── Form submit — create via /api/v1/servers (or the modpack routes) ──
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -93,7 +120,7 @@ form.addEventListener('submit', async (e) => {
     if (currentSource() === 'modpack') return submitFromMrpack();
 
     const typeName = typesData.find(t => t.id === selectedType)?.name || selectedType;
-    const ver = selectedType === 'custom' ? '' : ' ' + (versionSelect.value || '');
+    const ver = selectedType === 'custom' ? '' : ' ' + (versionHidden.value || '');
     showOverlay(`Setting up your ${typeName}${ver} server...`, 'Getting everything ready. This may take a minute.');
 
     var body = {};
@@ -130,7 +157,7 @@ form.addEventListener('submit', async (e) => {
     }
 
     // Load initial versions (vanilla)
-    await loadVersions('vanilla');
+    await setDefaultVersion('vanilla');
 })();
 
 function renderTypeCards(types) {
@@ -172,41 +199,33 @@ async function selectType(typeId) {
     if (typeId === 'custom') {
         versionGroup.classList.add('d-none');
         customUrlGroup.classList.remove('d-none');
-        versionSelect.removeAttribute('required');
+        versionDisplay.removeAttribute('required');
         setCustomNoticeVisible(true);
         centerLoneRowItems();
     } else {
         versionGroup.classList.remove('d-none');
         customUrlGroup.classList.add('d-none');
-        versionSelect.setAttribute('required', '');
+        versionDisplay.setAttribute('required', '');
         setCustomNoticeVisible(false);
-        await loadVersions(typeId);
+        await setDefaultVersion(typeId);
     }
 }
 
-async function loadVersions(typeId, preselect) {
-    versionSelect.innerHTML = '<option value="" disabled selected>Loading versions...</option>';
+// Fill the version field with `preselect` (template/duplicate flows) when the
+// type offers it, otherwise the newest stable version. The picker caches the
+// version list per type, so this shares its fetch with the browse modal.
+async function setDefaultVersion(typeId, preselect) {
+    setVersionField('');
+    versionDisplay.placeholder = 'Loading versions...';
     // Disable submit while versions are loading to prevent empty version submission
-    const wasEnabled = !createBtn.disabled;
     createBtn.disabled = true;
     try {
-        const res = await fetch(`/api/v1/versions?type=${encodeURIComponent(typeId)}`);
-        const data = await res.json();
-
-        versionSelect.innerHTML = '';
-        if (data.versions && data.versions.length > 0) {
-            data.versions.forEach((v, i) => {
-                const opt = document.createElement('option');
-                opt.value = v.id;
-                opt.textContent = v.id;
-                if (preselect ? v.id === preselect : i === 0) opt.selected = true;
-                versionSelect.appendChild(opt);
-            });
-        } else {
-            versionSelect.innerHTML = '<option value="">No versions available</option>';
-        }
+        const data = await versionPicker.getVersions(typeId);
+        const preselected = preselect && data.versions.some(v => v.id === preselect) ? preselect : null;
+        setVersionField(preselected || data.latest || data.versions[0]?.id || '');
+        versionDisplay.placeholder = versionHidden.value ? 'Select a version...' : 'No versions available';
     } catch {
-        versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
+        versionDisplay.placeholder = 'Failed to load versions';
     } finally {
         validateCreateForm();
     }
@@ -250,14 +269,18 @@ function setTypeAndVersionLocked(locked) {
         }
     });
 
-    // Lock version select visually but keep it submittable
-    // (disabled fields are excluded from form submission)
+    // Lock the version field visually — the hidden input keeps the value
+    // submittable (disabled fields are excluded from form submission)
     if (locked) {
-        versionSelect.style.pointerEvents = 'none';
-        versionSelect.style.opacity = '0.5';
+        versionDisplay.style.pointerEvents = 'none';
+        versionDisplay.style.opacity = '0.5';
+        versionBrowseBtn.disabled = true;
+        versionBrowseBtn.style.opacity = '0.5';
     } else {
-        versionSelect.style.pointerEvents = '';
-        versionSelect.style.opacity = '';
+        versionDisplay.style.pointerEvents = '';
+        versionDisplay.style.opacity = '';
+        versionBrowseBtn.disabled = false;
+        versionBrowseBtn.style.opacity = '';
     }
 
     // Lock custom URL input visually but keep it submittable
@@ -300,7 +323,7 @@ templateSelect.addEventListener('change', async () => {
             if (t.serverType === 'custom') {
                 versionGroup.classList.add('d-none');
                 customUrlGroup.classList.remove('d-none');
-                versionSelect.removeAttribute('required');
+                versionDisplay.removeAttribute('required');
                 setCustomNoticeVisible(true);
                 if (t.customJarUrl) {
                     document.getElementById('customJarUrl').value = t.customJarUrl;
@@ -308,14 +331,14 @@ templateSelect.addEventListener('change', async () => {
             } else {
                 versionGroup.classList.remove('d-none');
                 customUrlGroup.classList.add('d-none');
-                versionSelect.setAttribute('required', '');
+                versionDisplay.setAttribute('required', '');
                 setCustomNoticeVisible(false);
-                await loadVersions(t.serverType, t.version);
+                await setDefaultVersion(t.serverType, t.version);
             }
         } else if (t.serverType === 'custom' && t.customJarUrl) {
             document.getElementById('customJarUrl').value = t.customJarUrl;
         } else if (t.serverType !== 'custom' && t.version) {
-            await loadVersions(t.serverType, t.version);
+            await setDefaultVersion(t.serverType, t.version);
         }
 
         // Lock type and version selection
@@ -375,7 +398,7 @@ function hideTypeAndVersionPickers() {
     templateGroup.classList.add('d-none');
     typeSelectGroup.classList.add('d-none');
     versionGroup.classList.add('d-none');
-    versionSelect.removeAttribute('required');
+    versionDisplay.removeAttribute('required');
     customUrlGroup.classList.add('d-none');
 }
 
@@ -508,7 +531,7 @@ function applySource(source) {
         mrpackFileInput.setAttribute('required', '');
         typeSelectGroup.classList.add('d-none');
         versionGroup.classList.add('d-none');
-        versionSelect.removeAttribute('required');
+        versionDisplay.removeAttribute('required');
         customUrlGroup.classList.add('d-none');
         setCustomNoticeVisible(false);
         suggestModpackMemory();
@@ -520,7 +543,7 @@ function applySource(source) {
             setCustomNoticeVisible(true);
         } else {
             versionGroup.classList.remove('d-none');
-            versionSelect.setAttribute('required', '');
+            versionDisplay.setAttribute('required', '');
         }
         revertModpackMemory();
     }
@@ -583,7 +606,7 @@ async function submitFromMrpack() {
         restoreCreateBtn();
         return;
     }
-    flashToast('Modpack uploaded — installing...', 'info');
+    flashToast('Modpack uploaded. Installing...', 'info');
     const newId = res.data && res.data.server && res.data.server.id;
     window.location.href = newId ? '/servers/' + newId : '/dashboard';
 }

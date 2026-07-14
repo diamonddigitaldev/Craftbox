@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { log } = require('../../utils/log');
 const { verifyChecksum } = require('./_verifyChecksum');
+const { classifyMcId, pickPreferredBuild } = require('./_channels');
 
 /**
  * Factory that creates a provider for any PaperMC API v3 project
@@ -17,7 +18,7 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
         icon,
         logo,
 
-        async listVersions() {
+        async listVersions({ channel = 'stable' } = {}) {
             const res = await fetch(BASE);
             if (!res.ok) throw new Error(`Failed to fetch ${name} versions: HTTP ${res.status}`);
             const data = await res.json();
@@ -39,21 +40,22 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
                 return 0;
             });
 
-            // Build stable sub-version lists per major (pre/rc filtered out).
+            // Build plain sub-version lists per major (pre/rc filtered out).
             // v3 API returns sub-versions newest-first, which is what we want.
-            const stableSubsByMajor = {};
+            const plainSubsByMajor = {};
             for (const major of majorKeys) {
-                stableSubsByMajor[major] = grouped[major].filter(v => !/pre|rc/i.test(v));
+                plainSubsByMajor[major] = grouped[major].filter(v => !/pre|rc/i.test(v));
             }
 
-            // Drop major groups whose newest sub-version has no STABLE builds.
+            // Probe each major group's newest sub-version for STABLE builds.
             // Minecraft's new "Copper Age" versions (e.g. 26.1.x) appear in the v3
-            // listing but only ship ALPHA builds, which would 404 on download.
+            // listing but only ship ALPHA builds — in stable mode those majors are
+            // dropped; in all mode they are kept and labeled 'experimental'.
             const majorHasStable = await Promise.all(majorKeys.map(async major => {
-                const newest = stableSubsByMajor[major][0];
+                const newest = plainSubsByMajor[major][0];
                 if (!newest) return false;
                 try {
-                    const r = await fetch(`${BASE}/versions/${newest}/builds?channel=STABLE`);
+                    const r = await fetch(`${BASE}/versions/${encodeURIComponent(newest)}/builds?channel=STABLE`);
                     if (!r.ok) return false;
                     const builds = await r.json();
                     return Array.isArray(builds) && builds.length > 0;
@@ -62,21 +64,28 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
                 }
             }));
 
-            // Flatten into a single newest-first array
-            const allVersions = [];
+            // Flatten into a single newest-first array. Majors are sorted
+            // descending and subs newest-first, so the first stable entry
+            // encountered is the newest stable version.
+            const versions = [];
+            let latest = null;
             for (let i = 0; i < majorKeys.length; i++) {
-                if (!majorHasStable[i]) continue;
-                allVersions.push(...stableSubsByMajor[majorKeys[i]]);
+                const hasStable = majorHasStable[i];
+                if (channel !== 'all' && !hasStable) continue;
+                for (const v of grouped[majorKeys[i]]) {
+                    const isPlain = !/pre|rc/i.test(v);
+                    if (channel !== 'all' && !isPlain) continue;
+                    const ch = isPlain ? (hasStable ? 'stable' : 'experimental') : classifyMcId(v);
+                    versions.push({ id: v, channel: ch });
+                    if (!latest && ch === 'stable') latest = v;
+                }
             }
 
-            return {
-                versions: allVersions.map(v => ({ id: v })),
-                latest: allVersions[0] || null
-            };
+            return { versions, latest };
         },
 
         async getBuilds(version) {
-            const res = await fetch(`${BASE}/versions/${version}/builds?channel=STABLE`);
+            const res = await fetch(`${BASE}/versions/${encodeURIComponent(version)}/builds`);
             if (!res.ok) throw new Error(`Failed to fetch ${name} builds for ${version}: HTTP ${res.status}`);
             const data = await res.json();
 
@@ -92,17 +101,19 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
         },
 
         async downloadJar(version, build, destPath) {
-            // Auto-select latest build if none specified
+            // Auto-select the newest stable build if none specified; versions
+            // that only ship non-stable builds (experimental) fall back to the
+            // newest build of any channel.
             if (!build) {
                 const builds = await this.getBuilds(version);
                 if (!builds || builds.length === 0) {
                     throw new Error(`No builds available for ${name} ${version}.`);
                 }
-                build = builds[0].build;
+                build = pickPreferredBuild(builds).build;
             }
 
             // Fetch build details to get the direct download URL
-            const buildRes = await fetch(`${BASE}/versions/${version}/builds/${build}`);
+            const buildRes = await fetch(`${BASE}/versions/${encodeURIComponent(version)}/builds/${build}`);
             if (!buildRes.ok) throw new Error(`Failed to fetch ${name} build info: HTTP ${buildRes.status}`);
             const buildData = await buildRes.json();
 

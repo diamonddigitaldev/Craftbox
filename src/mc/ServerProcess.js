@@ -6,7 +6,7 @@ const readline = require('readline');
 const { STATES, canTransition } = require('./stateMachine');
 const { serversDb } = require('../db');
 const { log } = require('../utils/log');
-const { getJavaForVersion, getDefaultJava } = require('../utils/javaVersion');
+const { getJavaForVersion, getJavaForMajor, getDefaultJava } = require('../utils/javaVersion');
 const { logEvent, pruneEvents } = require('../utils/eventLogger');
 const { getProvider } = require('./serverTypes');
 const { clearCpuTracking } = require('../utils/resourceStats');
@@ -166,10 +166,14 @@ class ServerProcess extends EventEmitter {
         await this.setState(STATES.STARTING);
 
         try {
-            // Resolve the correct Java binary for this MC version
-            const javaPath = this.config.version
-                ? getJavaForVersion(this.config.version)
-                : getDefaultJava();
+            // Resolve the correct Java binary. Prefer the requirement recorded
+            // from Mojang metadata at download time (authoritative — covers
+            // snapshot ids); fall back to the version-string heuristic.
+            const javaPath = this.config.javaMajor
+                ? getJavaForMajor(this.config.javaMajor)
+                : this.config.version
+                    ? getJavaForVersion(this.config.version)
+                    : getDefaultJava();
 
             // Build the Java command
             const jarPath = path.join(this.serverDir, this.config.jarFile || 'server.jar');

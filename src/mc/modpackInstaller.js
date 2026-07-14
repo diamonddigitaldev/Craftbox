@@ -368,6 +368,7 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
             mcVersion,
             loaderBuild,
             build: dl?.build ?? loaderBuild ?? null,
+            javaMajor: dl?.javaMajor ?? null,
             filesInstalled: files.length + overridesInstalled,
             modsInstalled: installedMods.size,
             clientOnlyMods,

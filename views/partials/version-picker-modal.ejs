@@ -1,0 +1,50 @@
+<!-- Version Picker Modal (shared by the create and edit pages; driven by /js/version-picker.js) -->
+<div class="modal fade" id="versionPickerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                        <span class="material-icons-outlined text-success">manage_search</span>
+                        Select Version
+                    </h5>
+                    <small class="text-body-secondary d-block mt-1" id="vp-subtitle"></small>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mr-sticky-search d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group input-group-sm" style="max-width: 350px;">
+                        <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
+                        <input type="text" class="form-control" id="vp-search" placeholder="Filter versions...">
+                    </div>
+                    <select class="form-select form-select-sm" id="vp-channel" style="width: auto;" title="Release channel">
+                        <option value="stable" selected>Stable only</option>
+                        <option value="all">All versions</option>
+                    </select>
+                </div>
+                <div class="text-center py-4 d-none" id="vp-loading">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="text-center py-4 d-none" id="vp-empty">
+                    <span class="material-icons-outlined text-body-secondary mb-2" style="font-size: 4rem;">search_off</span>
+                    <h5 class="text-body-secondary">No matching versions</h5>
+                    <p class="text-body-secondary mb-0">Try a different search or channel filter.</p>
+                </div>
+                <div class="table-responsive d-none" id="vp-results-wrap">
+                    <table class="table table-hover mb-0 align-middle">
+                        <tbody id="vp-results"></tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2 d-none" id="vp-load-more">
+                    Load more
+                </button>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

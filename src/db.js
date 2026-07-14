@@ -33,7 +33,7 @@ async function markAllServersStopped({ reason } = {}) {
     // rather than silently continuing as if all is well.
     const INCOMPLETE_STATES = {
         provisioning: 'Provisioning interrupted by restart',
-        updating_jar: 'Jar update interrupted by restart'
+        upgrading_jar: 'Jar upgrade interrupted by restart'
     };
 
     try {

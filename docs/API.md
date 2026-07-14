@@ -54,11 +54,11 @@ Common statuses: `400` invalid input, `401` unauthenticated, `403` CSRF failure 
 Long-running operations respond immediately and finish in the background:
 
 - `201 Created` — create, duplicate, import, create-from-modpack, create-from-mrpack. The response includes the new server record in `provisioning` state.
-- `202 Accepted` — backup, restore, jar update, restart-with-backup. The response is `{"success": true, "status": "started"}`.
+- `202 Accepted` — backup, restore, jar upgrade, restart-with-backup, and edit/properties with `backup: true` (see [Restore-point backups](#restore-point-backups)). The response is `{"success": true, "status": "started"}`.
 
-Completion is signalled over the WebSocket as an `operation` message (see [WebSocket protocol](#websocket-protocol)); modpack installs additionally stream `status: "progress"` messages while running. Clients that cannot hold a WebSocket open should poll `GET /servers/:id` and watch `state` (`provisioning`/`backing_up`/`restoring`/`updating_jar` → `stopped`, or `crashed` on failure).
+Completion is signalled over the WebSocket as an `operation` message (see [WebSocket protocol](#websocket-protocol)); modpack installs additionally stream `status: "progress"` messages while running. Clients that cannot hold a WebSocket open should poll `GET /servers/:id` and watch `state` (`provisioning`/`backing_up`/`restoring`/`upgrading_jar` → `stopped`, or `crashed` on some failures — see below).
 
-> **Failed provisioning is not left behind.** When a *create* / *from-modpack* / *from-mrpack* provision fails, the half-built server is removed automatically rather than parked in `crashed` — so a polling client sees the server return `404` shortly after the failure (the `operation` message carries the reason). Failed *import*, *duplicate*, *backup*, *restore*, and *jar-update* operations instead leave the server in `crashed` for inspection.
+> **Failed provisioning is not left behind.** When a *create* / *from-modpack* / *from-mrpack* provision fails, the half-built server is removed automatically rather than parked in `crashed` — so a polling client sees the server return `404` shortly after the failure (the `operation` message carries the reason). Failed *import* and *duplicate* operations instead leave the server in `crashed` for inspection; failed *backup*, *restore*, and *jar-upgrade* operations return it to `stopped` (the failure reason arrives on the `operation` message and in the event log).
 
 ### Validation constants
 
@@ -69,7 +69,7 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 | Group color | hex, `^#[0-9a-fA-F]{6}$` |
 | Port | integer 1024–65535 |
 | Memory | integer 512–65536 (MB, any whole value) |
-| Version | `latest` or `^\d+\.\d+(\.\d+)?(-\w+)?$` (e.g. `1.21.4`) |
+| Version | `latest` or `^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,63}$` (e.g. `1.21.4`, `25w03a`, `1.21.5-pre1`) |
 | Server type | `vanilla`, `paper`, `purpur`, `folia`, `fabric`, `forge`, `neoforge`, `custom` |
 | `:id` route params | UUID v4 |
 | Console command | max 1000 chars |
@@ -77,14 +77,16 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 
 ### Server states
 
-`stopped`, `starting`, `running`, `stopping`, `crashed`, `provisioning`, `backing_up`, `restoring`, `updating_jar`.
+`stopped`, `starting`, `running`, `stopping`, `crashed`, `provisioning`, `backing_up`, `restoring`, `upgrading_jar`.
+
+> `upgrading_jar` was named `updating_jar` before 1.1.0-beta.5 — clients matching on the old value should update.
 
 Allowed lifecycle actions: **start** from `stopped`/`crashed`; **stop** from `running`/`starting`; **restart** from `running`; **kill** from `running`/`starting`/`stopping`.
 
 
 ## Servers
 
-The server object returned by these endpoints contains the full configuration (name, type, version, port, memory, JVM args, gamemode, difficulty, seed, flags, `group`, timestamps, `state`, `exitCode`, `crashReason`, …). The on-disk `directory` field is stripped from responses.
+The server object returned by these endpoints contains the full configuration (name, type, version, port, memory, JVM args, gamemode, difficulty, seed, flags, `group`, timestamps, `state`, `exitCode`, `crashReason`, `javaMajor` — the Java runtime requirement recorded from Mojang metadata at jar download time, null when unknown, …). The on-disk `directory` field is stripped from responses.
 
 ### Read
 
@@ -93,8 +95,8 @@ The server object returned by these endpoints contains the full configuration (n
 | GET | `/servers` | List all servers with live state. Returns `{"servers": [...]}` |
 | GET | `/servers/:id` | One server. Returns `{"server": {...}}` |
 | GET | `/server-types` | Available server types. Returns `{"types": [...]}` |
-| GET | `/versions?type=<type>` | Minecraft versions for a type. Returns `{"versions": [...], "latest": ...}` |
-| GET | `/versions/:type/builds/:version` | Builds for a version. Returns `{"builds": [...]}` |
+| GET | `/versions?type=<type>&channel=<stable\|all>` | Minecraft versions for a type, newest first. `channel` defaults to `stable`; `all` additionally includes snapshot/pre-release versions where the type has them. Returns `{"versions": [{"id", "channel", "channelLabel"?, "releaseDate"?}], "latest"}` — `channel` is one of `stable`, `snapshot`, `pre-release`, `rc`, `beta`, `experimental`; `channelLabel` is the upstream-native channel name where it differs from the normalized one (Forge: `recommended`/`latest`); `releaseDate` (ISO) is present where upstream publishes one (vanilla); `latest` is always the newest **stable** version |
+| GET | `/versions/:type/builds/:version` | Builds for a version, newest first, including non-stable channels. Returns `{"builds": [{"build", "channel"}]}` |
 | GET | `/servers/:id/stats` | Live resource stats + history. Returns `{"stats": {state, uptime, uptimeFormatted, cpuPercent, memoryBytes, memoryAllocatedMb, diskBytes, playerCount, players, ...}, "history": [...]}` |
 | GET | `/servers/:id/events?limit=&types=` | Event history, newest first. `limit` max 200 (default 50); `types` is a comma-separated filter. Returns `{"events": [...]}` |
 
@@ -123,15 +125,28 @@ The server object returned by these endpoints contains the full configuration (n
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, seed?, group?, version?, customJarUrl?}`. Version changes must be upgrades and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool}` |
+| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, seed?, group?, version?, customJarUrl?, backup?}`. Version changes must be upgrades (release versions compare numerically; snapshot/pre-release versions compare by the provider's chronological ordering) and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool}`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead |
 | POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ..., "color": ...}` — `color` is the group's folder color (null when ungrouped) |
 | POST | `/servers/:id/autorestart` | Body: `{enabled: bool}`. Returns `{"autoRestart": bool}` |
 | POST | `/servers/:id/autostart` | Body: `{enabled: bool}`. Returns `{"autoStart": bool}` |
 | POST | `/servers/:id/statuspublic` | Toggle the public status page. Body: `{enabled: bool}` |
 | POST | `/servers/:id/advertisedip` | Set the address shown on the status page. Body: `{value}` |
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
-| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name |
+| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
 | POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` for non-text extensions |
+
+### Restore-point backups
+
+`POST /edit` and `POST /properties` accept `backup: true`. The backup is taken **before** the change is applied, so restoring it undoes the change completely — a backup taken afterwards captures the new configuration and cannot roll it back. The endpoint then:
+
+1. stops the server if it is running (a live world cannot be zipped consistently),
+2. takes the backup (state `backing_up`, named `Pre-edit backup` / `Pre-properties backup`),
+3. applies the change,
+4. restarts the server if it had been running.
+
+The response is `202 {"success": true, "status": "started"}` instead of the endpoint's usual body, and the work completes over the WebSocket as `operation: "settings-save"` with payload `{versionChanged?, jarChanged?, restarted}`. `409` if a backup is already in progress. If the backup *or* the change fails, the server is returned to the state it was found in (restarted if it had been running) and the reason arrives on the same `operation` message with `status: "failed"`.
+
+> `POST /restart` and `POST /upgrade-jar` also take a `backup` flag. On `/upgrade-jar` it is likewise a true restore point (taken before the jar is replaced). On `/restart` it is only a pre-restart snapshot — by then any settings change has already been saved.
 
 ### Icon
 
@@ -142,12 +157,12 @@ The server object returned by these endpoints contains the full configuration (n
 | POST | `/servers/:id/icon/reset` | Reset to the default icon |
 | DELETE | `/servers/:id/icon` | Remove the icon |
 
-### Jar updates
+### Jar upgrades
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/servers/:id/check-update` | Returns `{"updateAvailable": bool, "currentBuild", "latestBuild", ...}` |
-| POST | `/servers/:id/update-jar` | Download the newer build. Returns `202`; `409` if running. Completes via WS `operation: "jar-update"` |
+| GET | `/servers/:id/check-upgrade` | Returns `{"upgradeAvailable": bool, "currentBuild", "latestBuild", "channel", ...}` — `latestBuild` is the newest *stable* build where the version has stable builds, so stable servers are never offered alpha/beta builds |
+| POST | `/servers/:id/upgrade-jar` | Download the newer build. Body: `{version?, jarUrl?, backup?}` — `version` upgrades a tracked server to that version in the same operation (upgrade-only, same downgrade rules as `/edit`); `jarUrl` (custom servers only — required there, ignored otherwise) replaces the jar from a new http/https URL, downloading to a sidecar so a failed fetch leaves the old jar intact; `backup: true` creates a backup first (state passes through `backing_up`, then `upgrading_jar`; `409` if a backup is already in progress). Returns `202`; `409` if running. Completes via WS `operation: "jar-upgrade"` with a payload of `{build, version}` |
 
 
 ## Backups
@@ -170,7 +185,9 @@ Move a server — files, Craftbox settings, and optionally backups and event his
 
 ### Export
 
-`GET /servers/:id/export?backups=true&events=true&start=true` (browser-facing panel route, session auth, outside `/api/v1`) streams a zip download. The server must be `stopped` or `crashed`. Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option).
+`GET /servers/:id/export?backups=true&events=true&start=true` (browser-facing panel route, session auth, outside `/api/v1`) streams the download as `<server-name>.cbx` with `Content-Type: application/x-craftbox-export+zip`. The server must be `stopped` or `crashed`. Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option).
+
+> **`.cbx` is Craftbox's transfer-archive extension.** The container is an ordinary zip, so any zip tool can open one for inspection — only the extension and media type are Craftbox-specific. Import requires the `.cbx` extension but never trusts it: the upload is also checked against the zip magic bytes and must carry a valid `craftbox-manifest.json`, so renaming an arbitrary zip to `.cbx` is still rejected.
 
 Archive layout (`formatVersion` 1):
 
@@ -185,9 +202,9 @@ events.json              event history (optional)
 
 ### Import
 
-`POST /servers/import` — multipart upload, field `archive`, `.zip` only. Craftbox imposes no size cap: the archive is streamed to disk on upload and streamed out of the zip on extraction, so size is bounded by disk space rather than memory. A reverse proxy in front of the panel may cap single-request bodies, however (Cloudflare Tunnel cuts them at 100 MB) — use the [chunked upload](#chunked-uploads-dgup) at `/servers/import/upload/*` for large archives, which is what the panel UI does.
+`POST /servers/import` — multipart upload, field `archive`, `.cbx` only. Craftbox imposes no size cap: the archive is streamed to disk on upload and streamed out of the zip on extraction, so size is bounded by disk space rather than memory. A reverse proxy in front of the panel may cap single-request bodies, however (Cloudflare Tunnel cuts them at 100 MB) — use the [chunked upload](#chunked-uploads-dgup) at `/servers/import/upload/*` for large archives, which is what the panel UI does.
 
-Returns `201 {"success": true, "server": {...}, "warnings": [...]}`; extraction continues in the background and completes via WS `operation: "import"`. Validation failures return `400` (not a zip, not a Craftbox export, corrupt manifest, newer `formatVersion`, unsafe paths).
+Returns `201 {"success": true, "server": {...}, "warnings": [...]}`; extraction continues in the background and completes via WS `operation: "import"`. Validation failures return `400` (not a zip container, not a Craftbox export, corrupt manifest, newer `formatVersion`, unsafe paths).
 
 Import behavior:
 
@@ -250,7 +267,20 @@ Server groups organize the dashboard. Groups are implicit — they exist while a
 |---|---|---|
 | POST | `/servers/:id/events/clear` | Clear the event log. Also emits the WS `events_cleared` message |
 
-Event types include: `started`, `stopped`, `crashed`, `restarted`, `player_join`, `player_leave`, `action`, `jar_update`, `jar_update_fail`, `backup_create`, `backup_create_fail`, `backup_restore`, `backup_restore_fail`, `backup_delete`.
+Event types (the full set — `types=` on `GET /servers/:id/events` filters on these):
+
+| Type | Logged when |
+|---|---|
+| `started` / `stopped` / `crashed` | The server process reached that state |
+| `restarted` | A restart completed (logged instead of a `stopped` + `started` pair) |
+| `player_join` / `player_leave` | A player joined or left; the event carries `playerName` |
+| `action` | A user-initiated action with no more specific type — restart requested, a restore-point backup created, a restore-point save that failed, an import completed, … |
+| `jar_upgrade` / `jar_upgrade_fail` | A jar upgrade succeeded or failed, including a Minecraft version change |
+| `backup_create` / `backup_create_fail` | A backup was created or failed |
+| `backup_restore` / `backup_restore_fail` | A backup was restored or failed |
+| `backup_delete` | A backup was deleted |
+
+Only `started`, `stopped`, `crashed` and `restarted` are exposed on public status pages.
 
 
 ## Plugins & mods
@@ -333,7 +363,7 @@ Unauthenticated, mounted at the site root (not `/api/v1`). Only servers with the
 | GET | `/status/:id/api` | JSON: `{"server": {id, name, state, port, version, serverType, playerCount, players, uptime, uptimeFormatted, statusPagePublic, advertisedIp}}` |
 | GET | `/status/:id/mods` | Zip of client-facing mods; `404` if none |
 
-Public responses are sanitized: internal states (`provisioning`, `backing_up`, `restoring`, `updating_jar`) are reported as `stopped`, and crash details, file paths, and JVM configuration are never exposed.
+Public responses are sanitized: internal states (`provisioning`, `backing_up`, `restoring`, `upgrading_jar`) are reported as `stopped`, and crash details, file paths, and JVM configuration are never exposed.
 
 
 ## WebSocket protocol
@@ -365,7 +395,7 @@ The server pings every 30 seconds and drops sockets that miss a pong.
 | `state` | `{serverId, state, lastStarted, exitCode, crashReason}` | Lifecycle change |
 | `players` | `{serverId, players, count}` | Join/leave updates |
 | `event` | `{serverId, eventType, message, createdAt}` | Public sockets only receive started/stopped/crashed/restarted |
-| `operation` | `{serverId, operation, status, payload?, error?}` | Progress/completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-update`, `create`, `duplicate`, `import`, `modpack-install`; `status` ∈ `complete`, `failed`, `progress`. `progress` is currently emitted by `modpack-install` only, with `payload {phase, done?, total?}` (see [Modrinth](#modrinth)) |
+| `operation` | `{serverId, operation, status, payload?, error?}` | Progress/completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-upgrade`, `settings-save`, `create`, `duplicate`, `import`, `modpack-install`; `status` ∈ `complete`, `failed`, `progress`. `progress` is currently emitted by `modpack-install` only, with `payload {phase, done?, total?}` (see [Modrinth](#modrinth)). A restore-point save emits `backup` first, then `settings-save` |
 | `events_cleared` | `{serverId}` | Event log was cleared |
 | `pong` / `error` | — | Heartbeat reply / protocol errors |
 

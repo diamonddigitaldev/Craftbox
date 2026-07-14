@@ -1,16 +1,161 @@
 Craftbox 1.1 — TODO
 ===================
 
-- Modrinth support / create a server from a modpack.
-  (IMPLEMENTED — manual test checklist below. Automated checks already done:
-  syntax on all touched JS, EJS render checks, real Fabric pack installed
-  end-to-end through installModpack (sha512 verified, pinned loader honored,
-  overrides applied), tampered-hash / size-cap / URL-whitelist rejections,
-  app boots with all new routes registered.)
+- Manual test checklist — version picker (browse/search/filter modal replacing
+  the version dropdown on the create + edit pages):
 
-- Better version selection for mod loader.
-  Currently only renders a dropdown of stable builds for each server type.
-  (Edit page's dropdown only shows stable builds later than current server version by design)
-  A selection modal/menu similar to the search/filter/browse modal
-  in the plugins page might be better than a dropdown.
-  (version selection can be seen on the edit page and create page)
+  Create page
+  [ ] Each type (Vanilla, Paper, Purpur, Folia, Fabric, Forge, NeoForge):
+      field defaults to the latest stable version; Browse opens the picker and
+      the "Stable only" list matches the old dropdown's contents.
+  [ ] Search filters the list; nonsense search shows the empty state; clearing
+      restores results. Lists over 200 entries page with "Show more".
+  [ ] Channel filter "All versions": Vanilla shows snapshots/pre/rc with
+      badges in chronological order; Fabric shows snapshots;
+      NeoForge shows beta MC versions; Paper shows pre/rc and experimental
+      (Copper Age) versions; Forge uses its own terms — green "recommended"
+      badges on stable versions and "latest" badges on beta-phase versions
+      (MC versions with no recommended build — currently the whole 26.x
+      line). Purpur inherits Paper's channels — a version whose Paper base
+      is experimental (26.2 as of writing) is badged experimental and left
+      out of the stable list/default. Note: Forge's stable default is the
+      newest version with a recommended build (1.21.11 as of writing), not
+      the newest MC version.
+  [ ] The currently chosen version's row shows a disabled "Selected" button.
+  [ ] Create a Vanilla snapshot server end-to-end (e.g. the current 26wXXa)
+      — provisions, downloads, and starts with the correct Java runtime
+      (Docker log shows the temurin-25/21 path; server record has javaMajor).
+  [ ] Create a Paper experimental version — the ALPHA build downloads
+      successfully instead of failing.
+  [ ] Custom type: picker swaps to the JAR URL input; switching back restores
+      the picker with a default version.
+  [ ] Template flow: selecting a template preselects its type + version and
+      locks the field (browse button disabled, dimmed).
+  [ ] Modpack flow (?modpack=&version=) and .mrpack upload: version field is
+      hidden entirely; creation is unaffected.
+
+  Edit page
+  [ ] Running server: version field + browse button disabled with the
+      "Stop the server..." tooltip.
+  [ ] Stopped server: picker shows only the current version and newer
+      (upgrade-only); the current version row shows "Selected".
+  [ ] Selecting a newer version opens the upgrade confirm modal; Cancel and
+      backdrop-dismiss restore the current version. Accept Risk starts the
+      upgrade immediately: info toast, state badge flips to "Upgrading Jar",
+      then success toast + page reload showing the new version (build and
+      javaMajor refreshed, event logged). Reloading mid-upgrade shows the
+      upgrading overlay and recovers when the operation completes.
+  [ ] "Create backup before upgrading" checkbox is checked by default and
+      re-checks itself on every new upgrade prompt. Left on: state passes
+      Backing Up then Upgrading Jar and a "Pre-upgrade backup" appears on the
+      Backups page. Unchecked: no backup, straight to Upgrading Jar. With a
+      backup already running, Accept Risk fails cleanly with a 409 toast.
+  [ ] Terminology: jar flows say upgrade/upgrading everywhere — "Check for
+      Upgrades" / "Upgrade Jar" buttons, "Server upgrade in progress..."
+      console banner, "Upgrading Jar" state badge (state id upgrading_jar,
+      renamed from updating_jar).
+  [ ] With the console page (or any other server sub-page) open in a second
+      tab during an upgrade, the nav header's version text updates live when
+      the upgrade completes — no reload needed.
+  [ ] Upgrade failure (e.g. drop the network mid-download) shows a danger
+      toast, restores the current version in the field, and returns the
+      server to Stopped. The old server.jar must still be there and still
+      start, with no server.jar.tmp left in the server directory.
+  [ ] Forge/NeoForge upgrade whose installer fails partway: old libraries
+      are restored from the .tmp stash (the partial new tree is cleared
+      first) and the server returns to Stopped — never stuck on Upgrading
+      Jar.
+  [ ] Crafted POST with an older version (release and snapshot ids) to both
+      /api/v1/servers/:id/edit and /api/v1/servers/:id/upgrade-jar is
+      rejected with 400 "downgrades are not permitted".
+  [ ] Server on a non-stable version: picker opens with "All versions"
+      preselected so the current version is visible.
+  [ ] Custom server: changing the JAR URL prompts its confirm modal (backup
+      checkbox defaults on and re-checks per prompt; Cancel restores the
+      URL). Accept Risk replaces the jar immediately — Backing Up /
+      Upgrading Jar states, info toast, then success toast + reload showing
+      the new URL. A failed download restores the old URL in the field and
+      leaves the previous jar intact (.tmp sidecar swap).
+
+  Transfer archives (.cbx)
+  [ ] Settings -> Export / Transfer downloads "<name>.cbx", and the browser
+      does not rename it back to .zip.
+  [ ] That .cbx imports on another instance three ways: the file picker (its
+      accept filter offers .cbx), drag-drop onto the dashboard, and the
+      chunked/DGUP path used for large archives.
+  [ ] A .zip is rejected on import (no back-compat — re-export as .cbx).
+  [ ] A non-archive file renamed to .cbx is rejected with "Not a valid
+      Craftbox transfer archive." (the contents are checked too, not just
+      the extension).
+  [ ] Dropping an unsupported file shows the ".cbx / .mrpack" hint.
+  [ ] With the Import modal open, dropping a .cbx ONTO THE MODAL fills its
+      file picker (filename shows, Import button enables) — it does not
+      auto-upload; you click Import. Dropping a non-.cbx there shows the
+      hint toast.
+  [ ] With a modal open, dropping ANYWHERE ELSE on the page does nothing —
+      no drop overlay, no upload, and the page does not navigate to the
+      file. Page-wide dropping works again once the modal is closed.
+  [ ] Unrelated downloads are untouched: Files -> Download Server (.zip),
+      plugin/mod folder downloads, and backup downloads are all still .zip.
+
+  File pickers reject the wrong extension on selection
+  (`accept` only filters the OS dialog — you can switch it to "All files")
+  [ ] Create page, Modpack source: picking a non-.mrpack (e.g. a .cbx) shows
+      a danger toast, clears the box, and the Create button stays disabled.
+  [ ] Import modal: picking a non-.cbx (e.g. an old .zip export) shows a
+      toast, clears the box, and Import stays disabled.
+  [ ] /plugins (and /mods) upload box: picking a non-.jar shows a toast and
+      is dropped from the selection — a mixed pick keeps only the .jar files
+      and Upload stays disabled when nothing valid is left.
+
+  Regression / misc
+  [ ] Event Log shows "Jar Upgraded" / "Upgrade Failed" badges (not the raw
+      jar_upgrade / jar_upgrade_fail ids), with the upgrade icon, and the same
+      labels appear in the type filter dropdown.
+  [ ] Restart Required modal (save settings/properties with the server
+      running) no longer offers a backup — just Later / Restart Now. Restart
+      Now stays on the current page: no overlay, no redirect to the console,
+      just a "Server is restarting..." success toast while the nav header's
+      state badge tracks Stopping -> Starting -> Running live. A failed
+      restart shows a danger toast and the button is usable again.
+
+  Restore-point backups (edit + properties pages)
+  [ ] "Create backup before saving" checkbox sits above Save Changes / Save
+      Properties, unchecked by default. Its hint mentions the stop+restart
+      only when the server is running.
+  [ ] Unchecked: save behaves exactly as before (overlay, then the Restart
+      Required modal on a running server).
+  [ ] Checked, server RUNNING: info toast, state badge goes Backing Up →
+      the change applies → server restarts on its own. Success toast says
+      "Backup created and settings saved. Server restarted." No Restart
+      Required modal (it already restarted). Server comes back with the new
+      settings.
+  [ ] Checked, server STOPPED: backup → apply → stays stopped, no restart
+      mentioned in the toast.
+  [ ] THE POINT: restore that backup (Backups page) and the settings are
+      back to their pre-save values — both server.properties on disk and the
+      panel's own config (name/memory/JVM args from craftbox-config.json).
+  [ ] Backup appears on the Backups page named "Pre-edit backup" /
+      "Pre-properties backup".
+  [ ] With a backup already running, saving with the box checked fails
+      cleanly with a 409 danger toast and nothing is applied.
+  [ ] Failure mid-way (e.g. bad JVM args or a jar download failure) shows a
+      danger toast, applies nothing, and the server is restarted if it had
+      been running — never left stopped unexpectedly.
+  [ ] REGRESSION (fixed): saving with the box checked on a RUNNING server
+      must not report "Cannot start server in state: running". The edit used
+      to write back the record snapshot taken at request time — including
+      its stale state: "running" — which made the rebuilt process refuse to
+      start. Check the server actually comes back up and the toast is a
+      success, not a failure.
+  [ ] If the server genuinely fails to start afterwards (e.g. port now taken
+      by something else), the save is still reported as saved, with a
+      warning toast — not as a failed save.
+  [ ] Snapshot server: plugins/mods Browse Modrinth modal still searches
+      (no 400 on gameVersion); check-upgrade behaves sensibly.
+  [ ] Stable Paper server: check-upgrade never offers an ALPHA/BETA build.
+  [ ] Modpacks page version filter dropdown still populates (stable only).
+  [ ] Rapid server-type card switching does not mis-populate the version
+      field or the modal (seq guard).
+  [ ] Mobile width: sticky search row stays usable, no horizontal scroll.
+      Esc closes the modal; browse button is keyboard-reachable.

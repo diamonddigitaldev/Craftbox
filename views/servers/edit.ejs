@@ -40,7 +40,7 @@
                                                 data-current-url="<%= server.customJarUrl || '' %>"
                                                 placeholder="https://example.com/server.jar" <%=_canChangeJar ? ''
                                                 : 'disabled' %>
-                                            title="<%= _canChangeJar ? '' : 'Stop the server to change the JAR URL' %>">
+                                            title="<%= _canChangeJar ? '' : 'Stop the server to change the JAR URL.' %>">
                                                 <div class="form-text">
                                                     <%= _canChangeJar ? 'Change the URL to replace the server jar.'
                                                         : 'Stop the server to change the JAR URL.' %>
@@ -48,17 +48,23 @@
                                         </div>
                                         <% } else { %>
                                             <div class="col-md-4 mt-3 mt-md-0">
-                                                <label class="form-label">Version</label>
-                                                <select class="form-select" id="version" name="version"
+                                                <label class="form-label" for="version-display">Version</label>
+                                                <div class="input-group"
+                                                    title="<%= _canChangeJar ? '' : 'Stop the server to change the version.' %>">
+                                                    <input type="text" class="form-control" id="version-display"
+                                                        readonly value="<%= server.version %>" <%=_canChangeJar ? ''
+                                                        : 'disabled' %>>
+                                                    <button class="btn btn-outline-secondary d-flex align-items-center"
+                                                        type="button" id="version-browse-btn"
+                                                        <%=_canChangeJar ? '' : 'disabled' %>>
+                                                        <span class="material-icons-outlined"
+                                                            style="font-size: 1.2rem;">manage_search</span>
+                                                    </button>
+                                                </div>
+                                                <input type="hidden" name="version" id="version"
+                                                    value="<%= server.version %>"
                                                     data-server-type="<%= server.serverType || 'vanilla' %>"
-                                                    data-current-version="<%= server.version %>" <%=_canChangeJar ? ''
-                                                    : 'disabled' %>
-                                                    title="<%= _canChangeJar ? ''
-                                                        : 'Stop the server to change the version' %>">
-                                                        <option value="<%= server.version %>" selected>
-                                                            <%= server.version %>
-                                                        </option>
-                                                </select>
+                                                    data-current-version="<%= server.version %>">
                                                 <div class="form-text">
                                                     <%= _canChangeJar
                                                         ? 'Only upgrades are permitted — downgrades are not allowed.'
@@ -153,6 +159,19 @@
                                 </div>
 
                                 <hr class="my-4">
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="saveBackup">
+                                    <label class="form-check-label" for="saveBackup">Create backup before
+                                        saving</label>
+                                    <div class="form-text">
+                                        Takes a restore point <em>before</em> the changes are applied, so restoring it
+                                        undoes them.
+                                        <% if (!_canChangeJar) { %>
+                                            The server will be stopped for the backup and restarted afterwards.
+                                        <% } %>
+                                    </div>
+                                </div>
 
                                 <button type="submit"
                                     class="btn btn-success w-100 d-flex align-items-center justify-content-center gap-2"
@@ -375,14 +394,14 @@
                             </div>
                         </div>
 
-                        <!-- Update Checker -->
+                        <!-- Upgrade Checker -->
                         <% if ((server.serverType || 'vanilla' ) !=='custom' ) { %>
                             <div class="card mt-3">
                                 <div class="card-body p-4">
                                     <div class="d-flex align-items-center justify-content-between">
                                         <div>
-                                            <h6 class="mb-1">Server Jar Updates</h6>
-                                            <small class="text-body-secondary" id="update-status">
+                                            <h6 class="mb-1">Server Jar Upgrades</h6>
+                                            <small class="text-body-secondary" id="upgrade-status">
                                                 <% if (server.build) { %>
                                                     Current build: #<%= server.build %>
                                                         <% } else { %>
@@ -390,17 +409,17 @@
                                                             <% } %>
                                             </small>
                                         </div>
-                                        <div class="d-flex gap-2" id="update-actions">
+                                        <div class="d-flex gap-2" id="upgrade-actions">
                                             <button type="button"
                                                 class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
-                                                id="check-update-btn" data-server-id="<%= server.id %>">
+                                                id="check-upgrade-btn" data-server-id="<%= server.id %>">
                                                 <span class="material-icons-outlined"
                                                     style="font-size: 1rem;">refresh</span>
-                                                Check for Updates
+                                                Check for Upgrades
                                             </button>
                                         </div>
                                     </div>
-                                    <div id="update-result" class="d-none mt-2"></div>
+                                    <div id="upgrade-result" class="d-none mt-2"></div>
                                 </div>
                             </div>
                             <% } %>
@@ -538,7 +557,7 @@
                                                 Export / Transfer
                                             </h6>
                                             <p class="text-body-secondary mb-3" style="font-size: 0.85rem;">
-                                                Download this server as a transfer archive that can be imported on
+                                                Download this server as a .cbx transfer archive that can be imported on
                                                 another Craftbox instance. Server files and Craftbox settings are
                                                 always included.
                                             </p>
@@ -668,14 +687,17 @@
                                     id="upgrade-to"></strong>.</p>
                             <p class="mb-0 text-warning small">
                                 This will download a new server jar. World data may not be compatible with the new
-                                version.
-                                It is strongly recommended to create a backup before upgrading. This action cannot be
-                                reversed.
+                                version. This action cannot be reversed.
                             </p>
+                            <div class="form-check mt-3">
+                                <input class="form-check-input" type="checkbox" id="upgradeBackup" checked>
+                                <label class="form-check-label" for="upgradeBackup">Create backup before
+                                    upgrading</label>
+                            </div>
                         </div>
                         <div class="modal-footer border-0 pt-0">
                             <button type="button" class="btn btn-secondary btn-sm"
-                                id="revert-version-btn">Revert</button>
+                                id="revert-version-btn">Cancel</button>
                             <button type="button" class="btn btn-warning btn-sm" id="accept-version-btn">Accept
                                 Risk</button>
                         </div>
@@ -698,13 +720,17 @@
                             <p>You are about to replace the server jar with a new download.</p>
                             <p class="mb-0 text-warning small">
                                 The current jar will be deleted and replaced with the file from the new URL.
-                                It is strongly recommended to create a backup before proceeding. This action cannot be
-                                reversed.
+                                This action cannot be reversed.
                             </p>
+                            <div class="form-check mt-3">
+                                <input class="form-check-input" type="checkbox" id="jarUrlBackup" checked>
+                                <label class="form-check-label" for="jarUrlBackup">Create backup before
+                                    replacing</label>
+                            </div>
                         </div>
                         <div class="modal-footer border-0 pt-0">
                             <button type="button" class="btn btn-secondary btn-sm"
-                                id="revert-jar-url-btn">Revert</button>
+                                id="revert-jar-url-btn">Cancel</button>
                             <button type="button" class="btn btn-warning btn-sm" id="accept-jar-url-btn">Accept
                                 Risk</button>
                         </div>
@@ -725,11 +751,6 @@
                         </div>
                         <div class="modal-body">
                             Settings have been saved. The server must be restarted for changes to take effect.
-                            <div class="form-check mt-3">
-                                <input class="form-check-input" type="checkbox" id="restartBackup">
-                                <label class="form-check-label" for="restartBackup">Create backup before
-                                    restarting</label>
-                            </div>
                         </div>
                         <div class="modal-footer border-0 pt-0">
                             <button type="button" class="btn btn-secondary btn-sm"
@@ -742,5 +763,7 @@
             </div>
 
 
-            <%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/edit.js' , '/js/motd.js'
-                , '/js/restart-modal.js', '/js/group-picker.js' ] }) %>
+            <%- include('../partials/version-picker-modal') %>
+
+            <%- include('../partials/foot', { scripts: ['/js/serverState.js', '/js/version-picker.js', '/js/edit.js'
+                , '/js/motd.js', '/js/restart-modal.js', '/js/group-picker.js' ] }) %>

@@ -15,8 +15,9 @@ const { DISABLED_SUFFIX } = require('../../utils/modEnvironment');
 const { downloadToFile } = require('../../utils/httpDownload');
 const { logEvent } = require('../../utils/eventLogger');
 const { log } = require('../../utils/log');
-
-const MC_VERSION_RE = /^\d+\.\d+(\.\d+)?(-\w+)?$/;
+// Shared with the server routes — accepts snapshot/pre-release ids so
+// browsing plugins/mods still works on snapshot servers.
+const { MC_VERSION_RE } = require('../../utils/mcVersion');
 const SEARCH_INDEXES = ['relevance', 'downloads', 'follows', 'newest', 'updated'];
 const MODPACK_LOADERS = ['fabric', 'forge', 'neoforge'];
 

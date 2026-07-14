@@ -140,12 +140,12 @@ class ServerManager {
     }
 
     /**
-     * Set an operational state (backing_up, restoring, updating_jar, provisioning,
+     * Set an operational state (backing_up, restoring, upgrading_jar, provisioning,
      * crashed) that exists outside the normal process lifecycle. Persists to DB
      * and broadcasts via WebSocket. `crashReason` is optional and only used when
      * transitioning to CRASHED.
      * @param {string} serverId
-     * @param {'backing_up'|'restoring'|'updating_jar'|'provisioning'|'stopped'|'crashed'} newState
+     * @param {'backing_up'|'restoring'|'upgrading_jar'|'provisioning'|'stopped'|'crashed'} newState
      * @param {{ crashReason?: string }} [opts]
      */
     async setOperationalState(serverId, newState, opts = {}) {
@@ -153,7 +153,7 @@ class ServerManager {
         const allowed = [
             STATES.BACKING_UP,
             STATES.RESTORING,
-            STATES.UPDATING_JAR,
+            STATES.UPGRADING_JAR,
             STATES.PROVISIONING,
             STATES.STOPPED,
             STATES.CRASHED
@@ -191,7 +191,7 @@ class ServerManager {
      * Only authenticated subscribers receive these (the broadcast filter in
      * ServerProcess generates no publicMsg for unknown types).
      * @param {string} serverId
-     * @param {'backup'|'restore'|'jar-update'|'create'|'duplicate'|'import'|'modpack-install'} operation
+     * @param {'backup'|'restore'|'jar-upgrade'|'settings-save'|'create'|'duplicate'|'import'|'modpack-install'} operation
      * @param {'complete'|'failed'|'progress'} status
      * @param {object|string} payloadOrError - error message on failed, payload object otherwise
      */

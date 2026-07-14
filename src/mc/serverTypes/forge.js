@@ -31,32 +31,45 @@ module.exports = {
     icon: 'construction',
     logo: '/img/server-types/forge.svg',
 
-    async listVersions() {
+    async listVersions({ channel = 'stable' } = {}) {
         const res = await fetch(PROMOTIONS_URL);
         if (!res.ok) throw new Error(`Failed to fetch Forge promotions: HTTP ${res.status}`);
         const data = await res.json();
 
-        // promos keys look like "1.21.4-latest", "1.21.4-recommended", "1.20.1-latest", etc.
-        const mcVersions = new Set();
+        // promos keys look like "1.21.4-latest", "1.21.4-recommended", etc.
+        // Forge's de-facto channels: an MC version with a "recommended" build is
+        // stable; one with only "latest" builds is still in its beta phase.
+        // (Forge never builds against Mojang snapshots, so no snapshot channel.)
+        const hasRecommended = new Map();
         for (const key of Object.keys(data.promos || {})) {
-            const mcVer = key.replace(/-(?:latest|recommended)$/, '');
-            if (isSupportedMcVersion(mcVer)) mcVersions.add(mcVer);
+            const m = /^(.+)-(latest|recommended)$/.exec(key);
+            if (!m || !isSupportedMcVersion(m[1])) continue;
+            hasRecommended.set(m[1], hasRecommended.get(m[1]) || m[2] === 'recommended');
         }
 
         // Sort versions descending
-        const sorted = [...mcVersions].sort((a, b) => {
-            const aParts = a.split('.').map(Number);
-            const bParts = b.split('.').map(Number);
-            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
-                const diff = (bParts[i] || 0) - (aParts[i] || 0);
-                if (diff !== 0) return diff;
-            }
-            return 0;
-        });
+        const sorted = [...hasRecommended.keys()]
+            .filter(v => channel === 'all' || hasRecommended.get(v))
+            .sort((a, b) => {
+                const aParts = a.split('.').map(Number);
+                const bParts = b.split('.').map(Number);
+                for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+                    const diff = (bParts[i] || 0) - (aParts[i] || 0);
+                    if (diff !== 0) return diff;
+                }
+                return 0;
+            });
 
+        // channel drives filtering (normalized enum); channelLabel is the
+        // Forge-native term shown on the badge (recommended / latest).
+        const versions = sorted.map(v => ({
+            id: v,
+            channel: hasRecommended.get(v) ? 'stable' : 'beta',
+            channelLabel: hasRecommended.get(v) ? 'recommended' : 'latest'
+        }));
         return {
-            versions: sorted.map(v => ({ id: v })),
-            latest: sorted[0] || null
+            versions,
+            latest: versions.find(v => v.channel === 'stable')?.id || null
         };
     },
 

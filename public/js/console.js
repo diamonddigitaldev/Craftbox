@@ -207,7 +207,7 @@
                 if (crashReason && (
                     crashReason.indexOf('Provisioning failed') === 0 ||
                     crashReason.indexOf('Duplication failed') === 0 ||
-                    crashReason.indexOf('Jar update interrupted') === 0 ||
+                    crashReason.indexOf('Jar upgrade interrupted') === 0 ||
                     crashReason.indexOf('Provisioning interrupted') === 0 ||
                     crashReason.indexOf('Modpack install failed') === 0
                 )) {
@@ -233,8 +233,8 @@
         const opText = document.getElementById('operation-banner-text');
         if (opBanner && opText) {
             var opMessages = {
-                provisioning: 'Running first-time setup for this server...',
-                updating_jar: 'Downloading the latest server jar build...',
+                provisioning: 'Server setup in progress...',
+                upgrading_jar: 'Server upgrade in progress...',
                 backing_up: 'Creating a backup of the server files...',
                 restoring: 'Restoring server files from a backup...'
             };

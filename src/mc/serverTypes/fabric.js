@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../../utils/log');
+const { classifyMcId } = require('./_channels');
 
 const BASE = 'https://meta.fabricmc.net/v2';
 
@@ -11,16 +12,23 @@ module.exports = {
     icon: 'style',
     logo: '/img/server-types/fabric.svg',
 
-    async listVersions() {
+    async listVersions({ channel = 'stable' } = {}) {
         const res = await fetch(`${BASE}/versions/game`);
         if (!res.ok) throw new Error(`Failed to fetch Fabric game versions: HTTP ${res.status}`);
         const versions = await res.json();
 
-        const stable = versions
-            .filter(v => v.stable)
-            .map(v => ({ id: v.version }));
+        // Meta API order is newest-first with snapshots interleaved — preserve it.
+        const mapped = versions
+            .filter(v => channel === 'all' || v.stable)
+            .map(v => ({
+                id: v.version,
+                channel: v.stable ? 'stable' : classifyMcId(v.version)
+            }));
 
-        return { versions: stable, latest: stable[0]?.id || null };
+        return {
+            versions: mapped,
+            latest: mapped.find(v => v.channel === 'stable')?.id || null
+        };
     },
 
     async getBuilds() {
@@ -51,7 +59,7 @@ module.exports = {
         if (!stableInstaller) throw new Error('No Fabric installer versions available.');
         const installerVersion = stableInstaller.version;
 
-        const downloadUrl = `${BASE}/versions/loader/${version}/${loaderVersion}/${installerVersion}/server/jar`;
+        const downloadUrl = `${BASE}/versions/loader/${encodeURIComponent(version)}/${loaderVersion}/${installerVersion}/server/jar`;
 
         log('info', `Downloading Fabric server ${version} (loader ${loaderVersion})...`);
         // Fabric composes the server JAR on demand on its meta endpoint and

@@ -21,27 +21,71 @@ function _formToBody(form) {
     var form = document.getElementById('edit-server-form');
     if (!form) return;
     var serverId = form.dataset.serverId;
+    var backupCheck = document.getElementById('saveBackup');
+    var SAVE_BTN_HTML = '<span class="material-icons-outlined" style="font-size: 1.2rem;">save</span> Save Changes';
+
     form.addEventListener('submit', async function (e) {
         e.preventDefault();
         if (!form.reportValidity()) return;
         var btn = form.querySelector('button[type="submit"]');
+        var wantBackup = !!(backupCheck && backupCheck.checked);
         if (btn) {
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> ' +
+                (wantBackup ? 'Backing up & saving...' : 'Saving...');
         }
-        showOverlay('Saving settings...', 'Please wait while your changes are applied.');
 
-        var res = await apiFetch('/api/v1/servers/' + serverId + '/edit', { method: 'POST', body: _formToBody(form) });
+        var body = _formToBody(form);
+        body.backup = wantBackup;
+
+        // With a backup, the save is a long background operation (stop → back up →
+        // apply → restart): no blocking overlay, the state badge tracks it live.
+        if (wantBackup) return saveWithRestorePoint(btn, body);
+
+        showOverlay('Saving settings...', 'Please wait while your changes are applied.');
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/edit', { method: 'POST', body: body });
         hideOverlay();
         if (!res.ok) {
             showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save settings.', 'danger');
-            if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = SAVE_BTN_HTML; }
             return;
         }
         flashToast('Settings saved.', 'success');
         // Reload with ?saved=1 so the restart-modal auto-shows
         window.location.href = '/servers/' + serverId + '/edit?saved=1';
     });
+
+    async function saveWithRestorePoint(btn, body) {
+        showToast('Creating a backup, then saving your changes...', 'info');
+
+        // Attach before the POST — the backend may finish first on a small server.
+        var done = awaitOperation(serverId, 'settings-save');
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/edit', { method: 'POST', body: body });
+        if (!res.ok) {
+            done.cancel();
+            showToast((res.data && (res.data.message || res.data.error)) || 'Failed to save settings.', 'danger');
+            if (btn) { btn.disabled = false; btn.innerHTML = SAVE_BTN_HTML; }
+            return;
+        }
+
+        var msg = await done;
+        if (msg.status === 'failed') {
+            showToast('Save failed: ' + (msg.error || 'unknown error'), 'danger');
+            if (btn) { btn.disabled = false; btn.innerHTML = SAVE_BTN_HTML; }
+            return;
+        }
+        // The server was already restarted (if it had been running), so there is
+        // nothing left for the restart modal to offer — reload without ?saved=1.
+        var payload = msg.payload || {};
+        if (payload.warning) {
+            flashToast(payload.warning, 'warning');
+        } else {
+            flashToast('Backup created and settings saved.' +
+                (payload.restarted ? ' Server restarted.' : ''), 'success');
+        }
+        window.location.href = '/servers/' + serverId + '/edit';
+    }
 })();
 
 // Toggle handlers for auto-restart and auto-start switches
@@ -66,46 +110,22 @@ function _formToBody(form) {
 })();
 
 // ── Version Upgrade ──
+// Accept Risk applies the upgrade immediately via POST /upgrade-jar
+// {version, backup?}: the server enters the upgrading_jar state (preceded by
+// backing_up when a pre-upgrade backup was requested) and completion arrives
+// over the WebSocket as operation "jar-upgrade" (dispatched as
+// craftbox:operation).
 (function () {
-    var versionSelect = document.getElementById('version');
-    if (!versionSelect) return;
+    var versionHidden = document.getElementById('version');
+    var versionDisplay = document.getElementById('version-display');
+    var browseBtn = document.getElementById('version-browse-btn');
+    if (!versionHidden || !versionDisplay || !browseBtn) return;
 
-    var serverType = versionSelect.dataset.serverType;
-    var currentVersion = versionSelect.dataset.currentVersion;
+    var form = document.getElementById('edit-server-form');
+    var serverId = form ? form.dataset.serverId : null;
+    var serverType = versionHidden.dataset.serverType;
+    var currentVersion = versionHidden.dataset.currentVersion;
     var upgradeAccepted = false;
-
-    function compareVersions(a, b) {
-        var aParts = a.split('.').map(Number);
-        var bParts = b.split('.').map(Number);
-        for (var i = 0; i < Math.max(aParts.length, bParts.length); i++) {
-            var diff = (aParts[i] || 0) - (bParts[i] || 0);
-            if (diff !== 0) return diff > 0 ? 1 : -1;
-        }
-        return 0;
-    }
-
-    async function loadUpgradeVersions() {
-        try {
-            var res = await fetch('/api/v1/versions?type=' + encodeURIComponent(serverType));
-            var data = await res.json();
-            if (!data.versions || data.versions.length === 0) return;
-
-            versionSelect.innerHTML = '';
-            data.versions.forEach(function (v) {
-                if (compareVersions(v.id, currentVersion) >= 0) {
-                    var opt = document.createElement('option');
-                    opt.value = v.id;
-                    opt.textContent = v.id;
-                    if (v.id === currentVersion) opt.selected = true;
-                    versionSelect.appendChild(opt);
-                }
-            });
-        } catch {
-            // Keep the current version if loading fails
-        }
-    }
-
-    loadUpgradeVersions();
 
     var modalEl = document.getElementById('versionUpgradeModal');
     if (!modalEl) return;
@@ -113,39 +133,117 @@ function _formToBody(form) {
     var revertBtn = document.getElementById('revert-version-btn');
     var acceptBtn = document.getElementById('accept-version-btn');
 
-    versionSelect.addEventListener('change', function () {
-        if (versionSelect.value === currentVersion) {
-            upgradeAccepted = false;
-            return;
+    function setVersionField(id) {
+        versionHidden.value = id;
+        versionDisplay.value = id;
+    }
+
+    // Only the current version and newer are offered (upgradeOnly); the
+    // backend re-validates and rejects downgrades regardless.
+    var picker = CraftboxVersionPicker({
+        onSelect: function (v) {
+            if (v.id === currentVersion) {
+                setVersionField(currentVersion);
+                upgradeAccepted = false;
+                return;
+            }
+            setVersionField(v.id);
+            document.getElementById('upgrade-from').textContent = currentVersion;
+            document.getElementById('upgrade-to').textContent = v.id;
+            // Pre-upgrade backup defaults to on for every new upgrade prompt
+            var backupCheck = document.getElementById('upgradeBackup');
+            if (backupCheck) backupCheck.checked = true;
+            modal.show();
         }
-        document.getElementById('upgrade-from').textContent = currentVersion;
-        document.getElementById('upgrade-to').textContent = versionSelect.value;
-        modal.show();
     });
 
-    revertBtn.addEventListener('click', function () {
-        versionSelect.value = currentVersion;
+    function openPicker() {
+        if (browseBtn.disabled) return;
+        picker.open(serverType, {
+            selectedVersion: versionHidden.value,
+            upgradeOnly: true,
+            currentVersion: currentVersion
+        });
+    }
+
+    browseBtn.addEventListener('click', openPicker);
+    versionDisplay.addEventListener('click', openPicker);
+
+    function resetToCurrent() {
+        setVersionField(currentVersion);
         upgradeAccepted = false;
+        browseBtn.disabled = false;
+    }
+
+    function onUpgradeOperation(e) {
+        var msg = e.detail || {};
+        if (msg.serverId !== serverId || msg.operation !== 'jar-upgrade') return;
+        document.removeEventListener('craftbox:operation', onUpgradeOperation);
+
+        if (msg.status === 'failed') {
+            showToast('Upgrade failed: ' + (msg.error || 'unknown error'), 'danger');
+            resetToCurrent();
+        } else {
+            var version = (msg.payload && msg.payload.version) || versionHidden.value;
+            // flashToast — the reload below would wipe a regular toast.
+            flashToast('Server upgraded to ' + version + '.', 'success');
+            window.location.reload();
+        }
+    }
+
+    async function startUpgrade(newVersion, backupFirst) {
+        browseBtn.disabled = true;
+        showToast(backupFirst
+            ? 'Backing up, then upgrading to version ' + newVersion + '...'
+            : 'Upgrading to version ' + newVersion + '. Downloading the new server jar...', 'info');
+
+        // Listen for completion before kicking off — the backend may finish
+        // very quickly and broadcast before our listener attaches if we did
+        // it after the POST.
+        document.addEventListener('craftbox:operation', onUpgradeOperation);
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/upgrade-jar', {
+            method: 'POST',
+            body: { version: newVersion, backup: backupFirst }
+        });
+        if (!res.ok) {
+            document.removeEventListener('craftbox:operation', onUpgradeOperation);
+            showToast((res.data && res.data.error) || 'Failed to start the upgrade.', 'danger');
+            resetToCurrent();
+        }
+        // 202 Accepted: the live state badge shows "Backing Up" and/or
+        // "Upgrading Jar"; onUpgradeOperation handles completion.
+    }
+
+    revertBtn.addEventListener('click', function () {
+        resetToCurrent();
         modal.hide();
     });
 
     acceptBtn.addEventListener('click', function () {
         upgradeAccepted = true;
         modal.hide();
+        var backupCheck = document.getElementById('upgradeBackup');
+        startUpgrade(versionHidden.value, !backupCheck || backupCheck.checked);
     });
 
     modalEl.addEventListener('hidden.bs.modal', function () {
-        if (!upgradeAccepted && versionSelect.value !== currentVersion) {
-            versionSelect.value = currentVersion;
+        if (!upgradeAccepted && versionHidden.value !== currentVersion) {
+            setVersionField(currentVersion);
         }
     });
 })();
 
 // ── Custom JAR URL Change ──
+// Accept Risk replaces the jar immediately via POST /upgrade-jar
+// {jarUrl, backup?} — the custom-server counterpart of the version upgrade
+// flow: same upgrading_jar state and "jar-upgrade" completion operation.
 (function () {
     var jarUrlInput = document.getElementById('customJarUrl');
     if (!jarUrlInput) return;
 
+    var form = document.getElementById('edit-server-form');
+    var serverId = form ? form.dataset.serverId : null;
     var currentUrl = jarUrlInput.dataset.currentUrl || '';
     var jarAccepted = false;
 
@@ -155,29 +253,76 @@ function _formToBody(form) {
     var revertBtn = document.getElementById('revert-jar-url-btn');
     var acceptBtn = document.getElementById('accept-jar-url-btn');
 
+    function resetToCurrent() {
+        jarUrlInput.value = currentUrl;
+        jarAccepted = false;
+    }
+
     jarUrlInput.addEventListener('change', function () {
         var newUrl = jarUrlInput.value.trim();
         if (newUrl === currentUrl || newUrl === '') {
             jarAccepted = false;
             return;
         }
+        // Pre-replace backup defaults to on for every new prompt
+        var backupCheck = document.getElementById('jarUrlBackup');
+        if (backupCheck) backupCheck.checked = true;
         modal.show();
     });
 
+    function onReplaceOperation(e) {
+        var msg = e.detail || {};
+        if (msg.serverId !== serverId || msg.operation !== 'jar-upgrade') return;
+        document.removeEventListener('craftbox:operation', onReplaceOperation);
+
+        if (msg.status === 'failed') {
+            showToast('Jar replacement failed: ' + (msg.error || 'unknown error'), 'danger');
+            resetToCurrent();
+        } else {
+            // flashToast — the reload below would wipe a regular toast.
+            flashToast('Server jar replaced.', 'success');
+            window.location.reload();
+        }
+    }
+
+    async function startReplace(newUrl, backupFirst) {
+        showToast(backupFirst
+            ? 'Backing up, then replacing the server jar...'
+            : 'Replacing the server jar. Downloading from the new URL...', 'info');
+
+        // Listen for completion before kicking off — the backend may finish
+        // very quickly and broadcast before our listener attaches if we did
+        // it after the POST.
+        document.addEventListener('craftbox:operation', onReplaceOperation);
+
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/upgrade-jar', {
+            method: 'POST',
+            body: { jarUrl: newUrl, backup: backupFirst }
+        });
+        if (!res.ok) {
+            document.removeEventListener('craftbox:operation', onReplaceOperation);
+            showToast((res.data && res.data.error) || 'Failed to start the jar replacement.', 'danger');
+            resetToCurrent();
+        }
+        // 202 Accepted: the live state badge shows "Backing Up" and/or
+        // "Upgrading Jar"; onReplaceOperation handles completion.
+    }
+
     revertBtn.addEventListener('click', function () {
-        jarUrlInput.value = currentUrl;
-        jarAccepted = false;
+        resetToCurrent();
         modal.hide();
     });
 
     acceptBtn.addEventListener('click', function () {
         jarAccepted = true;
         modal.hide();
+        var backupCheck = document.getElementById('jarUrlBackup');
+        startReplace(jarUrlInput.value.trim(), !backupCheck || backupCheck.checked);
     });
 
     modalEl.addEventListener('hidden.bs.modal', function () {
         if (!jarAccepted && jarUrlInput.value.trim() !== currentUrl) {
-            jarUrlInput.value = currentUrl;
+            resetToCurrent();
         }
     });
 })();
@@ -587,31 +732,31 @@ function _formToBody(form) {
     });
 })();
 
-// ── Update Checker ──
+// ── Upgrade Checker ──
 (function () {
-    const checkBtn = document.getElementById('check-update-btn');
+    const checkBtn = document.getElementById('check-upgrade-btn');
     if (!checkBtn) return;
 
     const serverId = checkBtn.dataset.serverId;
-    const resultDiv = document.getElementById('update-result');
-    const actionsDiv = document.getElementById('update-actions');
-    const statusEl = document.getElementById('update-status');
+    const resultDiv = document.getElementById('upgrade-result');
+    const actionsDiv = document.getElementById('upgrade-actions');
+    const statusEl = document.getElementById('upgrade-status');
 
-    // Page-load resilience: if the server is mid-update-jar, show the overlay
+    // Page-load resilience: if the server is mid-upgrade, show the overlay
     // and listen for completion (in case the user reloaded mid-operation).
     var navHeader = document.getElementById('server-nav-header');
-    if (navHeader && navHeader.dataset.state === 'updating_jar') {
-        showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
+    if (navHeader && navHeader.dataset.state === 'upgrading_jar') {
+        showOverlay('Upgrading server jar...', 'Downloading the new jar. This may take a moment.');
         document.addEventListener('craftbox:operation', function reloadOnComplete(e) {
             var msg = e.detail || {};
-            if (msg.serverId !== serverId || msg.operation !== 'jar-update') return;
+            if (msg.serverId !== serverId || msg.operation !== 'jar-upgrade') return;
             document.removeEventListener('craftbox:operation', reloadOnComplete);
             hideOverlay();
             if (msg.status === 'failed') {
-                showToast('Jar update failed: ' + (msg.error || 'unknown error'), 'danger');
+                showToast('Jar upgrade failed: ' + (msg.error || 'unknown error'), 'danger');
             } else {
                 // flashToast — the reload below would wipe a regular toast.
-                flashToast('Jar updated successfully.', 'success');
+                flashToast('Jar upgraded successfully.', 'success');
                 window.location.reload();
             }
         });
@@ -624,18 +769,18 @@ function _formToBody(form) {
         resultDiv.classList.add('d-none');
 
         try {
-            const res = await fetch('/api/v1/servers/' + serverId + '/check-update');
+            const res = await fetch('/api/v1/servers/' + serverId + '/check-upgrade');
             const data = await res.json();
 
             if (!res.ok) {
-                showResult('danger', data.error || 'Failed to check for updates.');
+                showResult('danger', data.error || 'Failed to check for upgrades.');
                 return;
             }
 
-            if (data.updateAvailable) {
+            if (data.upgradeAvailable) {
                 showResult('warning',
-                    'Update available: build #' + data.currentBuild + ' → #' + data.latestBuild);
-                showUpdateButton();
+                    'Upgrade available: build #' + data.currentBuild + ' → #' + data.latestBuild);
+                showUpgradeButton();
             } else if (data.reason) {
                 showResult('secondary', data.reason);
             } else {
@@ -643,11 +788,11 @@ function _formToBody(form) {
                     (data.currentBuild ? ' (build #' + data.currentBuild + ')' : ''));
             }
         } catch {
-            showResult('danger', 'Failed to check for updates.');
+            showResult('danger', 'Failed to check for upgrades.');
         } finally {
             checkBtn.disabled = false;
             checkBtn.innerHTML =
-                '<span class="material-icons-outlined" style="font-size: 1rem;">refresh</span> Check for Updates';
+                '<span class="material-icons-outlined" style="font-size: 1rem;">refresh</span> Check for Upgrades';
         }
     });
 
@@ -657,60 +802,60 @@ function _formToBody(form) {
         resultDiv.classList.remove('d-none');
     }
 
-    function showUpdateButton() {
-        if (document.getElementById('update-jar-btn')) return;
+    function showUpgradeButton() {
+        if (document.getElementById('upgrade-jar-btn')) return;
 
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.id = 'update-jar-btn';
+        btn.id = 'upgrade-jar-btn';
         btn.className = 'btn btn-warning btn-sm d-flex align-items-center gap-1';
         btn.innerHTML =
-            '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+            '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Upgrade Jar';
 
-        function onJarUpdateOperation(e) {
+        function onJarUpgradeOperation(e) {
             var msg = e.detail || {};
-            if (msg.serverId !== serverId || msg.operation !== 'jar-update') return;
+            if (msg.serverId !== serverId || msg.operation !== 'jar-upgrade') return;
 
             hideOverlay();
-            document.removeEventListener('craftbox:operation', onJarUpdateOperation);
+            document.removeEventListener('craftbox:operation', onJarUpgradeOperation);
 
             if (msg.status === 'complete') {
                 var build = msg.payload && msg.payload.build;
-                showResult('success', 'Jar updated to build #' + (build || 'latest') + '.');
+                showResult('success', 'Jar upgraded to build #' + (build || 'latest') + '.');
                 if (statusEl && build) {
                     statusEl.textContent = 'Current build: #' + build;
                 }
                 btn.remove();
             } else {
-                showResult('danger', msg.error || 'Failed to update jar.');
+                showResult('danger', msg.error || 'Failed to upgrade jar.');
                 btn.disabled = false;
                 btn.innerHTML =
-                    '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+                    '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Upgrade Jar';
             }
         }
 
         btn.addEventListener('click', async function () {
             btn.disabled = true;
             btn.innerHTML =
-                '<span class="spinner-border spinner-border-sm" role="status"></span> Updating...';
-            showOverlay('Updating server jar...', 'Downloading the latest build. This may take a moment.');
+                '<span class="spinner-border spinner-border-sm" role="status"></span> Upgrading...';
+            showOverlay('Upgrading server jar...', 'Downloading the latest build. This may take a moment.');
 
             // Listen for completion before kicking off — the backend may finish
             // very quickly and broadcast before our listener attaches if we did
             // it after the POST.
-            document.addEventListener('craftbox:operation', onJarUpdateOperation);
+            document.addEventListener('craftbox:operation', onJarUpgradeOperation);
 
-            var res = await apiFetch('/api/v1/servers/' + serverId + '/update-jar', { method: 'POST', body: {} });
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/upgrade-jar', { method: 'POST', body: {} });
             if (!res.ok) {
                 hideOverlay();
-                document.removeEventListener('craftbox:operation', onJarUpdateOperation);
-                showResult('danger', (res.data && res.data.error) || 'Failed to start jar update.');
+                document.removeEventListener('craftbox:operation', onJarUpgradeOperation);
+                showResult('danger', (res.data && res.data.error) || 'Failed to start jar upgrade.');
                 btn.disabled = false;
                 btn.innerHTML =
-                    '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Update Jar';
+                    '<span class="material-icons-outlined" style="font-size: 1rem;">download</span> Upgrade Jar';
                 return;
             }
-            // 202 Accepted: keep overlay; onJarUpdateOperation handles completion.
+            // 202 Accepted: keep overlay; onJarUpgradeOperation handles completion.
         });
 
         actionsDiv.appendChild(btn);
