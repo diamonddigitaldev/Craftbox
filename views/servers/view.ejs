@@ -46,7 +46,7 @@
      style="display: <%= (server.state === 'crashed' && !server.provisionFailed) ? 'flex' : 'none' %>;">
     <span class="material-icons-outlined">error</span>
     <div id="crash-banner-text">
-        <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar update interrupted') || server.crashReason.startsWith('Provisioning interrupted') || server.crashReason.startsWith('Modpack install failed'))) { %>
+        <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar upgrade interrupted') || server.crashReason.startsWith('Provisioning interrupted') || server.crashReason.startsWith('Modpack install failed'))) { %>
             <%= server.crashReason %>
         <% } else { %>
             Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.
@@ -57,13 +57,13 @@
 </div>
 
 <div class="alert alert-info align-items-center gap-2 mb-3" id="operation-banner"
-     style="display: <%= ['provisioning', 'updating_jar', 'backing_up', 'restoring'].includes(server.state) ? 'flex' : 'none' %>;">
+     style="display: <%= ['provisioning', 'upgrading_jar', 'backing_up', 'restoring'].includes(server.state) ? 'flex' : 'none' %>;">
     <span class="spinner-border spinner-border-sm" role="status"></span>
     <div id="operation-banner-text">
         <% if (server.state === 'provisioning') { %>
-            Running first-time setup for this server...
-        <% } else if (server.state === 'updating_jar') { %>
-            Downloading the latest server jar build...
+            Server setup in progress...
+        <% } else if (server.state === 'upgrading_jar') { %>
+            Server upgrade in progress...
         <% } else if (server.state === 'backing_up') { %>
             Creating a backup of the server files...
         <% } else if (server.state === 'restoring') { %>
@@ -218,4 +218,4 @@
 </div>
 
 
-<%- include('../partials/foot', { scripts: ['/vendor/chart.js/chart.umd.min.js', '/js/console.js'] }) %>
+<%- include('../partials/foot', { scripts: ['/vendor/chart.js/chart.umd.min.js', '/js/serverState.js', '/js/console.js'] }) %>

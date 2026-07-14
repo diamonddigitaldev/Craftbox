@@ -185,6 +185,8 @@
     }
 
     if (fileInput && uploadBtn) {
+        guardFileInput(fileInput, ['.jar'], 'Only .jar files can be uploaded.');
+
         fileInput.addEventListener('change', function () {
             uploadBtn.disabled = fileInput.files.length === 0;
         });

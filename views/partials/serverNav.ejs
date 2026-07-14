@@ -16,7 +16,7 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
     </span>
     <span class="text-body-secondary ms-2 d-flex align-items-center gap-1" style="font-size: 0.85rem;">
         <img src="/img/server-types/<%= server.serverType || 'vanilla' %>.svg" alt="" class="server-type-logo">
-        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <%= _displayVersion %> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
+        <%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %> <span id="server-version-label"><%= _displayVersion %></span> &middot; Port <%= server.port %> &middot; <%= server.memory %> MB
     </span>
 </div>
 <ul class="nav nav-pills mb-3" id="server-nav">

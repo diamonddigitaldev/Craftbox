@@ -125,10 +125,17 @@
 
                         <div class="row mb-3">
                             <div class="col-md-6" id="version-group">
-                                <label for="version" class="form-label required-star">Version</label>
-                                <select class="form-select" id="version" name="version" required>
-                                    <option value="" disabled selected>Loading versions...</option>
-                                </select>
+                                <label for="version-display" class="form-label required-star">Version</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="version-display" readonly required
+                                        placeholder="Loading versions...">
+                                    <button class="btn btn-outline-secondary d-flex align-items-center" type="button"
+                                        id="version-browse-btn">
+                                        <span class="material-icons-outlined"
+                                            style="font-size: 1.2rem;">manage_search</span>
+                                    </button>
+                                </div>
+                                <input type="hidden" name="version" id="version">
                             </div>
                             <!-- Custom JAR URL input (hidden by default) -->
                             <div class="col-md-6 d-none" id="custom-url-group">
@@ -233,4 +240,6 @@
     </div>
 
 
-    <%- include('../partials/foot', { scripts: ['/js/create.js', '/js/group-picker.js'] }) %>
+    <%- include('../partials/version-picker-modal') %>
+
+    <%- include('../partials/foot', { scripts: ['/js/version-picker.js', '/js/create.js', '/js/group-picker.js'] }) %>

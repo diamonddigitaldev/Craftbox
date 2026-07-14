@@ -11,11 +11,13 @@ const { serversDb, SERVERS_DIR } = require('../../db');
 const { getContentType } = require('../../utils/contentType');
 const { isPathInside } = require('../../utils/pathSafety');
 const { isZipFile } = require('../../utils/uploadSafety');
+const { DISABLED_SUFFIX } = require('../../utils/modEnvironment');
 const { downloadToFile } = require('../../utils/httpDownload');
 const { logEvent } = require('../../utils/eventLogger');
 const { log } = require('../../utils/log');
-
-const MC_VERSION_RE = /^\d+\.\d+(\.\d+)?(-\w+)?$/;
+// Shared with the server routes — accepts snapshot/pre-release ids so
+// browsing plugins/mods still works on snapshot servers.
+const { MC_VERSION_RE } = require('../../utils/mcVersion');
 const SEARCH_INDEXES = ['relevance', 'downloads', 'follows', 'newest', 'updated'];
 const MODPACK_LOADERS = ['fabric', 'forge', 'neoforge'];
 
@@ -230,7 +232,12 @@ router.get('/servers/:id/modrinth-installed', async (req, res) => {
     const contentDir = path.join(SERVERS_DIR, server.id, contentType.folder);
     let files = [];
     try {
-        files = (await fs.promises.readdir(contentDir)).filter(f => f.toLowerCase().endsWith('.jar'));
+        // Disabled jars count as installed: a modpack's client-only mods land
+        // pre-disabled, and leaving them out would offer them for install again.
+        files = (await fs.promises.readdir(contentDir)).filter(f => {
+            const lower = f.toLowerCase();
+            return lower.endsWith('.jar') || lower.endsWith('.jar' + DISABLED_SUFFIX);
+        });
     } catch { /* no content dir yet — nothing installed */ }
     if (files.length === 0) return res.json({ projects: {} });
 
@@ -334,7 +341,10 @@ router.post('/servers/:id/modrinth-install', async (req, res) => {
             e.httpStatus = 400;
             throw e;
         }
-        if (fs.existsSync(dest)) {
+        // A disabled twin is still an install — re-downloading it would leave two
+        // copies of the same mod, and reconcile would delete the enabled one on
+        // the next start anyway (client-only mods from a modpack are disabled).
+        if (fs.existsSync(dest) || fs.existsSync(dest + DISABLED_SUFFIX)) {
             if (depth === 0) {
                 const e = new Error(`"${filename}" is already installed.`);
                 e.httpStatus = 409;

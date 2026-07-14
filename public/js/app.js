@@ -101,6 +101,28 @@ function flashToast(message, type) {
     } catch (_) { /* ignore */ }
 })();
 
+// ── Wait for a background operation to finish ──
+// Resolves with the `operation` WebSocket message for this server (dispatched as
+// craftbox:operation by console.js / serverState.js). Call this BEFORE kicking
+// off the request that starts the work — a fast backend can broadcast before the
+// POST's promise settles. Call .cancel() if the request never started the work.
+function awaitOperation(serverId, operation) {
+    var handler;
+    var promise = new Promise(function (resolve) {
+        handler = function (e) {
+            var msg = e.detail || {};
+            if (msg.serverId !== serverId || msg.operation !== operation) return;
+            document.removeEventListener('craftbox:operation', handler);
+            resolve(msg);
+        };
+        document.addEventListener('craftbox:operation', handler);
+    });
+    promise.cancel = function () {
+        document.removeEventListener('craftbox:operation', handler);
+    };
+    return promise;
+}
+
 // ── Show a Bootstrap toast notification (matches flash.ejs style) ──
 // type: 'danger' | 'success' | 'warning' | 'info' (defaults to 'danger')
 function showToast(message, type) {
@@ -152,6 +174,39 @@ function showToast(message, type) {
     var toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 });
     toastEl.addEventListener('hidden.bs.toast', function () { toastEl.remove(); });
     toast.show();
+}
+
+// ── File input extension guard ──
+// The `accept` attribute only filters the OS file dialog — the user can switch it
+// to "All files" and pick anything — so check the extension the moment a file is
+// added rather than waiting for the upload to be submitted and rejected.
+// Files that don't match are dropped from the selection (which empties a
+// single-file input entirely), and a `change` event is re-fired so whatever gates
+// the page's submit button re-evaluates.
+// `extensions` are lowercase and include the dot, e.g. ['.jar'].
+function guardFileInput(input, extensions, message) {
+    if (!input) return;
+    input.addEventListener('change', function () {
+        if (input.files.length === 0) return;
+
+        var kept = Array.prototype.filter.call(input.files, function (f) {
+            var name = f.name.toLowerCase();
+            return extensions.some(function (ext) { return name.endsWith(ext); });
+        });
+        if (kept.length === input.files.length) return; // everything is valid
+
+        showToast(message, 'danger');
+        try {
+            var dt = new DataTransfer();
+            kept.forEach(function (f) { dt.items.add(f); });
+            input.files = dt.files;
+        } catch (_) {
+            input.value = ''; // no DataTransfer support — drop the lot
+        }
+        // Safe against recursion: the re-fired event now sees a valid selection
+        // (or none at all) and returns above.
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
 }
 
 // ── Required field validation — disable submit until all required fields are filled ──

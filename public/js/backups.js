@@ -14,7 +14,7 @@
 
     // ── Async operation completion via WebSocket ──
     // serverState.js maintains the WebSocket subscription on this page and
-    // dispatches `craftbox:operation` events for backup/restore/jar-update
+    // dispatches `craftbox:operation` events for backup/restore/jar-upgrade
     // outcomes. We listen here to drive the overlay + toasts after firing
     // long operations.
     function handleOperation(e) {

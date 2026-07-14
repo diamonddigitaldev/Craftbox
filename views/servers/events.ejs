@@ -2,49 +2,31 @@
 <%- include('../partials/serverNav', { server, active: 'events' }) %>
 
 <%
-const eventIcons = {
-    started: 'play_circle',
-    stopped: 'stop_circle',
-    crashed: 'error',
-    restarted: 'restart_alt',
-    player_join: 'login',
-    player_leave: 'logout',
-    action: 'person',
-    backup_create: 'backup',
-    backup_create_fail: 'backup',
-    backup_restore: 'settings_backup_restore',
-    backup_restore_fail: 'settings_backup_restore',
-    backup_delete: 'delete'
+// One entry per event type logged by src/utils/eventLogger.js callers. Every
+// type needs all four fields — a missing label renders the raw id in the badge
+// and the filter dropdown.
+const eventMeta = {
+    started:             { icon: 'play_circle',              color: 'text-success',   badge: 'success',   label: 'Started' },
+    stopped:             { icon: 'stop_circle',              color: 'text-secondary', badge: 'secondary', label: 'Stopped' },
+    crashed:             { icon: 'error',                    color: 'text-danger',    badge: 'danger',    label: 'Crashed' },
+    restarted:           { icon: 'restart_alt',              color: 'text-info',      badge: 'info',      label: 'Restarted' },
+    player_join:         { icon: 'login',                    color: 'text-success',   badge: 'success',   label: 'Player Join' },
+    player_leave:        { icon: 'logout',                   color: 'text-warning',   badge: 'warning',   label: 'Player Leave' },
+    action:              { icon: 'person',                   color: 'text-primary',   badge: 'primary',   label: 'Action' },
+    jar_upgrade:         { icon: 'upgrade',                  color: 'text-info',      badge: 'info',      label: 'Jar Upgraded' },
+    jar_upgrade_fail:    { icon: 'upgrade',                  color: 'text-danger',    badge: 'danger',    label: 'Upgrade Failed' },
+    backup_create:       { icon: 'backup',                   color: 'text-info',      badge: 'info',      label: 'Backup Created' },
+    backup_create_fail:  { icon: 'backup',                   color: 'text-danger',    badge: 'danger',    label: 'Backup Failed' },
+    backup_restore:      { icon: 'settings_backup_restore',  color: 'text-info',      badge: 'info',      label: 'Backup Restored' },
+    backup_restore_fail: { icon: 'settings_backup_restore',  color: 'text-danger',    badge: 'danger',    label: 'Restore Failed' },
+    backup_delete:       { icon: 'delete',                   color: 'text-secondary', badge: 'secondary', label: 'Backup Deleted' }
 };
-const eventColors = {
-    started: 'text-success',
-    stopped: 'text-secondary',
-    crashed: 'text-danger',
-    restarted: 'text-info',
-    player_join: 'text-success',
-    player_leave: 'text-warning',
-    action: 'text-primary',
-    backup_create: 'text-info',
-    backup_create_fail: 'text-danger',
-    backup_restore: 'text-info',
-    backup_restore_fail: 'text-danger',
-    backup_delete: 'text-secondary'
-};
-const eventLabels = {
-    started: 'Started',
-    stopped: 'Stopped',
-    crashed: 'Crashed',
-    restarted: 'Restarted',
-    player_join: 'Player Join',
-    player_leave: 'Player Leave',
-    action: 'Action',
-    backup_create: 'Backup Created',
-    backup_create_fail: 'Backup Failed',
-    backup_restore: 'Backup Restored',
-    backup_restore_fail: 'Restore Failed',
-    backup_delete: 'Backup Deleted'
-};
-
+const FALLBACK_META = { icon: 'info', color: 'text-body-secondary', badge: 'secondary', label: null };
+const metaFor = (type) => eventMeta[type] || FALLBACK_META;
+// Filter dropdown shows labels; an unknown type falls back to its raw id.
+const eventLabels = Object.fromEntries(
+    Object.entries(eventMeta).map(([type, meta]) => [type, meta.label])
+);
 %>
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -95,14 +77,15 @@ const eventLabels = {
             <tbody>
                 <% events.forEach(function(event) { %>
                 <tr>
+                    <% const meta = metaFor(event.type); %>
                     <td class="text-center">
-                        <span class="material-icons-outlined <%= eventColors[event.type] || 'text-body-secondary' %>" style="font-size: 1.1rem;">
-                            <%= eventIcons[event.type] || 'info' %>
+                        <span class="material-icons-outlined <%= meta.color %>" style="font-size: 1.1rem;">
+                            <%= meta.icon %>
                         </span>
                     </td>
                     <td>
-                        <span class="badge bg-<%= event.type === 'crashed' || event.type === 'backup_create_fail' || event.type === 'backup_restore_fail' ? 'danger' : event.type === 'started' || event.type === 'player_join' ? 'success' : event.type === 'restarted' || event.type === 'backup_create' || event.type === 'backup_restore' ? 'info' : event.type === 'action' ? 'primary' : event.type === 'player_leave' ? 'warning' : 'secondary' %>" style="font-size: 0.75rem;">
-                            <%= eventLabels[event.type] || event.type %>
+                        <span class="badge bg-<%= meta.badge %>" style="font-size: 0.75rem;">
+                            <%= meta.label || event.type %>
                         </span>
                     </td>
                     <td><%= event.message %></td>

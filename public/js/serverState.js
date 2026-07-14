@@ -77,3 +77,21 @@
 
     connect();
 })();
+
+// ── Live version label ──
+// The nav header's "<Type> <version>" text goes stale when a version upgrade
+// finishes. Runs on every server sub-page, including the console page (where
+// the IIFE above defers to console.js): whichever script owns the WebSocket
+// re-dispatches operation messages as craftbox:operation, already filtered
+// to this server's id.
+(function () {
+    var label = document.getElementById('server-version-label');
+    if (!label) return;
+
+    document.addEventListener('craftbox:operation', function (e) {
+        var msg = e.detail || {};
+        if (msg.operation !== 'jar-upgrade' || msg.status !== 'complete') return;
+        var version = msg.payload && msg.payload.version;
+        if (version) label.textContent = version;
+    });
+})();

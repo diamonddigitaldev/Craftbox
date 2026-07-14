@@ -14,7 +14,7 @@ const stateColors = {
     crashed: 'danger',
     backing_up: 'info',
     restoring: 'info',
-    updating_jar: 'info',
+    upgrading_jar: 'info',
     provisioning: 'info'
 };
 
@@ -26,14 +26,14 @@ const stateIcons = {
     crashed: 'error',
     backing_up: 'backup',
     restoring: 'settings_backup_restore',
-    updating_jar: 'cloud_download',
+    upgrading_jar: 'upgrade',
     provisioning: 'build'
 };
 
 const stateDisplayNames = {
     backing_up: 'Backing Up',
     restoring: 'Restoring',
-    updating_jar: 'Updating Jar',
+    upgrading_jar: 'Upgrading Jar',
     provisioning: 'Provisioning'
 };
 

@@ -376,8 +376,11 @@ router.get('/servers/:id/export', ensureAuth, async (req, res) => {
         const archiver = require('archiver');
         const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', contentDisposition(`${safeName}-export.zip`));
+        // A .cbx transfer archive is a zip container with a Craftbox manifest at
+        // its root. The dedicated media type stops browsers from "correcting"
+        // the extension back to .zip on download.
+        res.setHeader('Content-Type', 'application/x-craftbox-export+zip');
+        res.setHeader('Content-Disposition', contentDisposition(`${safeName}.cbx`));
 
         const archive = archiver('zip', { zlib: { level: 5 } });
         archive.on('error', (err) => {

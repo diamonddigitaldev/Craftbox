@@ -97,13 +97,13 @@ td > .material-icons-outlined {
 [data-state="stopping"] .server-state-badge,
 [data-state="backing_up"] .server-state-badge,
 [data-state="restoring"] .server-state-badge,
-[data-state="updating_jar"] .server-state-badge,
+[data-state="upgrading_jar"] .server-state-badge,
 [data-state="provisioning"] .server-state-badge,
 [data-state="starting"] .status-badge,
 [data-state="stopping"] .status-badge,
 [data-state="backing_up"] .status-badge,
 [data-state="restoring"] .status-badge,
-[data-state="updating_jar"] .status-badge,
+[data-state="upgrading_jar"] .status-badge,
 [data-state="provisioning"] .status-badge {
     animation: pulse-badge 1.5s ease-in-out infinite;
 }
@@ -475,6 +475,11 @@ td > .material-icons-outlined {
     border-bottom: 1px solid var(--bs-border-color);
     margin: calc(-1 * var(--bs-modal-padding)) calc(-1 * var(--bs-modal-padding)) 1rem;
     padding: var(--bs-modal-padding) var(--bs-modal-padding) 0.75rem;
+}
+
+/* Version picker field — the readonly display input opens the modal on click */
+#version-display:not(:disabled) {
+    cursor: pointer;
 }
 
 /* Two-line clamped description; min-height keeps single-line cards level */

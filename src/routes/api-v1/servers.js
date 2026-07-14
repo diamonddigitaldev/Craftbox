@@ -26,6 +26,8 @@ const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
 const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
+const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
+const { pickPreferredBuild } = require('../../mc/serverTypes/_channels');
 const { cleanupServerData } = require('../../utils/serverCleanup');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
@@ -41,6 +43,198 @@ async function loadServerOr404(req, res) {
         return null;
     }
     return server;
+}
+
+// Downgrade guard for version changes (edit + upgrade-jar). Release ids compare
+// numerically; snapshot/pre/rc ids don't, so fall back to the provider's
+// newest-first version list and compare positions. Ids missing from the list
+// are allowed through — the guard is a convenience net, and blocking would
+// strand servers whose version has left the upstream listing.
+async function isVersionDowngrade(type, currentVersion, newVersion, logLabel) {
+    if (isReleaseVersion(currentVersion) && isReleaseVersion(newVersion)) {
+        const curParts = currentVersion.split('.').map(Number);
+        const newParts = newVersion.split('.').map(Number);
+        for (let i = 0; i < Math.max(curParts.length, newParts.length); i++) {
+            const diff = (newParts[i] || 0) - (curParts[i] || 0);
+            if (diff < 0) return true;
+            if (diff > 0) return false;
+        }
+        return false;
+    }
+    try {
+        const provider = getProvider(type);
+        const result = await provider.listVersions({ channel: 'all' });
+        const ids = (result?.versions || []).map(v => v.id);
+        const curIdx = ids.indexOf(currentVersion);
+        const newIdx = ids.indexOf(newVersion);
+        if (curIdx !== -1 && newIdx !== -1) return newIdx > curIdx;
+        log('warn', `Downgrade check skipped for ${logLabel}: "${currentVersion}" or "${newVersion}" not in the ${type} version list.`);
+    } catch (err) {
+        log('warn', `Downgrade check skipped for ${logLabel}: ${err.message}`);
+    }
+    return false;
+}
+
+// Best-effort delete — used on failure paths, which must never throw over a
+// leftover temp file while they are already handling the real error.
+function removeQuietly(target) {
+    try {
+        if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+    } catch (err) {
+        log('warn', `Failed to remove ${target}: ${err.message}`);
+    }
+}
+
+// Forge/NeoForge keep versioned launcher libraries on disk; move the old tree
+// aside before an upgrade so a failed install can be rolled back. Returns null
+// for other types (nothing to stash).
+function stashLoaderLibraries(type, id, serverName) {
+    if (type !== 'forge' && type !== 'neoforge') return null;
+    const libSubdir = type === 'neoforge'
+        ? path.join(SERVERS_DIR, id, 'libraries', 'net', 'neoforged', 'neoforge')
+        : path.join(SERVERS_DIR, id, 'libraries', 'net', 'minecraftforge', 'forge');
+    if (!fs.existsSync(libSubdir)) return null;
+
+    const backupPath = libSubdir + '.tmp';
+    fs.renameSync(libSubdir, backupPath);
+    log('info', `[${serverName}] Moved old ${type} libraries to .tmp before upgrade.`);
+    return {
+        commit() {
+            removeQuietly(backupPath);
+        },
+        rollback() {
+            if (!fs.existsSync(backupPath)) return;
+            try {
+                // An installer that failed partway has already written a partial
+                // tree back at the original path; clear it, or the rename below
+                // fails (EEXIST/ENOTEMPTY) and takes the caller's error handling
+                // down with it.
+                removeQuietly(libSubdir);
+                fs.renameSync(backupPath, libSubdir);
+                log('info', `[${serverName}] Restored old ${type} libraries after failed upgrade.`);
+            } catch (err) {
+                // Never throw from a rollback — the caller is mid-failure and
+                // still has to reset the server state and report the error.
+                log('error', `[${serverName}] Failed to restore old ${type} libraries: ${err.message}`);
+            }
+        }
+    };
+}
+
+// An error carrying the HTTP status it should surface as. Lets the mutation
+// logic below be shared between a synchronous route response and a background
+// task that reports over the WebSocket instead.
+function httpError(status, message) {
+    const err = new Error(message);
+    err.status = status;
+    return err;
+}
+
+// Run `apply` behind a restore point: stop the server (a live world can't be
+// zipped consistently), back it up, apply the change, then restart if it had
+// been running. Because the backup strictly predates every change, restoring it
+// undoes the change completely — which a backup taken *after* the save cannot do.
+//
+// Responds 202 immediately; completion is broadcast as `operation` over the
+// WebSocket. If the backup or the change fails, the server is put back the way
+// it was found and the failure is broadcast.
+async function runWithRestorePoint({ req, res, server, label, operation, apply }) {
+    const id = server.id;
+    const serverManager = req.app.get('serverManager');
+    const initiatedBy = req.user.username;
+    const { runBackupJob, tryAcquireBackupLock, releaseBackupLock, formatSize } = require('../../mc/BackupManager');
+
+    if (!tryAcquireBackupLock(id)) {
+        return res.status(409).json({ error: 'A backup is already in progress for this server.' });
+    }
+
+    let lockOwnedByRoute = true;
+    try {
+        const proc = serverManager?.getProcess(id);
+        const wasRunning = !!proc && ['running', 'starting'].includes(proc.state);
+        if (wasRunning) {
+            await serverManager.stopServer(id, { initiatedBy });
+            await proc.waitForState(STATES.STOPPED, 60000);
+        }
+
+        await serverManager.setOperationalState(id, STATES.BACKING_UP);
+        lockOwnedByRoute = false; // handed off to the task below
+        res.status(202).json({ success: true, status: 'started' });
+
+        (async () => {
+            let result;
+            try {
+                const backup = await runBackupJob(id, label, 'manual');
+                logEvent(id, 'action', `${label} created`, { initiatedBy }).catch(() => {});
+                serverManager.broadcastOperation(id, 'backup', 'complete', {
+                    backup: { ...backup, sizeFormatted: formatSize(backup.size) }
+                });
+                await serverManager.setOperationalState(id, STATES.STOPPED);
+
+                result = await apply();
+            } catch (err) {
+                // The backup or the change itself failed, so nothing landed (a failed
+                // jar download rolls itself back) — put the server back as we found it.
+                log('error', `${operation} with restore point failed for ${id}: ${err.message}`);
+                logEvent(id, 'action', `Save failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                try {
+                    await serverManager.setOperationalState(id, STATES.STOPPED);
+                    if (wasRunning) await serverManager.startServer(id, { initiatedBy });
+                } catch (restoreErr) {
+                    log('error', `Failed to restore run state for ${id}: ${restoreErr.message}`);
+                }
+                serverManager.broadcastOperation(id, operation, 'failed', err.message);
+                return;
+            }
+
+            // The change is saved. Bringing the server back up is best-effort from
+            // here — a restart that fails is a warning, never a failed save.
+            let warning = null;
+            if (wasRunning) {
+                try {
+                    await clearStatsHistory(id);
+                    await serverManager.startServer(id, { initiatedBy });
+                } catch (err) {
+                    warning = `Saved, but the server failed to start: ${err.message}`;
+                    log('error', `Restart after ${operation} failed for ${id}: ${err.message}`);
+                }
+            }
+            notifyDashboard(req);
+            serverManager.broadcastOperation(id, operation, 'complete', {
+                ...result,
+                restarted: wasRunning && !warning,
+                warning
+            });
+        })();
+    } catch (err) {
+        if (lockOwnedByRoute) releaseBackupLock(id);
+        log('error', `Restore-point setup failed for ${id}: ${err.message}`);
+        if (!res.headersSent) {
+            res.status(500).json({ error: err.message });
+        }
+    }
+}
+
+// Replace an existing server's jar without risking the one it can currently
+// run: download into a sidecar and swap only once the provider reports success.
+// A failed download — including a checksum mismatch, which makes downloadServerJar
+// delete the file it wrote — therefore destroys the sidecar, never the live jar.
+// Forge/NeoForge run their installer in the server directory and only write a
+// marker at this path, so the swap is correct for them too; their libraries are
+// handled separately by stashLoaderLibraries().
+// `source` is a version id, or the download URL for custom servers.
+async function downloadJarSafely(type, source, jarPath) {
+    const tmpPath = jarPath + '.tmp';
+    removeQuietly(tmpPath); // stale sidecar from an interrupted run
+    try {
+        const result = await downloadServerJar(type, source, null, tmpPath);
+        if (fs.existsSync(jarPath)) fs.unlinkSync(jarPath);
+        fs.renameSync(tmpPath, jarPath);
+        return result;
+    } catch (err) {
+        removeQuietly(tmpPath);
+        throw err;
+    }
 }
 
 // Notify all open dashboard/group pages that the server list or grouping changed
@@ -64,16 +258,21 @@ function isTextFile(filename) {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Multer config for transfer archive import — .zip only, no size cap (the
-// archive is streamed to disk on upload and streamed out of the zip on
-// extraction, so size is bounded by disk space, not memory).
+// Transfer archives are .cbx files (a zip container with a Craftbox manifest).
+const IMPORT_EXTENSIONS = ['.cbx'];
+const IMPORT_EXT_ERROR = 'Only .cbx transfer archives are allowed.';
+
+// Multer config for transfer archive import — no size cap (the archive is
+// streamed to disk on upload and streamed out of the zip on extraction, so
+// size is bounded by disk space, not memory).
 const importUpload = multer({
     dest: os.tmpdir(),
     fileFilter: (_req, file, cb) => {
-        if (file.originalname.toLowerCase().endsWith('.zip')) {
+        const name = file.originalname.toLowerCase();
+        if (IMPORT_EXTENSIONS.some(ext => name.endsWith(ext))) {
             cb(null, true);
         } else {
-            cb(new Error('Only .zip files are allowed.'));
+            cb(new Error(IMPORT_EXT_ERROR));
         }
     }
 });
@@ -151,31 +350,25 @@ router.get('/server-types', (req, res) => {
     res.json({ types: listProviders() });
 });
 
-// GET /versions — Fetch versions for a server type (?type=vanilla|paper|...)
+// GET /versions — Fetch versions for a server type
+// (?type=vanilla|paper|...&channel=stable|all — defaults to stable)
 router.get('/versions', async (req, res) => {
     const type = req.query.type || 'vanilla';
+    const channel = req.query.channel === 'all' ? 'all' : 'stable';
     const provider = getProvider(type);
     if (!provider) {
         return res.status(400).json({ error: `Unknown server type: ${type}` });
     }
 
     try {
-        const result = await provider.listVersions();
+        const result = await provider.listVersions({ channel });
         if (!result) {
             return res.json({ versions: [], latest: null });
         }
 
-        const sorted = [...result.versions].sort((a, b) => {
-            const aParts = a.id.split('.').map(Number);
-            const bParts = b.id.split('.').map(Number);
-            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
-                const diff = (bParts[i] || 0) - (aParts[i] || 0);
-                if (diff !== 0) return diff;
-            }
-            return 0;
-        });
-
-        res.json({ versions: sorted, latest: result.latest });
+        // Providers return newest-first chronological order; keep it verbatim —
+        // snapshot ids ("25w03a") have no numeric ordering to re-sort by.
+        res.json({ versions: result.versions, latest: result.latest });
     } catch (err) {
         log('error', `Failed to fetch versions for ${type}: ${err.message}`);
         res.status(500).json({ error: `Failed to fetch versions for ${type}.` });
@@ -280,106 +473,175 @@ router.post('/servers/:id/group', async (req, res) => {
     }
 });
 
-// GET /servers/:id/check-update — Check if a newer build is available
-router.get('/servers/:id/check-update', async (req, res) => {
+// GET /servers/:id/check-upgrade — Check if a newer build is available
+router.get('/servers/:id/check-upgrade', async (req, res) => {
     try {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
         const type = server.serverType || 'vanilla';
         const provider = getProvider(type);
-        if (!provider) return res.json({ updateAvailable: false });
+        if (!provider) return res.json({ upgradeAvailable: false });
 
         if (!provider.getBuilds || type === 'custom') {
-            return res.json({ updateAvailable: false, reason: 'No build tracking for this server type.' });
+            return res.json({ upgradeAvailable: false, reason: 'No build tracking for this server type.' });
         }
 
         const builds = await provider.getBuilds(server.version);
         if (!builds || builds.length === 0) {
-            return res.json({ updateAvailable: false });
+            return res.json({ upgradeAvailable: false });
         }
 
-        const latestBuild = builds[0].build;
+        // getBuilds now includes non-stable channels — prefer the newest
+        // stable build so stable servers aren't offered ALPHA/BETA builds.
+        const preferred = pickPreferredBuild(builds);
+        const latestBuild = preferred.build;
         const currentBuild = server.build;
 
         if (currentBuild == null) {
             return res.json({
-                updateAvailable: false,
+                upgradeAvailable: false,
                 latestBuild,
                 currentBuild: null,
                 reason: 'No build number recorded for this server.'
             });
         }
 
-        const updateAvailable = latestBuild !== currentBuild && latestBuild > currentBuild;
+        const upgradeAvailable = latestBuild !== currentBuild && latestBuild > currentBuild;
         res.json({
-            updateAvailable,
+            upgradeAvailable,
             currentBuild,
             latestBuild,
-            channel: builds[0].channel || null
+            channel: preferred.channel || null
         });
     } catch (err) {
-        log('error', `Check-update failed for ${req.params.id}: ${err.message}`);
+        log('error', `Check-upgrade failed for ${req.params.id}: ${err.message}`);
         res.status(500).json({ error: 'Failed to check for updates.' });
     }
 });
 
-// POST /servers/:id/update-jar — Kick off a jar download. Returns 202 immediately;
+// POST /servers/:id/upgrade-jar — Kick off a jar download. Returns 202 immediately;
 // completion is reported via the per-server WebSocket as
-// { type: 'operation', operation: 'jar-update', status: 'complete'|'failed', ... }.
-router.post('/servers/:id/update-jar', async (req, res) => {
+// { type: 'operation', operation: 'jar-upgrade', status: 'complete'|'failed', ... }.
+router.post('/servers/:id/upgrade-jar', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
 
     const serverManager = req.app.get('serverManager');
     const proc = serverManager?.getProcess(server.id);
     if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-        return res.status(409).json({ error: 'Stop the server before updating the jar.' });
+        return res.status(409).json({ error: 'Stop the server before upgrading the jar.' });
     }
 
     const type = server.serverType || 'vanilla';
     const provider = getProvider(type);
     if (!provider) return res.status(400).json({ error: 'Unknown server type.' });
 
+    // Optional version upgrade in the same operation (edit page "Accept Risk"
+    // flow) — same rules as the edit endpoint: format check, upgrades only.
+    // Custom servers have no tracked version; they upgrade by jar URL instead.
+    const targetVersion = String(req.body?.version || '').trim();
+    const targetUrl = String(req.body?.jarUrl || '').trim();
+    let isVersionChange = false;
+
+    if (type === 'custom') {
+        if (!targetUrl) {
+            return res.status(400).json({ error: 'Custom servers upgrade by URL — provide jarUrl.' });
+        }
+        try {
+            const parsed = new URL(targetUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+        } catch {
+            return res.status(400).json({ error: 'Invalid jar download URL.' });
+        }
+    } else {
+        isVersionChange = !!targetVersion && targetVersion !== server.version;
+        if (isVersionChange) {
+            if (!MC_VERSION_RE.test(targetVersion)) {
+                return res.status(400).json({ error: 'Invalid version format.' });
+            }
+            if (await isVersionDowngrade(type, server.version, targetVersion, server.id)) {
+                return res.status(400).json({ error: 'Version downgrades are not permitted.' });
+            }
+        }
+    }
+
     const initiatedBy = req.user.username;
 
+    // Optional pre-upgrade backup — mirrors the restart-with-backup flow:
+    // claim the backup lock synchronously so the 409 happens before the 202.
+    const backupFirst = req.body?.backup === true || req.body?.backup === 'true';
+    const { runBackupJob, tryAcquireBackupLock, releaseBackupLock, formatSize } = require('../../mc/BackupManager');
+    if (backupFirst && !tryAcquireBackupLock(server.id)) {
+        return res.status(409).json({ error: 'A backup is already in progress for this server.' });
+    }
+
+    let lockOwnedByRoute = backupFirst;
     try {
-        await serverManager.setOperationalState(server.id, STATES.UPDATING_JAR);
+        await serverManager.setOperationalState(server.id, backupFirst ? STATES.BACKING_UP : STATES.UPGRADING_JAR);
+        lockOwnedByRoute = false;
         res.status(202).json({ success: true, status: 'started' });
 
         (async () => {
+            let libStash = null;
             try {
-                const jarPath = path.join(SERVERS_DIR, server.id, server.jarFile || 'server.jar');
-                const result = await downloadServerJar(type, server.version, null, jarPath);
+                if (backupFirst) {
+                    const backup = await runBackupJob(server.id, 'Pre-upgrade backup', 'manual');
+                    logEvent(server.id, 'action', 'Pre-upgrade backup created', { initiatedBy }).catch(() => {});
+                    serverManager.broadcastOperation(server.id, 'backup', 'complete', {
+                        backup: { ...backup, sizeFormatted: formatSize(backup.size) }
+                    });
+                    await serverManager.setOperationalState(server.id, STATES.STOPPED);
+                    await serverManager.setOperationalState(server.id, STATES.UPGRADING_JAR);
+                }
 
-                if (result?.build) {
-                    const fresh = await serversDb.get(`server_${server.id}`);
-                    if (fresh) {
-                        fresh.build = result.build;
-                        await serversDb.set(`server_${server.id}`, fresh);
-                    }
+                libStash = isVersionChange ? stashLoaderLibraries(type, server.id, server.name) : null;
+                const jarPath = path.join(SERVERS_DIR, server.id, server.jarFile || 'server.jar');
+                const source = type === 'custom'
+                    ? targetUrl
+                    : (isVersionChange ? targetVersion : server.version);
+                const result = await downloadJarSafely(type, source, jarPath);
+                libStash?.commit();
+
+                const fresh = await serversDb.get(`server_${server.id}`);
+                if (fresh) {
+                    if (type === 'custom') fresh.customJarUrl = targetUrl;
+                    if (isVersionChange) fresh.version = targetVersion;
+                    if (result?.build) fresh.build = result.build;
+                    fresh.javaMajor = result?.javaMajor || null;
+                    await serversDb.set(`server_${server.id}`, fresh);
+                    const freshProc = serverManager?.getProcess(server.id);
+                    if (freshProc) Object.assign(freshProc.config, fresh);
                 }
 
                 await serverManager.setOperationalState(server.id, STATES.STOPPED);
-                logEvent(server.id, 'jar_update', `Jar updated to build ${result?.build || 'latest'}`, { initiatedBy }).catch(() => {});
-                log('info', `Server "${server.name}" jar updated to build ${result?.build || 'latest'}.`);
-                serverManager.broadcastOperation(server.id, 'jar-update', 'complete', {
+                const doneMsg = type === 'custom'
+                    ? 'Jar replaced from new URL'
+                    : isVersionChange
+                        ? `Upgraded from ${server.version} to ${targetVersion}${result?.build ? ` (build ${result.build})` : ''}`
+                        : `Jar upgraded to build ${result?.build || 'latest'}`;
+                logEvent(server.id, 'jar_upgrade', doneMsg, { initiatedBy }).catch(() => {});
+                log('info', `Server "${server.name}": ${doneMsg}.`);
+                if (isVersionChange) notifyDashboard(req);
+                serverManager.broadcastOperation(server.id, 'jar-upgrade', 'complete', {
                     build: result?.build || null,
-                    version: server.version
+                    version: isVersionChange ? targetVersion : server.version
                 });
             } catch (err) {
-                log('error', `Update-jar failed for ${server.id}: ${err.message}`);
-                logEvent(server.id, 'jar_update_fail', `Jar update failed: ${err.message}`, { initiatedBy }).catch(() => {});
+                libStash?.rollback();
+                log('error', `Jar upgrade failed for ${server.id}: ${err.message}`);
+                logEvent(server.id, 'jar_upgrade_fail', `Jar upgrade failed: ${err.message}`, { initiatedBy }).catch(() => {});
                 try {
                     await serverManager.setOperationalState(server.id, STATES.STOPPED);
                 } catch (_) {}
-                serverManager.broadcastOperation(server.id, 'jar-update', 'failed', err.message);
+                serverManager.broadcastOperation(server.id, 'jar-upgrade', 'failed', err.message);
             }
         })();
     } catch (err) {
-        log('error', `Update-jar setup failed for ${req.params.id}: ${err.message}`);
+        if (lockOwnedByRoute) releaseBackupLock(server.id);
+        log('error', `Jar upgrade setup failed for ${req.params.id}: ${err.message}`);
         if (!res.headersSent) {
-            res.status(500).json({ error: `Failed to update jar: ${err.message}` });
+            res.status(500).json({ error: `Failed to upgrade jar: ${err.message}` });
         }
     }
 });
@@ -793,7 +1055,7 @@ router.post('/servers', async (req, res) => {
 
     const versionStr = String(version || '').trim();
     if (type !== 'custom') {
-        if (!versionStr || (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(versionStr) && versionStr !== 'latest')) {
+        if (!versionStr || (!MC_VERSION_RE.test(versionStr) && versionStr !== 'latest')) {
             return res.status(400).json({ error: 'Invalid Minecraft version format.' });
         }
     }
@@ -867,6 +1129,7 @@ router.post('/servers', async (req, res) => {
                 const fresh = await serversDb.get(`server_${id}`);
                 if (fresh) {
                     fresh.build = downloadResult?.build || null;
+                    fresh.javaMajor = downloadResult?.javaMajor || null;
                     fresh.state = STATES.STOPPED;
                     await serversDb.set(`server_${id}`, fresh);
                 }
@@ -1029,6 +1292,7 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
             fresh.serverType = result.serverType;
             fresh.version = result.mcVersion;
             fresh.build = result.build;
+            fresh.javaMajor = result.javaMajor || null;
             fresh.state = STATES.STOPPED;
             if (fresh.modpack) {
                 fresh.modpack.installedAt = new Date().toISOString();
@@ -1049,8 +1313,9 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
         const clientNote = result.clientOnlyMods.length > 0
             ? `, ${result.clientOnlyMods.length} client-only`
             : '';
-        logEvent(id, 'action', `Installed modpack "${packLabel}"${result.manifestVersionId ? ` ${result.manifestVersionId}` : ''} (${result.filesInstalled} files${clientNote})`, { initiatedBy }).catch(() => {});
-        log('info', `Server "${name}" (${id}) provisioned from modpack "${packLabel}" (${result.filesInstalled} files).`);
+        const summary = `${result.filesInstalled} files, ${result.modsInstalled} mods${clientNote}`;
+        logEvent(id, 'action', `Installed modpack "${packLabel}"${result.manifestVersionId ? ` ${result.manifestVersionId}` : ''} (${summary})`, { initiatedBy }).catch(() => {});
+        log('info', `Server "${name}" (${id}) provisioned from modpack "${packLabel}" (${summary}).`);
     } catch (err) {
         log('error', `Modpack install failed for "${name}" (${id}): ${err.message}`);
         await markProvisionFailed(req, id, 'modpack-install', err.message, 'Modpack install failed');
@@ -1415,9 +1680,10 @@ const importServerHandler = async (req, res) => {
         return rejectImport(400, 'No archive uploaded.');
     }
 
+    // .cbx is a zip container — check the magic bytes, not just the extension.
     if (!isZipFile(tmpPath)) {
         cleanupTemp();
-        return rejectImport(400, 'Not a valid zip archive.');
+        return rejectImport(400, 'Not a valid Craftbox transfer archive.');
     }
 
     // node-stream-zip reads entry data from disk on demand — archive size is
@@ -1681,9 +1947,9 @@ router.use('/servers/import/upload', createDgupRouter({
     field: 'archive',
     fileMode: 'single',
     maxBytes: Infinity,
-    ext: ['.zip'],
-    extError: 'Only .zip files are allowed.',
-    mimetype: 'application/zip'
+    ext: IMPORT_EXTENSIONS,
+    extError: IMPORT_EXT_ERROR,
+    mimetype: 'application/x-craftbox-export+zip'
 }, importServerHandler));
 
 // POST /servers/:id/duplicate
@@ -1895,129 +2161,137 @@ router.post('/servers/:id/edit', async (req, res) => {
 
     const type = server.serverType || 'vanilla';
     const newVersion = String(version || '').trim();
-    let versionChanged = false;
 
-    if (type !== 'custom' && newVersion && newVersion !== server.version) {
-        if (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(newVersion)) {
-            return res.status(400).json({ error: 'Invalid version format.' });
-        }
+    // Everything that mutates the server, deferred into one closure so the
+    // backup path can run it only once a restore point exists. Throws
+    // httpError; callers map that to a status code or a WebSocket failure.
+    const applyEdit = async () => {
+        let versionChanged = false;
 
-        const curParts = server.version.split('.').map(Number);
-        const newParts = newVersion.split('.').map(Number);
-        let isDowngrade = false;
-        for (let i = 0; i < Math.max(curParts.length, newParts.length); i++) {
-            const diff = (newParts[i] || 0) - (curParts[i] || 0);
-            if (diff < 0) { isDowngrade = true; break; }
-            if (diff > 0) break;
-        }
-        if (isDowngrade) {
-            return res.status(400).json({ error: 'Version downgrades are not permitted.' });
-        }
-
-        const serverManager = req.app.get('serverManager');
-        const proc = serverManager?.getProcess(id);
-        if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-            return res.status(409).json({ error: 'Stop the server before changing the version.' });
-        }
-
-        let libBackupPath = null;
-        try {
-            if (type === 'forge' || type === 'neoforge') {
-                const libSubdir = type === 'neoforge'
-                    ? path.join(SERVERS_DIR, id, 'libraries', 'net', 'neoforged', 'neoforge')
-                    : path.join(SERVERS_DIR, id, 'libraries', 'net', 'minecraftforge', 'forge');
-                if (fs.existsSync(libSubdir)) {
-                    libBackupPath = libSubdir + '.tmp';
-                    fs.renameSync(libSubdir, libBackupPath);
-                    log('info', `[${server.name}] Moved old ${type} libraries to .tmp before upgrade.`);
-                }
+        if (type !== 'custom' && newVersion && newVersion !== server.version) {
+            if (!MC_VERSION_RE.test(newVersion)) {
+                throw httpError(400, 'Invalid version format.');
+            }
+            if (await isVersionDowngrade(type, server.version, newVersion, id)) {
+                throw httpError(400, 'Version downgrades are not permitted.');
             }
 
-            const jarPath = path.join(SERVERS_DIR, id, server.jarFile || 'server.jar');
-            const result = await downloadServerJar(type, newVersion, null, jarPath);
-            const oldVersion = server.version;
-            server.version = newVersion;
-            if (result?.build) server.build = result.build;
-            versionChanged = true;
-            log('info', `Server "${server.name}" upgraded from ${oldVersion} to ${newVersion}.`);
-
-            if (libBackupPath && fs.existsSync(libBackupPath)) {
-                fs.rmSync(libBackupPath, { recursive: true, force: true });
-            }
-        } catch (err) {
-            if (libBackupPath && fs.existsSync(libBackupPath)) {
-                const libSubdir = libBackupPath.replace(/\.tmp$/, '');
-                fs.renameSync(libBackupPath, libSubdir);
-                log('info', `[${server.name}] Restored old ${type} libraries after failed upgrade.`);
-            }
-            log('error', `Version upgrade failed for ${id}: ${err.message}`);
-            return res.status(500).json({ error: `Failed to upgrade version: ${err.message}` });
-        }
-    }
-
-    let jarChanged = false;
-    if (type === 'custom' && customJarUrl) {
-        const newUrl = String(customJarUrl).trim();
-        if (newUrl && newUrl !== (server.customJarUrl || '')) {
-            const serverManager = req.app.get('serverManager');
-            const proc = serverManager?.getProcess(id);
+            const proc = req.app.get('serverManager')?.getProcess(id);
             if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-                return res.status(409).json({ error: 'Stop the server before changing the jar URL.' });
+                throw httpError(409, 'Stop the server before changing the version.');
             }
 
+            const libStash = stashLoaderLibraries(type, id, server.name);
             try {
                 const jarPath = path.join(SERVERS_DIR, id, server.jarFile || 'server.jar');
-                const tmpPath = jarPath + '.tmp';
-                await downloadServerJar('custom', newUrl, null, tmpPath);
-                if (fs.existsSync(jarPath)) fs.unlinkSync(jarPath);
-                fs.renameSync(tmpPath, jarPath);
-                server.customJarUrl = newUrl;
-                jarChanged = true;
-                log('info', `Server "${server.name}" jar replaced from new URL.`);
+                const result = await downloadJarSafely(type, newVersion, jarPath);
+                libStash?.commit();
+                const oldVersion = server.version;
+                server.version = newVersion;
+                if (result?.build) server.build = result.build;
+                // Set-or-clear so a stale Java requirement never survives a version change
+                server.javaMajor = result?.javaMajor || null;
+                versionChanged = true;
+                log('info', `Server "${server.name}" upgraded from ${oldVersion} to ${newVersion}.`);
             } catch (err) {
-                log('error', `Custom jar download failed for ${id}: ${err.message}`);
-                return res.status(500).json({ error: `Failed to download jar: ${err.message}` });
+                libStash?.rollback();
+                log('error', `Version upgrade failed for ${id}: ${err.message}`);
+                throw httpError(500, `Failed to upgrade version: ${err.message}`);
             }
         }
-    }
 
-    const previousGroup = server.group || null;
-    server.name = trimmedName;
-    server.port = portNum;
-    server.memory = memoryNum;
-    server.javaArgs = safeJavaArgs;
-    server.gamemode = gamemodeStr;
-    server.difficulty = difficultyStr;
-    server.seed = seedStr;
-    server.group = groupResult.value;
-    await serversDb.set(`server_${id}`, server);
+        let jarChanged = false;
+        if (type === 'custom' && customJarUrl) {
+            const newUrl = String(customJarUrl).trim();
+            if (newUrl && newUrl !== (server.customJarUrl || '')) {
+                const proc = req.app.get('serverManager')?.getProcess(id);
+                if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+                    throw httpError(409, 'Stop the server before changing the jar URL.');
+                }
 
-    // Best-effort cleanup of the old group's color if it emptied — a failure
-    // here must not fail the edit, which already saved.
-    if (previousGroup && previousGroup !== server.group) {
-        try {
-            await pruneGroupMetaIfEmpty(previousGroup);
-        } catch (err) {
-            log('error', `Group cleanup failed for "${previousGroup}": ${err.message}`);
+                try {
+                    const jarPath = path.join(SERVERS_DIR, id, server.jarFile || 'server.jar');
+                    await downloadJarSafely('custom', newUrl, jarPath);
+                    server.customJarUrl = newUrl;
+                    jarChanged = true;
+                    log('info', `Server "${server.name}" jar replaced from new URL.`);
+                } catch (err) {
+                    log('error', `Custom jar download failed for ${id}: ${err.message}`);
+                    throw httpError(500, `Failed to download jar: ${err.message}`);
+                }
+            }
         }
-    }
 
-    const serverDir = path.join(SERVERS_DIR, id);
-    if (fs.existsSync(path.join(serverDir, 'server.properties'))) {
-        updateServerProperties(serverDir, {
-            'server-port': String(portNum),
-            'gamemode': gamemodeStr,
-            'difficulty': difficultyStr,
-            'level-seed': seedStr
+        // `server` was snapshotted when the request arrived, and the restore-point
+        // path stops the server, backs it up and restarts it around this call — so
+        // its runtime fields are stale by now. Take those from the current record
+        // instead of writing our copy back: persisting a stale `state: "running"`
+        // makes _ensureProcess rebuild the process in that state, and the restart
+        // then dies with "Cannot start server in state: running".
+        const current = await serversDb.get(`server_${id}`);
+        if (current) {
+            server.state = current.state;
+            server.crashReason = current.crashReason;
+            server.exitCode = current.exitCode;
+            server.lastStarted = current.lastStarted;
+            server.lastStopped = current.lastStopped;
+        }
+
+        const previousGroup = server.group || null;
+        server.name = trimmedName;
+        server.port = portNum;
+        server.memory = memoryNum;
+        server.javaArgs = safeJavaArgs;
+        server.gamemode = gamemodeStr;
+        server.difficulty = difficultyStr;
+        server.seed = seedStr;
+        server.group = groupResult.value;
+        await serversDb.set(`server_${id}`, server);
+
+        // Best-effort cleanup of the old group's color if it emptied — a failure
+        // here must not fail the edit, which already saved.
+        if (previousGroup && previousGroup !== server.group) {
+            try {
+                await pruneGroupMetaIfEmpty(previousGroup);
+            } catch (err) {
+                log('error', `Group cleanup failed for "${previousGroup}": ${err.message}`);
+            }
+        }
+
+        const serverDir = path.join(SERVERS_DIR, id);
+        if (fs.existsSync(path.join(serverDir, 'server.properties'))) {
+            updateServerProperties(serverDir, {
+                'server-port': String(portNum),
+                'gamemode': gamemodeStr,
+                'difficulty': difficultyStr,
+                'level-seed': seedStr
+            });
+        }
+
+        const proc = req.app.get('serverManager')?.getProcess(id);
+        if (proc) Object.assign(proc.config, server);
+
+        return { versionChanged, jarChanged };
+    };
+
+    // A backup taken after the save can't undo it — so when one is asked for,
+    // it is taken first and the edit is applied on the far side of it.
+    if (req.body?.backup === true || req.body?.backup === 'true') {
+        return runWithRestorePoint({
+            req, res, server,
+            label: 'Pre-edit backup',
+            operation: 'settings-save',
+            apply: applyEdit
         });
     }
 
-    const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(id);
-    if (proc) Object.assign(proc.config, server);
-
-    notifyDashboard(req);
-    res.json({ success: true, server, versionChanged, jarChanged });
+    try {
+        const { versionChanged, jarChanged } = await applyEdit();
+        notifyDashboard(req);
+        res.json({ success: true, server, versionChanged, jarChanged });
+    } catch (err) {
+        res.status(err.status || 500).json({ error: err.message });
+    }
 });
 
 // POST /servers/:id/properties — Update server.properties
@@ -2026,22 +2300,38 @@ router.post('/servers/:id/properties', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
 
-    const serverDir = path.join(SERVERS_DIR, id);
-    const currentProps = parseServerProperties(serverDir);
-    const updates = {};
+    const applyProperties = async () => {
+        const serverDir = path.join(SERVERS_DIR, id);
+        const currentProps = parseServerProperties(serverDir);
+        const updates = {};
 
-    for (const key of Object.keys(currentProps)) {
-        const meta = PROPERTY_META[key];
-        if (meta && meta.type === 'boolean') {
-            updates[key] = req.body[key] === 'true' || req.body[key] === true ? 'true' : 'false';
-        } else if (req.body[key] !== undefined) {
-            updates[key] = String(req.body[key]);
+        for (const key of Object.keys(currentProps)) {
+            // `backup` is this endpoint's own flag, never a Minecraft property.
+            if (key === 'backup') continue;
+            const meta = PROPERTY_META[key];
+            if (meta && meta.type === 'boolean') {
+                updates[key] = req.body[key] === 'true' || req.body[key] === true ? 'true' : 'false';
+            } else if (req.body[key] !== undefined) {
+                updates[key] = String(req.body[key]);
+            }
         }
+
+        updateServerProperties(serverDir, updates);
+        await syncServerConfig(id);
+        return {};
+    };
+
+    // As with /edit: a backup only rolls the change back if it predates it.
+    if (req.body?.backup === true || req.body?.backup === 'true') {
+        return runWithRestorePoint({
+            req, res, server,
+            label: 'Pre-properties backup',
+            operation: 'settings-save',
+            apply: applyProperties
+        });
     }
 
-    updateServerProperties(serverDir, updates);
-    await syncServerConfig(id);
-
+    await applyProperties();
     res.json({ success: true });
 });
 

@@ -155,9 +155,12 @@ async function runPool(items, concurrency, worker) {
  * @param {object} opts.baseConfig - { port, gamemode, difficulty, seed } for server.properties
  * @param {string|null} [opts.iconUrl] - Modrinth CDN icon to use as the server icon (non-fatal)
  * @param {function} [opts.onProgress] - (phase, done, total)
- * @returns {Promise<{serverType, mcVersion, loaderBuild, build, filesInstalled, clientOnlyMods, manifestName, manifestVersionId, warnings}>}
- *   clientOnlyMods holds the filenames written pre-disabled; the caller persists
- *   them to the mod environment map.
+ * @returns {Promise<{serverType, mcVersion, loaderBuild, build, filesInstalled, modsInstalled, clientOnlyMods, manifestName, manifestVersionId, warnings}>}
+ *   filesInstalled counts manifest downloads plus override files; modsInstalled
+ *   counts every jar landing in mods/ from either source, client-only ones
+ *   included — it is what the mods page will list, and what the 'files' progress
+ *   phase counts towards. clientOnlyMods holds the filenames written pre-disabled;
+ *   the caller persists them to the mod environment map.
  */
 async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl, onProgress }) {
     const emit = onProgress || (() => {});
@@ -191,6 +194,9 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
         const files = [];
         const seenPaths = new Set();
         const clientOnlyMods = [];
+        // Every jar that ends up in mods/, from the manifest or from an override.
+        // Keyed by filename so an override replacing a manifest mod counts once.
+        const modJars = new Set();
         let totalBytes = 0;
         for (const f of manifest.files) {
             const rel = String(f?.path || '').replace(/\\/g, '/');
@@ -202,12 +208,15 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
             }
             seenPaths.add(relKey);
             let dest = sanitizeEntryPath(serverDir, rel);
-            // Client-only mods are still installed, but land pre-disabled and
-            // tagged 'client' so the loader ignores them while players can pull
-            // them from the status page's mods download.
-            if (f?.env?.server === 'unsupported' && MOD_JAR_RE.test(rel)) {
-                clientOnlyMods.push(path.basename(rel));
-                dest += DISABLED_SUFFIX;
+            if (MOD_JAR_RE.test(rel)) {
+                modJars.add(path.basename(rel).toLowerCase());
+                // Client-only mods are still installed, but land pre-disabled and
+                // tagged 'client' so the loader ignores them while players can pull
+                // them from the status page's mods download.
+                if (f?.env?.server === 'unsupported') {
+                    clientOnlyMods.push(path.basename(rel));
+                    dest += DISABLED_SUFFIX;
+                }
             }
             const url = (f.downloads || []).find((u) => {
                 try { assertWhitelistedUrl(u); return true; } catch { return false; }
@@ -229,6 +238,24 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
         if (clientOnlyMods.length > 0) {
             log('info', `Modpack install ${serverId}: installing ${clientOnlyMods.length} client-only mod(s) disabled.`);
         }
+
+        // Progress counts mods, not raw files: mods are what a pack is measured
+        // in and what the mods page shows afterwards, while the manifest's file
+        // list also carries resource packs and shaders. Override jars belong in
+        // the total — packs routinely ship mods there as well as in the manifest
+        // — and a manifest mod that an override replaces is one mod, not two.
+        for (const entry of overrideEntries) {
+            if (entry.isDirectory) continue;
+            const rel = String(entry.name).replace(/\\/g, '/').replace(/^(server-)?overrides\//, '');
+            if (MOD_JAR_RE.test(rel)) modJars.add(path.basename(rel).toLowerCase());
+        }
+        const totalMods = modJars.size;
+        const installedMods = new Set();
+        const trackMod = (rel) => {
+            if (!MOD_JAR_RE.test(rel)) return;
+            installedMods.add(path.basename(rel).toLowerCase());
+            emit('files', installedMods.size, totalMods);
+        };
 
         // Disk preflight (same approach as DGUP init) — fail fast rather than
         // half-installing into a full disk. statfs is unavailable on some
@@ -253,8 +280,7 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
         }
 
         // ── Phase 4: download the pack files ──
-        emit('files', 0, files.length);
-        let done = 0;
+        emit('files', 0, totalMods);
         await runPool(files, DOWNLOAD_CONCURRENCY, async (file) => {
             let attempt = 0;
             for (;;) {
@@ -275,7 +301,7 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
                     await new Promise((r) => setTimeout(r, backoff));
                 }
             }
-            emit('files', ++done, files.length);
+            trackMod(file.rel);
         });
 
         // ── Phase 5: apply overrides/ then server-overrides/ (later wins;
@@ -290,6 +316,7 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
                 stm.pipe(out);
             }).catch(reject);
         });
+        let overridesInstalled = 0;
         for (const prefix of ['overrides/', 'server-overrides/']) {
             for (const entry of Object.values(entries)) {
                 const entryName = String(entry.name).replace(/\\/g, '/');
@@ -302,6 +329,8 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
                 } else {
                     await fs.promises.mkdir(path.dirname(target), { recursive: true });
                     await streamEntryTo(entry.name, target);
+                    overridesInstalled++;
+                    trackMod(relative);
                 }
             }
         }
@@ -339,7 +368,9 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
             mcVersion,
             loaderBuild,
             build: dl?.build ?? loaderBuild ?? null,
-            filesInstalled: files.length,
+            javaMajor: dl?.javaMajor ?? null,
+            filesInstalled: files.length + overridesInstalled,
+            modsInstalled: installedMods.size,
             clientOnlyMods,
             manifestName: manifest.name || null,
             manifestVersionId: manifest.versionId || null,

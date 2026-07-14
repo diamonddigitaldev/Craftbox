@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const { log } = require('../../utils/log');
 const { getJavaForVersion } = require('../../utils/javaVersion');
 const { verifyChecksum } = require('./_verifyChecksum');
+const { pickPreferredBuild } = require('./_channels');
 
 const MAVEN_API = 'https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge';
 const MAVEN_BASE = 'https://maven.neoforged.net/releases/net/neoforged/neoforge';
@@ -42,38 +43,46 @@ module.exports = {
     icon: 'construction',
     logo: '/img/server-types/neoforge.svg',
 
-    async listVersions() {
+    async listVersions({ channel = 'stable' } = {}) {
         const res = await fetch(MAVEN_API);
         if (!res.ok) throw new Error(`Failed to fetch NeoForge versions: HTTP ${res.status}`);
         const data = await res.json();
 
-        const stableVersions = (data.versions || []).filter(isStable);
+        // April-Fools "craftmine" builds don't map to real MC versions — always excluded.
+        const allVersions = (data.versions || []).filter(v => !/craftmine/i.test(v));
 
-        // Group by MC version prefix (e.g. "20.4", "21.1")
-        const mcVersions = new Set();
-        for (const v of stableVersions) {
+        // Group by MC version prefix (e.g. "20.4", "21.1"), tracking whether the
+        // prefix has any stable NeoForge build. An MC version whose builds are
+        // all -beta (early lifecycle) is labeled 'beta'.
+        const prefixHasStable = new Map();
+        for (const v of allVersions) {
             const dotIdx = v.indexOf('.');
             const secondDotIdx = v.indexOf('.', dotIdx + 1);
             if (secondDotIdx === -1) continue;
             const prefix = v.substring(0, secondDotIdx);
-            mcVersions.add(prefix);
+            prefixHasStable.set(prefix, prefixHasStable.get(prefix) || isStable(v));
         }
 
         // Sort prefixes descending and convert to MC versions
-        const sorted = [...mcVersions].sort((a, b) => {
-            const aParts = a.split('.').map(Number);
-            const bParts = b.split('.').map(Number);
-            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
-                const diff = (bParts[i] || 0) - (aParts[i] || 0);
-                if (diff !== 0) return diff;
-            }
-            return 0;
-        });
+        const sorted = [...prefixHasStable.keys()]
+            .filter(prefix => channel === 'all' || prefixHasStable.get(prefix))
+            .sort((a, b) => {
+                const aParts = a.split('.').map(Number);
+                const bParts = b.split('.').map(Number);
+                for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+                    const diff = (bParts[i] || 0) - (aParts[i] || 0);
+                    if (diff !== 0) return diff;
+                }
+                return 0;
+            });
 
-        const versions = sorted.map(prefix => ({ id: neoPrefixToMc(prefix) }));
+        const versions = sorted.map(prefix => ({
+            id: neoPrefixToMc(prefix),
+            channel: prefixHasStable.get(prefix) ? 'stable' : 'beta'
+        }));
         return {
             versions,
-            latest: versions[0]?.id || null
+            latest: versions.find(v => v.channel === 'stable')?.id || null
         };
     },
 
@@ -85,10 +94,10 @@ module.exports = {
         const data = await res.json();
 
         const matching = (data.versions || [])
-            .filter(v => isStable(v) && v.startsWith(prefix + '.'))
+            .filter(v => !/craftmine/i.test(v) && v.startsWith(prefix + '.'))
             .map(v => {
                 const buildNum = parseInt(v.split('.')[2], 10);
-                return { build: v, channel: 'release', _buildNum: buildNum };
+                return { build: v, channel: isStable(v) ? 'release' : 'beta', _buildNum: buildNum };
             })
             .sort((a, b) => b._buildNum - a._buildNum);
 
@@ -96,13 +105,14 @@ module.exports = {
     },
 
     async downloadJar(version, build, destPath) {
-        // Auto-select latest build if none specified
+        // Auto-select the newest stable build if none specified; MC versions
+        // with only beta builds fall back to the newest beta.
         if (!build) {
             const builds = await this.getBuilds(version);
             if (!builds || builds.length === 0) {
                 throw new Error(`No NeoForge builds available for MC ${version}.`);
             }
-            build = builds[0].build;
+            build = pickPreferredBuild(builds).build;
         }
 
         const installerUrl = `${MAVEN_BASE}/${build}/neoforge-${build}-installer.jar`;

@@ -4,39 +4,35 @@
     if (!modalEl) return;
 
     const restartBtn = document.getElementById('restart-now-btn');
-    const backupCheckbox = document.getElementById('restartBackup');
 
+    // No backup option here: a backup taken at this point is already too late to
+    // undo the change that was just saved. The "Create backup before saving"
+    // checkbox on the save form takes the restore point up front instead.
     if (restartBtn) {
         restartBtn.addEventListener('click', async function () {
-            const wantBackup = backupCheckbox && backupCheckbox.checked;
-
             restartBtn.disabled = true;
-            restartBtn.innerHTML = wantBackup
-                ? '<span class="spinner-border spinner-border-sm"></span> Backing up & restarting...'
-                : '<span class="spinner-border spinner-border-sm"></span> Restarting...';
+            restartBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restarting...';
 
             bootstrap.Modal.getInstance(modalEl)?.hide();
-            showOverlay(
-                wantBackup ? 'Backing up & restarting...' : 'Restarting server...',
-                wantBackup ? 'Creating a backup before restarting. This may take a moment.' : 'Please wait while the server restarts.'
-            );
 
             const serverId = restartBtn.dataset.serverId;
 
             var res = await apiFetch('/api/v1/servers/' + serverId + '/restart', {
                 method: 'POST',
-                body: wantBackup ? { backup: true } : {}
+                body: {}
             });
 
+            restartBtn.disabled = false;
+            restartBtn.textContent = 'Restart Now';
+
             if (!res.ok) {
-                hideOverlay();
                 showToast((res.data && (res.data.message || res.data.error)) || 'Failed to restart server.', 'danger');
-                restartBtn.disabled = false;
-                restartBtn.textContent = 'Restart Now';
                 return;
             }
-            flashToast((res.data && res.data.message) || 'Server is restarting...', 'success');
-            window.location.href = '/servers/' + serverId;
+            // Stay on the page the user was working on — no overlay, no redirect.
+            // The nav header's state badge tracks the restart live over the
+            // WebSocket, so there is nothing to navigate to.
+            showToast((res.data && res.data.message) || 'Server is restarting...', 'success');
         });
     }
 

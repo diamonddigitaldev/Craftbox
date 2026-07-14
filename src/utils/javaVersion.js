@@ -35,13 +35,30 @@ const _hasTemurin = process.platform !== 'win32' &&
  *   1.20.5 - 1.21.x+  → Java 21
  *   26.x+             → Java 25  (new year.drop.patch versioning from 2026)
  *
- * @param {string} mcVersion - e.g. "1.20.4", "1.21.1", "26.1"
+ * Snapshot ids ("25w03a") carry no dotted version — mapped by snapshot year
+ * to the corresponding release era. Pre-release/rc suffixes ("1.20.5-rc1",
+ * "1.14 Pre-Release 5") resolve like their target release.
+ *
+ * This is the offline heuristic; a server record's `javaMajor` (looked up
+ * from Mojang metadata at download time) takes precedence when present.
+ *
+ * @param {string} mcVersion - e.g. "1.20.4", "1.21.1", "26.1", "25w03a"
  * @returns {number} Java major version (8, 17, 21, 25)
  */
 function getRequiredJavaVersion(mcVersion) {
     if (!mcVersion || typeof mcVersion !== 'string') return 25;
 
-    const parts = mcVersion.split('.').map(Number);
+    const snapshot = /^(\d{2})w\d{2}/.exec(mcVersion);
+    if (snapshot) {
+        const year = parseInt(snapshot[1], 10);
+        if (year >= 26) return 25;
+        if (year >= 24) return 21;  // 1.20.5 / 1.21 era
+        if (year >= 21) return 17;  // 1.17 - 1.20.4 era
+        return 8;                    // 1.16.x era and older
+    }
+
+    const cleaned = mcVersion.replace(/[ _-]?(?:pre|rc).*$/i, '');
+    const parts = cleaned.split('.').map(Number);
     const major = parts[0] || 0;
 
     // New versioning: 26.x+ (year.drop.patch) requires Java 25
@@ -51,6 +68,11 @@ function getRequiredJavaVersion(mcVersion) {
     const minor = parts[1] || 0;
     const patch = parts[2] || 0;
 
+    // NeoForge represents year.drop MC versions as pseudo 1.x ids ("1.26.1"
+    // means MC 26.1). Real 1.x versioning ended at 1.21, so 1.26+ can only
+    // mean the new era.
+    if (minor >= 26) return 25;
+
     if (minor >= 21) return 21;
     if (minor === 20 && patch >= 5) return 21;
     if (minor >= 17) return 17;  // 1.17 - 1.20.4
@@ -58,25 +80,24 @@ function getRequiredJavaVersion(mcVersion) {
 }
 
 /**
- * Get the Java binary path for a given Minecraft version.
+ * Get the Java binary path for a required Java major version.
  *
- * In Docker (Temurin paths detected): picks the exact JRE for the MC version,
- * falling back to the closest available version if that exact one is missing.
+ * In Docker (Temurin paths detected): picks the exact JRE, falling back to
+ * the next higher installed version (e.g. Mojang's 16 → Temurin 17).
  *
  * Standalone Linux / Windows: returns 'java' (system PATH).
  *
- * @param {string} mcVersion - e.g. "1.20.4"
+ * @param {number} required - Java major version (e.g. 8, 16, 17, 21, 25)
  * @returns {string} Path to java binary
  */
-function getJavaForVersion(mcVersion) {
+function getJavaForMajor(required) {
     // Windows or standalone Linux — use system java
     if (process.platform === 'win32' || !_hasTemurin) {
         return 'java';
     }
 
-    const required = getRequiredJavaVersion(mcVersion);
     const exactPath = TEMURIN_PATHS[required];
-    if (fs.existsSync(exactPath)) return exactPath;
+    if (exactPath && fs.existsSync(exactPath)) return exactPath;
 
     // Exact version not installed — try the next higher version that exists
     const allVersions = [8, 17, 21, 25];
@@ -87,6 +108,16 @@ function getJavaForVersion(mcVersion) {
     }
 
     return getDefaultJava();
+}
+
+/**
+ * Get the Java binary path for a given Minecraft version.
+ *
+ * @param {string} mcVersion - e.g. "1.20.4"
+ * @returns {string} Path to java binary
+ */
+function getJavaForVersion(mcVersion) {
+    return getJavaForMajor(getRequiredJavaVersion(mcVersion));
 }
 
 /**
@@ -108,4 +139,4 @@ function getDefaultJava() {
     return 'java';
 }
 
-module.exports = { getJavaForVersion, getDefaultJava, getRequiredJavaVersion, TEMURIN_PATHS };
+module.exports = { getJavaForVersion, getJavaForMajor, getDefaultJava, getRequiredJavaVersion, TEMURIN_PATHS };
