@@ -79,7 +79,7 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 
 `stopped`, `starting`, `running`, `stopping`, `crashed`, `provisioning`, `backing_up`, `restoring`, `upgrading_jar`.
 
-> `upgrading_jar` was named `updating_jar` before 1.1.0-beta.5 — clients matching on the old value should update.
+> `upgrading_jar` was named `updating_jar` before 1.1.0 — clients matching on the old value should update.
 
 Allowed lifecycle actions: **start** from `stopped`/`crashed`; **stop** from `running`/`starting`; **restart** from `running`; **kill** from `running`/`starting`/`stopping`.
 
