@@ -6,11 +6,33 @@ const { STATES } = require('./stateMachine');
 
 /**
  * Check if a Minecraft version supports tellraw (added in 1.7.2).
- * Falls back to false for unparseable or missing versions.
+ *
+ * Handles both id eras: legacy 1.x.y and the year.drop.patch versioning that
+ * started in 2026 ("26.2"), where the leading number is a year rather than a
+ * fixed 1. Snapshot ids ("25w03a") map by snapshot year; pre/rc suffixes
+ * resolve like their target release.
+ *
+ * Falls back to false (plain `say`) for missing, pre-1.0 or unparseable ids.
  */
 function supportsTellraw(version) {
     if (!version || typeof version !== 'string') return false;
-    const parts = version.split('.').map(Number);
+
+    const snapshot = /^(\d{2})w\d{2}/.exec(version);
+    if (snapshot) {
+        // 1.7.2 landed late in 2013, so only 14w+ is unambiguously post-tellraw
+        return parseInt(snapshot[1], 10) >= 14;
+    }
+
+    const cleaned = version.replace(/[ _-]?(?:pre|rc).*$/i, '');
+    const parts = cleaned.split('.').map(Number);
+    if (parts.some(Number.isNaN)) return false;  // pre-1.0 ids ("b1.7.3", "rd-132211")
+
+    const major = parts[0] || 0;
+    if (major > 1) return true;   // year.drop.patch era (26.x+) — well past 1.7.2
+    if (major < 1) return false;  // classic/indev ids ("0.30")
+
+    // Legacy 1.x.y versioning. NeoForge-style pseudo ids ("1.26.1" for MC 26.1)
+    // land here too and still read as newer than 1.7.2.
     const minor = parts[1] || 0;
     const patch = parts[2] || 0;
     if (minor > 7) return true;
