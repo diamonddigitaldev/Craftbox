@@ -56,6 +56,18 @@ function formatDate(isoString, style) {
     });
 }
 
+// Formats a Date as a short relative age: "just now", "5m ago", "2h ago", "3d ago".
+function timeAgo(date) {
+    var seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return 'just now';
+    var minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + 'm ago';
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + 'h ago';
+    var days = Math.floor(hours / 24);
+    return days + 'd ago';
+}
+
 // Auto-format all .format-date elements on page load
 document.querySelectorAll('.format-date[data-iso]').forEach(function (el) {
     el.textContent = formatDate(el.dataset.iso, el.dataset.style);
