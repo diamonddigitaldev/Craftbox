@@ -27,7 +27,7 @@ const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
 const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
-const { pickPreferredBuild } = require('../../mc/serverTypes/_channels');
+const { pickPreferredBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
 const { cleanupServerData } = require('../../utils/serverCleanup');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
@@ -487,31 +487,45 @@ router.get('/servers/:id/check-upgrade', async (req, res) => {
         const provider = getProvider(type);
         if (!provider) return res.json({ upgradeAvailable: false });
 
-        if (!provider.getBuilds || type === 'custom') {
+        if (type === 'custom' || (!provider.getBuilds && !provider.getLatestBuild)) {
             return res.json({ upgradeAvailable: false, reason: 'No build tracking for this server type.' });
         }
 
-        const builds = await provider.getBuilds(server.version);
-        if (!builds || builds.length === 0) {
-            return res.json({ upgradeAvailable: false });
+        // Providers with no user-facing build picker (Fabric) expose the newest
+        // build directly instead of a list.
+        let preferred = null;
+        if (provider.getLatestBuild) {
+            preferred = await provider.getLatestBuild(server.version);
+        } else {
+            const builds = await provider.getBuilds(server.version);
+            // getBuilds includes non-stable channels — prefer the newest stable
+            // build so stable servers aren't offered ALPHA/BETA builds.
+            if (builds && builds.length > 0) preferred = pickPreferredBuild(builds);
+        }
+        if (!preferred) {
+            return res.json({ upgradeAvailable: false, reason: 'No builds published for this version.' });
         }
 
-        // getBuilds now includes non-stable channels — prefer the newest
-        // stable build so stable servers aren't offered ALPHA/BETA builds.
-        const preferred = pickPreferredBuild(builds);
         const latestBuild = preferred.build;
         const currentBuild = server.build;
 
+        // A server imported from a .cbx, duplicated, or provisioned before build
+        // tracking existed can have no recorded build. Reporting "no upgrade
+        // available" left it permanently stuck, because upgrading is the only
+        // thing that records a build: upgrade-jar passes a null build to the
+        // provider, which installs the newest and writes it back. So offer the
+        // upgrade rather than refusing it.
         if (currentBuild == null) {
             return res.json({
-                upgradeAvailable: false,
-                latestBuild,
+                upgradeAvailable: true,
                 currentBuild: null,
-                reason: 'No build number recorded for this server.'
+                latestBuild,
+                channel: preferred.channel || null,
+                reason: `No build recorded for this server. Upgrading installs build ${latestBuild} and records it.`
             });
         }
 
-        const upgradeAvailable = latestBuild !== currentBuild && latestBuild > currentBuild;
+        const upgradeAvailable = compareBuilds(latestBuild, currentBuild) > 0;
         res.json({
             upgradeAvailable,
             currentBuild,

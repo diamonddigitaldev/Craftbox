@@ -778,8 +778,11 @@ function _formToBody(form) {
             }
 
             if (data.upgradeAvailable) {
-                showResult('warning',
-                    'Upgrade available: build #' + data.currentBuild + ' → #' + data.latestBuild);
+                // A server with no recorded build (imported, duplicated) sends a
+                // reason explaining that upgrading is what records one — there is
+                // no "from" build to name in the usual message.
+                showResult('warning', data.reason ||
+                    ('Upgrade available: build #' + data.currentBuild + ' → #' + data.latestBuild));
                 showUpgradeButton();
             } else if (data.reason) {
                 showResult('secondary', data.reason);

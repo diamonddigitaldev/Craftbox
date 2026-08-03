@@ -163,8 +163,10 @@ The response is `202 {"success": true, "status": "started"}` instead of the endp
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/servers/:id/check-upgrade` | Returns `{"upgradeAvailable": bool, "currentBuild", "latestBuild", "channel", ...}` — `latestBuild` is the newest *stable* build where the version has stable builds, so stable servers are never offered alpha/beta builds |
+| GET | `/servers/:id/check-upgrade` | Returns `{"upgradeAvailable": bool, "currentBuild", "latestBuild", "channel", "reason"?}` — `latestBuild` is the newest *stable* build where the version has stable builds, so stable servers are never offered alpha/beta builds. A server with no recorded build (`currentBuild: null`) reports `upgradeAvailable: true` with a `reason`: upgrading is what records a build. `reason` is also set, with `upgradeAvailable: false`, when the type has no build tracking (`custom`, `vanilla`) or the version has no published builds |
 | POST | `/servers/:id/upgrade-jar` | Download the newer build. Body: `{version?, jarUrl?, backup?}` — `version` upgrades a tracked server to that version in the same operation (upgrade-only, same downgrade rules as `/edit`); `jarUrl` (custom servers only — required there, ignored otherwise) replaces the jar from a new http/https URL, downloading to a sidecar so a failed fetch leaves the old jar intact; `backup: true` creates a backup first (state passes through `backing_up`, then `upgrading_jar`; `409` if a backup is already in progress). Returns `202`; `409` if running. Completes via WS `operation: "jar-upgrade"` with a payload of `{build, version}` |
+
+> **`build` is not one type.** Paper, Purpur and Folia report an integer build number; Forge, NeoForge and Fabric report a dotted version string (Fabric's is its loader version, which is what a modpack pins). Compare builds segment-wise rather than lexically — `"21.1.100"` is newer than `"21.1.95"`. `vanilla` and `custom` servers have no build at all.
 
 
 ## Backups
