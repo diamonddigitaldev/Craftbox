@@ -137,6 +137,18 @@ The server object returned by these endpoints contains the full configuration (n
 | POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
 | POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` for non-text extensions |
 
+### Files
+
+Paths are relative to the server directory and are resolved against it with symlinks fully resolved — anything landing outside returns `403 {"error": "Access denied."}`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/servers/:id/files?path=` | List a directory (`path` omitted = server root). Returns `{"path", "files": [{name, isDirectory, size, sizeFormatted, modified, modifiedISO, editable}]}`, directories first then by name. `editable` marks files the text endpoint will serve. `404` if the path is not a directory |
+| GET | `/servers/:id/file?path=` | Read a text file. Returns `{"file": {name, path, size, modifiedISO, content}}`. `400` for a binary extension — use `/download` |
+| GET | `/servers/:id/download?path=` | Stream any single file as `application/octet-stream`. Requires the server `stopped`/`crashed` (`409` otherwise), since a running server holds handles on world data and jars; a read that fails mid-stream with `EBUSY` also returns `409` |
+
+> **Text vs binary is decided by extension, not by content.** The editable set is `.txt .log .properties .json .yml .yaml .xml .cfg .conf .ini .toml .csv .md .sh .bat .cmd .ps1 .js .ts .py .java .html .css .mcmeta .lang .sk .nbt`. Everything else is downloadable but not readable as text.
+
 ### Restore-point backups
 
 `POST /edit` and `POST /properties` accept `backup: true`. The backup is taken **before** the change is applied, so restoring it undoes the change completely — a backup taken afterwards captures the new configuration and cannot roll it back. The endpoint then:
@@ -179,8 +191,7 @@ The response is `202 {"success": true, "status": "started"}` instead of the endp
 | DELETE | `/servers/:id/backups/:backupId` | Delete a backup |
 | POST | `/servers/:id/backup-schedule` | Body: `{enabled, intervalHours (1–168), countdownMinutes (1–30)}`. Returns `{"backupSchedule": {...}, "nextBackupAt": ...}` |
 | POST | `/servers/:id/backup-retention` | Body: `{retentionCount (0–100), retentionDays (0–365)}` (0 = unlimited) |
-
-> Backup archive downloads are served by the browser-facing panel route `GET /servers/:id/backups/:backupId/download` (session auth, outside `/api/v1`).
+| GET | `/servers/:id/backups/:backupId/download` | Stream the backup archive as `application/zip`. `404` if the backup does not belong to this server |
 
 
 ## Server transfer
@@ -189,7 +200,7 @@ Move a server — files, Craftbox settings, and optionally backups and event his
 
 ### Export
 
-`GET /servers/:id/export?backups=true&events=true&start=true` (browser-facing panel route, session auth, outside `/api/v1`) streams the download as `<server-name>.cbx` with `Content-Type: application/x-craftbox-export+zip`. The server must be `stopped` or `crashed`. Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option).
+`GET /servers/:id/export?backups=true&events=true&start=true` streams the download as `<server-name>.cbx` with `Content-Type: application/x-craftbox-export+zip`. The server must be `stopped` or `crashed` (`409` otherwise). Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option). Requesting `backups` holds the backup lock for the duration, so a scheduled backup cannot write a partial archive into the export; `409` if a backup is already running.
 
 > **`.cbx` is Craftbox's transfer-archive extension.** The container is an ordinary zip, so any zip tool can open one for inspection — only the extension and media type are Craftbox-specific. Import requires the `.cbx` extension but never trusts it: the upload is also checked against the zip magic bytes and must carry a valid `craftbox-manifest.json`, so renaming an arbitrary zip to `.cbx` is still rejected.
 

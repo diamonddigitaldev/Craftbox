@@ -671,7 +671,7 @@ function _formToBody(form) {
     function exportUrl(startAfter) {
         var backups = document.getElementById('export-backups').checked ? 'true' : 'false';
         var events = document.getElementById('export-events').checked ? 'true' : 'false';
-        var url = '/servers/' + serverId + '/export?backups=' + backups + '&events=' + events;
+        var url = '/api/v1/servers/' + serverId + '/export?backups=' + backups + '&events=' + events;
         if (startAfter) url += '&start=true';
         return url;
     }
