@@ -114,16 +114,9 @@ class ServerProcess extends EventEmitter {
                 ? { initiatedBy: this._initiatedBy }
                 : {};
             const eventMessage = `Server ${eventTypes[newState]}`;
+            // logEvent broadcasts the event itself (see utils/eventLogger).
             logEvent(this.id, eventTypes[newState], eventMessage, extra).catch(() => {});
             pruneEvents(this.id, 500).catch(() => {});
-
-            this.broadcast({
-                type: 'event',
-                serverId: this.id,
-                eventType: eventTypes[newState],
-                message: eventMessage,
-                createdAt: new Date().toISOString()
-            });
         }
 
         // Broadcast state change to all WebSocket subscribers
@@ -712,14 +705,8 @@ class ServerProcess extends EventEmitter {
                 log('info', `[${this.config.name}] Restarting server...`);
                 this._appendLine('[Craftbox] Restarting server...');
                 const extra = this._initiatedBy ? { initiatedBy: this._initiatedBy } : {};
+                // logEvent broadcasts the event itself.
                 logEvent(this.id, 'restarted', 'Server restarted', extra).catch(() => {});
-                this.broadcast({
-                    type: 'event',
-                    serverId: this.id,
-                    eventType: 'restarted',
-                    message: 'Server restarted',
-                    createdAt: new Date().toISOString()
-                });
                 this._restartTimer = setTimeout(() => {
                     this._restartTimer = null;
                     this.start().catch((err) => {
@@ -838,15 +825,8 @@ class ServerProcess extends EventEmitter {
                     ? { initiatedBy: this._initiatedBy }
                     : {};
                 const eventMessage = `Server ${eventTypes[targetState]} (forced from ${oldState})`;
+                // logEvent broadcasts the event itself.
                 logEvent(this.id, eventTypes[targetState], eventMessage, extra).catch(() => {});
-
-                this.broadcast({
-                    type: 'event',
-                    serverId: this.id,
-                    eventType: eventTypes[targetState],
-                    message: eventMessage,
-                    createdAt: new Date().toISOString()
-                });
             }
 
             // Broadcast state change

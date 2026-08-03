@@ -33,7 +33,7 @@ const eventLabels = Object.fromEntries(
     <h5 class="mb-0 d-flex align-items-center gap-2">
         <span class="material-icons-outlined" style="font-size: 1.3rem;">history</span>
         Event Log
-        <span class="badge bg-secondary fw-normal" style="font-size: 0.75rem;"><%= events.length %></span>
+        <span class="badge bg-secondary fw-normal" style="font-size: 0.75rem;" id="event-count"><%= events.length %></span>
     </h5>
     <div class="d-flex align-items-center gap-2">
         <label class="text-body-secondary" style="font-size: 0.85rem;" for="event-type-filter">Filter:</label>
@@ -43,26 +43,25 @@ const eventLabels = Object.fromEntries(
             <option value="<%= t %>" <%= typeFilter === t ? 'selected' : '' %>><%= eventLabels[t] || t %></option>
             <% }) %>
         </select>
-        <% if (events.length > 0) { %>
-        <form id="clear-events-form" data-server-id="<%= server.id %>">
+        <%# Always rendered so it can appear the moment a live event arrives. %>
+        <form id="clear-events-form" data-server-id="<%= server.id %>"<%= events.length > 0 ? '' : ' class="d-none"' %>>
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button type="submit" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1">
                 <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span> Clear
             </button>
         </form>
-        <% } %>
     </div>
 </div>
 
-<% if (events.length === 0) { %>
-<div class="card">
+<%# Empty state and table are both always present so live events can swap them
+    without rebuilding the page. %>
+<div class="card<%= events.length === 0 ? '' : ' d-none' %>" id="events-empty">
     <div class="card-body text-center py-5">
         <span class="material-icons-outlined text-body-secondary mb-2" style="font-size: 3rem; opacity: 0.3;">history</span>
         <p class="text-body-secondary mb-0">No events recorded<%= typeFilter ? ' for this filter' : '' %>.</p>
     </div>
 </div>
-<% } else { %>
-<div class="card">
+<div class="card<%= events.length === 0 ? ' d-none' : '' %>" id="events-card">
     <div class="table-responsive">
         <table class="table table-hover table-sm mb-0 align-middle">
             <thead>
@@ -74,7 +73,13 @@ const eventLabels = Object.fromEntries(
                     <th style="width: 17rem;">Time</th>
                 </tr>
             </thead>
-            <tbody>
+            <%# events.js builds live rows from this map, keeping the badge/icon
+                vocabulary defined once, here. %>
+            <tbody id="events-tbody"
+                   data-event-meta="<%= JSON.stringify(eventMeta) %>"
+                   data-fallback-meta="<%= JSON.stringify(FALLBACK_META) %>"
+                   data-type-filter="<%= typeFilter || '' %>"
+                   data-max-rows="500">
                 <% events.forEach(function(event) { %>
                 <tr>
                     <% const meta = metaFor(event.type); %>
@@ -113,7 +118,6 @@ const eventLabels = Object.fromEntries(
         </table>
     </div>
 </div>
-<% } %>
 
 <!-- Clear Events Confirmation Modal -->
 <div class="modal fade" id="clearEventsModal" tabindex="-1">

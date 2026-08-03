@@ -50,6 +50,13 @@
             if (msg.type === 'operation' && msg.serverId === serverId) {
                 document.dispatchEvent(new CustomEvent('craftbox:operation', { detail: msg }));
             }
+            // Relayed for the event log page, which renders live rows from these.
+            if (msg.type === 'event' && msg.serverId === serverId) {
+                document.dispatchEvent(new CustomEvent('craftbox:event', { detail: msg }));
+            }
+            if (msg.type === 'events_cleared' && msg.serverId === serverId) {
+                document.dispatchEvent(new CustomEvent('craftbox:events-cleared', { detail: msg }));
+            }
         };
 
         ws.onclose = function () {
