@@ -12,9 +12,12 @@ const {
     DISABLED_SUFFIX,
     setModEnv,
     clearModEnv,
-    clearAllModEnv
+    clearAllModEnv,
+    listModFiles,
+    getModEnvMap
 } = require('../../utils/modEnvironment');
 const { isPathInside } = require('../../utils/pathSafety');
+const { formatSize } = require('../../utils/resourceStats');
 const { cleanupTempFiles, isZipFile } = require('../../utils/uploadSafety');
 const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 
@@ -110,6 +113,68 @@ const uploadPluginsHandler = async (req, res) => {
     }
     res.json({ success: true, count: uploaded.length, uploaded, rejected });
 };
+
+// GET /servers/:id/plugins — List installed plugins/mods.
+// Unlike the mutating routes below this does not require the server to be
+// stopped, and does not create the content directory: a read should not have
+// side effects on disk.
+router.get('/servers/:id/plugins', async (req, res) => {
+    try {
+        const server = await getServerWithState(req);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const contentType = getContentType(server.serverType);
+        if (!contentType) {
+            return res.status(404).json({ error: 'This server type does not support plugins or mods.' });
+        }
+
+        const contentDir = path.join(path.resolve(SERVERS_DIR, server.id), contentType.folder);
+        if (!fs.existsSync(contentDir)) {
+            return res.json({ contentType: { label: contentType.label, folder: contentType.folder }, files: [] });
+        }
+
+        // 'both' is stored as the absence of a key, and a disabled jar is how a
+        // client-only mod is represented on disk — same derivation the plugins
+        // page uses, so the API and the UI never disagree.
+        const isMods = contentType.label === 'Mods';
+        const envMap = isMods ? await getModEnvMap(server.id) : {};
+
+        const files = listModFiles(contentDir).map(entry => ({
+            name: entry.displayName,
+            size: entry.size,
+            sizeFormatted: formatSize(entry.size),
+            modifiedISO: entry.modified.toISOString(),
+            environment: isMods
+                ? (entry.isDisabled ? 'client' : (envMap[entry.displayName] || 'both'))
+                : 'both'
+        }));
+
+        res.json({ contentType: { label: contentType.label, folder: contentType.folder }, files });
+    } catch (err) {
+        log('error', `Failed to list plugins for ${req.params.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to list plugins.' });
+    }
+});
+
+// GET /servers/:id/plugins/environment — Read the mod environment map.
+// Only the non-default entries are stored, so a mod missing from the map is
+// 'both'. Mods-type servers only; plugin loaders have no environment concept.
+router.get('/servers/:id/plugins/environment', async (req, res) => {
+    try {
+        const server = await getServerWithState(req);
+        if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+        const contentType = getContentType(server.serverType);
+        if (!contentType || contentType.label !== 'Mods') {
+            return res.status(400).json({ error: 'This server type does not support mod environments.' });
+        }
+
+        res.json({ environment: await getModEnvMap(server.id) });
+    } catch (err) {
+        log('error', `Failed to read mod environment for ${req.params.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to read mod environment.' });
+    }
+});
 
 // POST /servers/:id/plugins/upload — Upload JAR file(s) (single multipart request)
 router.post('/servers/:id/plugins/upload', multerShim(upload.any()), uploadPluginsHandler);

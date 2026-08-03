@@ -289,10 +289,12 @@ Only `started`, `stopped`, `crashed` and `restarted` are exposed on public statu
 
 ## Plugins & mods
 
-The server must be `stopped` or `crashed` for all of these.
+Reads work in any state. The **mutating** routes require the server to be `stopped` or `crashed`. All of these `404` on server types with no plugin/mod folder (`vanilla`, `custom`).
 
 | Method | Path | Description |
 |---|---|---|
+| GET | `/servers/:id/plugins` | List installed plugins/mods. Returns `{"contentType": {label, folder}, "files": [{name, size, sizeFormatted, modifiedISO, environment}]}` — `label` is `Plugins` (Paper/Purpur/Folia) or `Mods` (Fabric/Forge/NeoForge), and `environment` is always `both` for plugin loaders. Empty `files` when the folder does not exist yet |
+| GET | `/servers/:id/plugins/environment` | Mod-loader servers only (`400` otherwise). Returns `{"environment": {"<file>.jar": "client"\|"server"}}`. Only non-default entries are stored, so a mod absent from the map is `both` |
 | POST | `/servers/:id/plugins/upload` | Upload jar(s). Multipart, any field names, `.jar` only, no size cap (bounded by disk space); files are verified to be real zip archives. Returns `{"success": true, "count", "uploaded": [...], "rejected": [{name, reason}]}`. Also accepts [chunked uploads](#chunked-uploads-dgup) (one jar per session) at `/servers/:id/plugins/upload/*` |
 | POST | `/servers/:id/plugins/delete` | Body: `{filename}` |
 | POST | `/servers/:id/plugins/delete-all` | Delete all plugins/mods |
