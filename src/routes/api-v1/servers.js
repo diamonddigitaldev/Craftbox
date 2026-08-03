@@ -1556,7 +1556,7 @@ router.post('/servers/:id/start', async (req, res) => {
         logEvent(req.params.id, 'action', 'Server start requested', { initiatedBy: req.user.username }).catch(() => {});
         res.json({ success: true, message: 'Server is starting...' });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
     }
 });
 
@@ -1570,7 +1570,7 @@ router.post('/servers/:id/stop', async (req, res) => {
         logEvent(req.params.id, 'action', 'Server stop requested', { initiatedBy: req.user.username }).catch(() => {});
         res.json({ success: true, message: 'Server is stopping...' });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
     }
 });
 
@@ -1594,7 +1594,7 @@ router.post('/servers/:id/restart', async (req, res) => {
             logEvent(id, 'action', 'Server restart requested', { initiatedBy }).catch(() => {});
             return res.json({ success: true, message: 'Server is restarting...' });
         } catch (err) {
-            return res.status(400).json({ error: err.message });
+            return res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
         }
     }
 
@@ -1682,7 +1682,7 @@ router.post('/servers/:id/kill', async (req, res) => {
         logEvent(req.params.id, 'action', 'Server force-killed', { initiatedBy: req.user.username }).catch(() => {});
         res.json({ success: true, message: 'Server force-killed.' });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
     }
 });
 
@@ -2119,6 +2119,11 @@ router.delete('/servers/:id', async (req, res) => {
     const serverManager = req.app.get('serverManager');
     const proc = serverManager?.getProcess(id);
     const liveState = proc ? proc.state : server.state;
+    // A restarting server is momentarily `stopped`; deleting in that window
+    // tears down the directory while a respawn is already queued.
+    if (serverManager?.isRestarting(id)) {
+        return res.status(409).json({ error: 'Server is restarting. Wait for it to come back up.' });
+    }
     if (!['stopped', 'crashed'].includes(liveState)) {
         return res.status(409).json({ error: 'Stop the server before deleting it.' });
     }

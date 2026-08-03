@@ -33,6 +33,13 @@ class ServerProcess extends EventEmitter {
         this._stopRequested = false;
         this._restartPending = false;
         this._restartStarting = false; // Suppress "started" event after restart
+        // True from the moment a restarting process exits until it is running
+        // again. A restart passes through `stopped` on its way back up, and that
+        // state is broadcast — without this flag the panel and the API would
+        // both treat that instant as "the server is stopped, you may start it",
+        // which races the respawn. Carried on every state broadcast.
+        this._restarting = false;
+        this._restartTimer = null; // Pending respawn; cleared if the process is destroyed
         this._crashDetected = false; // Set when crash report is detected in logs
         this._oomKillInProgress = false; // Guards against multiple OOM kill attempts
         this._initiatedBy = null; // Who triggered the current action (username or system label)
@@ -88,6 +95,14 @@ class ServerProcess extends EventEmitter {
         if (this._restartStarting && newState === STATES.RUNNING) {
             this._restartStarting = false;
         }
+        // The guard exists only to cover the `stopped` gap before the respawn.
+        // Once the server leaves that state the process exists again and the
+        // normal rules apply — keeping it raised through `starting` would leave
+        // Stop and Kill disabled for the whole boot, which on a large modpack
+        // is minutes.
+        if (this._restarting && newState !== STATES.STOPPED) {
+            this._restarting = false;
+        }
         const eventTypes = {
             [STATES.RUNNING]: 'started',
             [STATES.STOPPED]: 'stopped',
@@ -116,6 +131,7 @@ class ServerProcess extends EventEmitter {
             type: 'state',
             serverId: this.id,
             state: newState,
+            restarting: this._restarting,
             lastStarted: this.config.lastStarted || null,
             exitCode: this.config.exitCode ?? null,
             crashReason: this.config.crashReason ?? null
@@ -476,6 +492,7 @@ class ServerProcess extends EventEmitter {
             type: 'subscribed',
             serverId: this.id,
             state: this.state,
+            restarting: this._restarting,
             lastStarted: this.config.lastStarted || null,
             history: this.lastLines.slice(-200),
             players: sortedPlayers,
@@ -669,6 +686,10 @@ class ServerProcess extends EventEmitter {
             // Clean shutdown — user requested stop
             this.config.exitCode = code;
             this.config.crashReason = null;
+            // Raise before the transition so the `stopped` broadcast below
+            // already carries restarting:true — clients must never see a bare
+            // `stopped` for a server that is on its way back up.
+            this._restarting = this._restartPending;
             await this._setStateRobust(STATES.STOPPED);
 
             // Update DB
@@ -699,7 +720,17 @@ class ServerProcess extends EventEmitter {
                     message: 'Server restarted',
                     createdAt: new Date().toISOString()
                 });
-                setTimeout(() => this.start(), 2000);
+                this._restartTimer = setTimeout(() => {
+                    this._restartTimer = null;
+                    this.start().catch((err) => {
+                        // The respawn is fire-and-forget; if it fails, drop the
+                        // restart guard so the server isn't stuck refusing every
+                        // power action.
+                        this._restarting = false;
+                        log('error', `[${this.config.name}] Restart failed: ${err.message}`);
+                        this._appendLine(`[Craftbox] Restart failed: ${err.message}`);
+                    });
+                }, 2000);
             }
         } else if (isCrash) {
             // Crash or unexpected exit
@@ -862,6 +893,15 @@ class ServerProcess extends EventEmitter {
      * Clean up resources.
      */
     destroy() {
+        // Cancel a pending restart respawn. Without this the timer survives the
+        // process object and starts a JVM in a directory that may since have
+        // been deleted, or alongside a replacement process.
+        if (this._restartTimer) {
+            clearTimeout(this._restartTimer);
+            this._restartTimer = null;
+        }
+        this._restarting = false;
+        this._restartPending = false;
         if (this.child) {
             this._killTree();
         }
