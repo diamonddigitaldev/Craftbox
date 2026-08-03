@@ -37,6 +37,7 @@ const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERR
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
 const { pickPreferredBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
 const { isTextFile, listDirectory } = require('../../utils/fileBrowser');
+const { readConsoleTail } = require('../../utils/consoleLog');
 const { cleanupServerData } = require('../../utils/serverCleanup');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
@@ -2367,6 +2368,11 @@ router.post('/servers/:id/properties', async (req, res) => {
     res.json({ success: true });
 });
 
+// Where ServerProcess writes the console log for a server.
+function consolePathFor(server) {
+    return path.join(path.resolve(SERVERS_DIR, server.id), 'logs', 'craftbox-console.log');
+}
+
 // Resolve a caller-supplied path against a server's directory.
 // Returns null once a response has been sent — the caller must `return`.
 function resolveServerPath(req, res, server, rawPath) {
@@ -2475,6 +2481,53 @@ router.get('/servers/:id/download', async (req, res) => {
         }
     });
     stream.pipe(res);
+});
+
+// GET /servers/:id/console?limit=&source= — Read recent console output.
+//
+// The WebSocket is the live feed but rejects bearer tokens, so this is how an
+// API-key client reads the console. Two sources, because they differ:
+//   file   — <serverDir>/logs/craftbox-console.log. Durable and timestamped;
+//            survives a panel restart. The default.
+//   memory — the live process buffer. Shorter, untimestamped, lost whenever the
+//            process object is rebuilt, but it holds the few `[Craftbox] ...`
+//            lines emitted after the log stream closes on exit.
+// `auto` (the default) prefers the file and falls back to memory when a server
+// has never been started on this install.
+router.get('/servers/:id/console', async (req, res) => {
+    try {
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
+
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
+        const source = String(req.query.source || 'auto').toLowerCase();
+        if (!['auto', 'file', 'memory'].includes(source)) {
+            return res.status(400).json({ error: 'source must be one of: auto, file, memory.' });
+        }
+
+        const proc = req.app.get('serverManager')?.getProcess(server.id);
+        const logPath = consolePathFor(server);
+        const hasLog = fs.existsSync(logPath);
+
+        // Memory when asked for it, or when auto has nothing on disk to read.
+        if (source === 'memory' || (source === 'auto' && !hasLog)) {
+            const buffered = proc?.lastLines || [];
+            return res.json({
+                source: 'memory',
+                truncated: buffered.length > limit,
+                lines: buffered.slice(-limit).map(line => ({ timestamp: null, line }))
+            });
+        }
+
+        // source === 'file' with nothing written yet is an empty log, not an error.
+        if (!hasLog) return res.json({ source: 'file', truncated: false, lines: [] });
+
+        const { lines, truncated } = readConsoleTail(logPath, limit);
+        res.json({ source: 'file', truncated, lines });
+    } catch (err) {
+        log('error', `Failed to read console for ${req.params.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to read console output.' });
+    }
 });
 
 // GET /servers/:id/export — Server transfer archive (.cbx): server files and

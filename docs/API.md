@@ -123,6 +123,20 @@ The server object returned by these endpoints contains the full configuration (n
 | POST | `/servers/:id/kill` | Force-kill the process |
 | POST | `/servers/:id/command` | Send a console line. Body: `{command}`. `409` if not running |
 
+### Console
+
+The [WebSocket](#websocket-protocol) is the live feed, but it does not accept bearer keys — this is how an API-key client reads console output. It pairs with `POST /servers/:id/command`, which sends a line but returns nothing of the reply.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/servers/:id/console?limit=&source=` | Recent console output, oldest first. Returns `{"source": "file"\|"memory", "truncated": bool, "lines": [{timestamp, line}]}`. `limit` 1–1000 (default 200); `truncated` means older output exists beyond what was returned |
+
+`source` selects where the output comes from, and the two differ:
+
+- **`file`** — `logs/craftbox-console.log` in the server directory. Durable, timestamped, survives a panel restart, and is what you want for automation. Append-only and never rotated, so reads are tailed from the end.
+- **`memory`** — the live process buffer. A few hundred lines at most, `timestamp` is always `null`, and it is discarded whenever the process object is rebuilt (which includes every start of a stopped server). It does hold the handful of `[Craftbox] ...` lines emitted after the log stream closes on exit, which never reach disk.
+- **`auto`** (default) — `file`, falling back to `memory` for a server that has never been started on this install.
+
 ### Settings
 
 | Method | Path | Description |
@@ -389,7 +403,7 @@ Public responses are sanitized: internal states (`provisioning`, `backing_up`, `
 
 The WebSocket shares the panel's HTTP port (`ws://<host>:6464/` or `wss://` behind TLS).
 
-- **Authenticated socket** — connect to the root path with a valid **session cookie**. Bearer API keys are **not** accepted on the WebSocket; the upgrade is rejected with `401` when no session exists.
+- **Authenticated socket** — connect to the root path with a valid **session cookie**. Bearer API keys are **not** accepted on the WebSocket; the upgrade is rejected with `401` when no session exists. Bearer clients should poll [`GET /servers/:id/console`](#console) instead.
 - **Public socket** — connect to `/ws/status` (no auth). Receives the sanitized subset only: no console history/output, public state mapping, crash messages reduced to "Server crashed".
 
 The server pings every 30 seconds and drops sockets that miss a pong.
