@@ -129,7 +129,7 @@ The server object returned by these endpoints contains the full configuration (n
 | POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ..., "color": ...}` — `color` is the group's folder color (null when ungrouped) |
 | POST | `/servers/:id/autorestart` | Body: `{enabled: bool}`. Returns `{"autoRestart": bool}` |
 | POST | `/servers/:id/autostart` | Body: `{enabled: bool}`. Returns `{"autoStart": bool}` |
-| POST | `/servers/:id/statuspublic` | Toggle the public status page. Body: `{enabled: bool}` |
+| POST | `/servers/:id/statuspublic` | Toggle listing on the `/status` index. Body: `{enabled: bool}`. Does **not** gate direct access — see [Public status endpoints](#public-status-endpoints) |
 | POST | `/servers/:id/advertisedip` | Set the address shown on the status page. Body: `{value}` |
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
 | POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
@@ -354,16 +354,18 @@ Session auth **only** — bearer tokens are rejected with `403 {"error": "sessio
 
 ## Public status endpoints
 
-Unauthenticated, mounted at the site root (not `/api/v1`). Only servers with the public status page enabled are exposed.
+Unauthenticated, mounted at the site root (not `/api/v1`). The `statusPagePublic` flag controls **listing only** — it decides whether a server appears in the `/status` index. An individual server's status page, its JSON, and its mods zip are reachable by anyone holding the server's UUID regardless of that flag.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/status` | HTML index of public servers |
+| GET | `/status` | HTML index of servers with the public status page enabled |
 | GET | `/status/:id` | HTML status page for one server |
 | GET | `/status/:id/api` | JSON: `{"server": {id, name, state, port, version, serverType, playerCount, players, uptime, uptimeFormatted, statusPagePublic, advertisedIp}}` |
 | GET | `/status/:id/mods` | Zip of client-facing mods; `404` if none |
 
 Public responses are sanitized: internal states (`provisioning`, `backing_up`, `restoring`, `upgrading_jar`) are reported as `stopped`, and crash details, file paths, and JVM configuration are never exposed.
+
+> **Note:** unauthenticated `GET` access to these per-server endpoints is intentional, not a security gap. The server UUID *is* the capability token — that is what lets you hand a status link or a client-mods download to players who have no panel account, and keeps that link working. Guessing a v4 UUID is not a practical attack, and the payloads are sanitized as described above: server-only mods are excluded from the zip, and no file paths, JVM configuration, or crash details are ever exposed. Automated scanners sometimes flag these routes as "unauthenticated data exposure"; treat that as a false positive. If you do not want a server reachable this way at all, do not distribute its UUID — there is no per-server toggle that disables the direct link, because share links are the feature.
 
 
 ## WebSocket protocol
