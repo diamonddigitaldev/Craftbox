@@ -39,7 +39,40 @@ async function apiFetch(path, options) {
     if (res.status !== 204) {
         try { data = await res.json(); } catch (_) { data = null; }
     }
+    if (res.status === 401) _handleSessionExpired();
     return { ok: res.ok, status: res.status, data: data };
+}
+
+// ── Session expiry ──
+// Sessions are a 1-hour rolling idle timeout, so a tab left open overnight is
+// signed out without anything on screen saying so. Every frontend call goes to
+// /api/v1, which is guarded by ensureApiAuth ahead of CSRF validation, so an
+// expired session is always a clean 401 — whose bare {error:'unauthorized'}
+// body would otherwise reach the user as an unexplained "unauthorized" toast.
+// Explain it instead and send them to sign in; ensureAuth's returnTo brings
+// them back to the page they were on.
+// The latch matters: pages fire several calls at once, and without it each one
+// queues its own toast and races its own redirect.
+var _sessionExpiredHandled = false;
+function _handleSessionExpired() {
+    if (_sessionExpiredHandled) return;
+    if (window.location.pathname === '/login') return;
+    _sessionExpiredHandled = true;
+    flashToast('Your session has expired. Please sign in again.', 'warning');
+    window.location.href = '/login';
+}
+
+// The server rejects a WebSocket upgrade from an expired session with a 401,
+// but browsers hide the handshake status from JS — all a client sees is a close
+// with code 1006, identical to a network blip. So once a socket has failed to
+// reconnect a few times, spend one cheap authenticated request to find out
+// which it is: a 401 routes into the handling above, anything else means the
+// panel is simply unreachable and the existing backoff should carry on.
+// Called from every reconnect loop; probes at the 3rd failure and every 3rd
+// after, which the 30s backoff cap keeps to at most one probe per 90s.
+function probeSessionAfterFailures(attempts) {
+    if (attempts < 3 || attempts % 3 !== 0) return;
+    apiFetch('/api/v1/servers');
 }
 
 // ── Client-side date formatting ──

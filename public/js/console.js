@@ -98,6 +98,7 @@
 
         ws.onclose = () => {
             reconnectAttempts++;
+            probeSessionAfterFailures(reconnectAttempts);
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
             setTimeout(connect, delay);
         };
@@ -590,9 +591,12 @@
 
     async function fetchStats() {
         try {
-            var res = await fetch('/api/v1/servers/' + serverId + '/stats');
+            // Polled, so this doubles as a passive session heartbeat: apiFetch
+            // turns a 401 here into the expiry redirect without the user having
+            // to click anything first.
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/stats');
             if (!res.ok) return;
-            var data = await res.json();
+            var data = res.data || {};
             var s = data.stats;
             var isRunning = s.state === 'running';
 

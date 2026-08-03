@@ -54,6 +54,7 @@
 
         ws.onclose = function () {
             reconnectAttempts++;
+            probeSessionAfterFailures(reconnectAttempts);
             var delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
             setTimeout(connect, delay);
         };

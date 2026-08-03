@@ -769,8 +769,8 @@ function _formToBody(form) {
         resultDiv.classList.add('d-none');
 
         try {
-            const res = await fetch('/api/v1/servers/' + serverId + '/check-upgrade');
-            const data = await res.json();
+            const res = await apiFetch('/api/v1/servers/' + serverId + '/check-upgrade');
+            const data = res.data || {};
 
             if (!res.ok) {
                 showResult('danger', data.error || 'Failed to check for upgrades.');

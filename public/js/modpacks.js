@@ -410,8 +410,8 @@
     // ── Minecraft version filter options (vanilla release list) ──
     (async function loadVersionFilter() {
         try {
-            var res = await fetch('/api/v1/versions?type=vanilla');
-            var data = await res.json();
+            var res = await apiFetch('/api/v1/versions?type=vanilla');
+            var data = res.data || {};
             (data.versions || []).forEach(function (v) {
                 var opt = document.createElement('option');
                 opt.value = v.id;

@@ -147,12 +147,11 @@ form.addEventListener('submit', async (e) => {
 (async () => {
     // Modpack modes hide the type/version selectors entirely
     if (createMode !== 'normal') return;
-    try {
-        const res = await fetch('/api/v1/server-types');
-        const data = await res.json();
-        typesData = data.types || [];
+    const res = await apiFetch('/api/v1/server-types');
+    if (res.ok && res.data && res.data.types) {
+        typesData = res.data.types;
         renderTypeCards(typesData);
-    } catch {
+    } else {
         typeSelector.innerHTML = '<div class="col-12 text-danger">Failed to load server types.</div>';
     }
 
@@ -238,23 +237,22 @@ const templateGroup = document.getElementById('template-group');
 (async () => {
     // Templates pick a type/version themselves — not applicable to modpack modes
     if (createMode !== 'normal') return;
-    try {
-        const res = await fetch('/api/v1/templates');
-        const data = await res.json();
-        if (data.templates && data.templates.length > 0) {
-            // Unlock the Template card in the Create From picker; the select
-            // itself only shows once that source is picked.
-            sourceTemplateCard.classList.remove('type-card-disabled');
-            sourceTemplateCard.removeAttribute('title');
-            for (const t of data.templates) {
-                const opt = document.createElement('option');
-                opt.value = t.id;
-                const typeName = (t.serverType || 'vanilla').charAt(0).toUpperCase() + (t.serverType || 'vanilla').slice(1);
-                opt.textContent = `${t.name} (${typeName}${t.serverType === 'custom' ? '' : ` ${t.version}` || ''})`.trim();
-                templateSelect.appendChild(opt);
-            }
+    // Templates are optional — a failure here just leaves the card locked.
+    const res = await apiFetch('/api/v1/templates');
+    const data = res.data || {};
+    if (data.templates && data.templates.length > 0) {
+        // Unlock the Template card in the Create From picker; the select
+        // itself only shows once that source is picked.
+        sourceTemplateCard.classList.remove('type-card-disabled');
+        sourceTemplateCard.removeAttribute('title');
+        for (const t of data.templates) {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            const typeName = (t.serverType || 'vanilla').charAt(0).toUpperCase() + (t.serverType || 'vanilla').slice(1);
+            opt.textContent = `${t.name} (${typeName}${t.serverType === 'custom' ? '' : ` ${t.version}` || ''})`.trim();
+            templateSelect.appendChild(opt);
         }
-    } catch { /* ignore — templates are optional */ }
+    }
 })();
 
 function setTypeAndVersionLocked(locked) {
@@ -306,8 +304,8 @@ templateSelect.addEventListener('change', async () => {
     }
 
     try {
-        const res = await fetch(`/api/v1/templates/${id}`);
-        const data = await res.json();
+        const res = await apiFetch(`/api/v1/templates/${id}`);
+        const data = res.data || {};
         const t = data.template;
         if (!t) return;
 

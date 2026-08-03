@@ -52,15 +52,11 @@
             var newValue = sel.value;
             sel.disabled = true;
             try {
-                var res = await fetch('/api/v1/servers/' + serverId + '/plugins/environment', {
+                var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/environment', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrf
-                    },
-                    body: JSON.stringify({ filename: filename, environment: newValue })
+                    body: { filename: filename, environment: newValue }
                 });
-                var data = await res.json();
+                var data = res.data || {};
                 if (res.ok && data.success) {
                     var row = sel.closest('tr[data-filename]');
                     if (row) row.setAttribute('data-env', newValue);
@@ -110,12 +106,11 @@
                 for (var i = 0; i < jarFiles.length; i++) {
                     formData.append('files', jarFiles[i]);
                 }
-                var res = await fetch('/api/v1/servers/' + serverId + '/plugins/upload', {
+                var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/upload', {
                     method: 'POST',
-                    headers: { 'X-CSRF-Token': csrf },
                     body: formData
                 });
-                var data = await res.json();
+                var data = res.data || {};
                 if (res.ok && data.success) {
                     uploaded = data.uploaded || [];
                     rejected = rejected.concat(data.rejected || []);
@@ -265,16 +260,12 @@
                 confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
 
                 try {
-                    var res = await fetch('/api/v1/servers/' + serverId + '/plugins/delete', {
+                    var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/delete', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': csrf
-                        },
-                        body: JSON.stringify({ filename: pendingDeleteFilename })
+                        body: { filename: pendingDeleteFilename }
                     });
 
-                    var data = await res.json();
+                    var data = res.data || {};
                     if (res.ok && data.success) {
                         bsDeleteModal.hide();
                         flashToast(contentSingularCap + ' deleted.', 'success');
@@ -313,16 +304,12 @@
                 showOverlay('Deleting all ' + uploadLabel + '...', 'Please wait while all files are removed.');
 
                 try {
-                    var res = await fetch('/api/v1/servers/' + serverId + '/plugins/delete-all', {
+                    var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/delete-all', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': csrf
-                        },
-                        body: JSON.stringify({})
+                        body: {}
                     });
 
-                    var data = await res.json();
+                    var data = res.data || {};
                     if (res.ok && data.success) {
                         flashToast('All ' + contentLabel + ' deleted.', 'success');
                         window.location.reload();
