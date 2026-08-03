@@ -390,11 +390,9 @@ function _formToBody(form) {
 
     function showRestartModal() {
         var modalEl = document.getElementById('restartModal');
-        if (modalEl) {
-            var state = modalEl.dataset.serverState;
-            if (state !== 'stopped' && state !== 'crashed') {
-                new bootstrap.Modal(modalEl).show();
-            }
+        // Live state — a server that has since stopped needs no restart prompt.
+        if (modalEl && !isServerStopped()) {
+            new bootstrap.Modal(modalEl).show();
         }
     }
 
@@ -560,7 +558,7 @@ function _formToBody(form) {
     var serverId = form.dataset.serverId;
 
     async function submitDuplicate() {
-        var btn = form.querySelector('button[type="submit"]') || document.getElementById('duplicate-running-btn');
+        var btn = document.getElementById('duplicate-btn');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Duplicating...';
@@ -579,24 +577,25 @@ function _formToBody(form) {
         window.location.href = newId ? '/servers/' + newId : '/dashboard';
     }
 
-    // Direct submit (server already stopped)
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        if (!form.reportValidity()) return;
-        submitDuplicate();
-    });
-
-    // Stop-then-duplicate modal flow
-    var dupRunningBtn = document.getElementById('duplicate-running-btn');
-    if (dupRunningBtn) {
-        var modal = new bootstrap.Modal(document.getElementById('stopDuplicateModal'));
+    var modalEl = document.getElementById('stopDuplicateModal');
+    if (modalEl) {
+        var modal = new bootstrap.Modal(modalEl);
         var confirmBtn = document.getElementById('confirm-stop-duplicate-btn');
         var startAfterCheckbox = document.getElementById('dupStartAfter');
 
-        dupRunningBtn.addEventListener('click', function () {
+        // Duplicate directly when the server is already down, otherwise offer to
+        // stop it first. Decided here rather than by rendering two different
+        // buttons, so it follows the live state.
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
             if (!form.reportValidity()) return;
+            if (isServerStopped()) {
+                submitDuplicate();
+                return;
+            }
             modal.show();
         });
+
         startAfterCheckbox.addEventListener('change', function () {
             document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
         });
@@ -615,7 +614,7 @@ function _formToBody(form) {
     if (!form) return;
 
     async function submitTemplate() {
-        var btn = form.querySelector('button[type="submit"]') || document.getElementById('template-running-btn');
+        var btn = document.getElementById('template-btn');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
@@ -633,22 +632,24 @@ function _formToBody(form) {
         window.location.href = '/templates';
     }
 
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        if (!form.reportValidity()) return;
-        submitTemplate();
-    });
-
-    var tmplRunningBtn = document.getElementById('template-running-btn');
-    if (tmplRunningBtn) {
-        var modal = new bootstrap.Modal(document.getElementById('stopTemplateModal'));
+    var modalEl = document.getElementById('stopTemplateModal');
+    if (modalEl) {
+        var modal = new bootstrap.Modal(modalEl);
         var confirmBtn = document.getElementById('confirm-stop-template-btn');
         var startAfterCheckbox = document.getElementById('tmplStartAfter');
 
-        tmplRunningBtn.addEventListener('click', function () {
+        // Same shape as duplicate: save straight away when already stopped,
+        // otherwise offer to stop first. Live state, not render-time state.
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
             if (!form.reportValidity()) return;
+            if (isServerStopped()) {
+                submitTemplate();
+                return;
+            }
             modal.show();
         });
+
         startAfterCheckbox.addEventListener('change', function () {
             document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
         });
@@ -724,7 +725,9 @@ function _formToBody(form) {
     });
 
     exportBtn.addEventListener('click', function () {
-        if (exportBtn.dataset.serverStopped === 'true') {
+        // Read the live state, not the value baked in at render time — the
+        // server may have stopped or started since the page loaded.
+        if (isServerStopped()) {
             startDownload(false);
         } else {
             new bootstrap.Modal(stopExportModalEl).show();

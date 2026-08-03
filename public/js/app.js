@@ -254,6 +254,70 @@ function guardFileInput(input, extensions, message) {
     });
 }
 
+// ── Live state gating ──
+// Controls that require a stopped server used to be gated once, server-side, at
+// render time. The page then receives live state over the WebSocket, so the gate
+// froze at whatever the state was when the page loaded: stop a server and the
+// upload button stayed dead until a manual reload.
+//
+// Mark a control `data-enable-when="stopped crashed"` and it tracks the live
+// state. `data-show-when` / `data-hide-when` toggle `.d-none` on the same basis
+// — use them for the explanatory alerts that accompany a gate.
+// Optional `data-disabled-title` / `data-enabled-title` swap the tooltip.
+//
+// The live state is read from #server-nav-header's data-state, which both
+// WebSocket owners (serverState.js and console.js) write on every update.
+function currentServerState() {
+    var el = document.getElementById('server-nav-header');
+    return (el && el.dataset.state) || '';
+}
+
+function isServerStopped(state) {
+    return ['stopped', 'crashed'].indexOf(state || currentServerState()) !== -1;
+}
+
+function applyStateGates(state) {
+    state = state || currentServerState();
+
+    document.querySelectorAll('[data-enable-when]').forEach(function (el) {
+        var ok = el.dataset.enableWhen.split(/\s+/).indexOf(state) !== -1;
+        if ('disabled' in el) {
+            el.disabled = !ok;
+        } else {
+            // Anchors have no disabled property. Bootstrap's .disabled kills
+            // pointer events on .btn; the attributes keep it out of the tab
+            // order and announce the state.
+            el.classList.toggle('disabled', !ok);
+            el.setAttribute('aria-disabled', String(!ok));
+            if (ok) el.removeAttribute('tabindex');
+            else el.setAttribute('tabindex', '-1');
+        }
+        var title = ok ? el.dataset.enabledTitle : el.dataset.disabledTitle;
+        if (title !== undefined) el.title = title;
+    });
+
+    document.querySelectorAll('[data-show-when]').forEach(function (el) {
+        el.classList.toggle('d-none', el.dataset.showWhen.split(/\s+/).indexOf(state) === -1);
+    });
+
+    document.querySelectorAll('[data-hide-when]').forEach(function (el) {
+        el.classList.toggle('d-none', el.dataset.hideWhen.split(/\s+/).indexOf(state) !== -1);
+    });
+
+    // Pages with bespoke gating (button labels, request payloads) listen for
+    // this rather than duplicating the attribute walk.
+    document.dispatchEvent(new CustomEvent('craftbox:stategates', { detail: { state: state } }));
+}
+
+document.addEventListener('craftbox:state', function (e) {
+    applyStateGates((e.detail && e.detail.state) || currentServerState());
+});
+
+// Server-rendered markup is already correct on load; this only matters for
+// elements whose gate attributes were added without a matching server-side
+// render, and it keeps the two paths from drifting.
+applyStateGates();
+
 // ── Lock every control inside a container during an async operation ──
 // Buttons that dismiss a modal are deliberately left enabled: the upload flows
 // wire `hide.bs.modal` to abort the transfer, so Cancel / X / Esc must stay

@@ -74,6 +74,13 @@
         badge.id = 'server-state-badge';
         if (stateIconEl) stateIconEl.textContent = icon;
         if (stateTextEl) stateTextEl.textContent = displayName;
+
+        // Re-gate every state-dependent control on the page (see applyStateGates
+        // in app.js). Without this the page's disabled controls stay frozen at
+        // whatever the state was when it was rendered.
+        document.dispatchEvent(new CustomEvent('craftbox:state', {
+            detail: { serverId: serverId, state: state }
+        }));
     }
 
     connect();

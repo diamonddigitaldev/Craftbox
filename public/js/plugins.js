@@ -179,18 +179,29 @@
         }
     }
 
+    // Upload needs both a stopped server AND a file selection, so it can't use
+    // data-enable-when (which knows only about state). Re-derive it here and on
+    // every state change instead.
+    function refreshUploadBtn() {
+        if (!uploadBtn) return;
+        var stopped = isServerStopped();
+        uploadBtn.disabled = !stopped || !fileInput || fileInput.files.length === 0;
+        uploadBtn.title = stopped ? '' : 'Stop the server to upload';
+    }
+
     if (fileInput && uploadBtn) {
         guardFileInput(fileInput, ['.jar'], 'Only .jar files can be uploaded.');
 
-        fileInput.addEventListener('change', function () {
-            uploadBtn.disabled = fileInput.files.length === 0;
-        });
+        fileInput.addEventListener('change', refreshUploadBtn);
 
         uploadBtn.addEventListener('click', function () {
-            if (fileInput.files.length === 0) return;
+            if (!isServerStopped() || fileInput.files.length === 0) return;
             uploadFiles(fileInput.files);
         });
     }
+
+    document.addEventListener('craftbox:stategates', refreshUploadBtn);
+    refreshUploadBtn();
 
     // ── Drag & Drop ──
 
@@ -204,7 +215,9 @@
 
         document.addEventListener('dragenter', function (e) {
             e.preventDefault();
-            if (isOverlayVisible()) return;
+            // Dropping only uploads while the server is stopped, so don't invite
+            // it otherwise. Checked live rather than at render time.
+            if (isOverlayVisible() || !isServerStopped()) return;
             dragCounter++;
             if (dragCounter === 1) {
                 dropOverlay.classList.remove('d-none');
@@ -228,6 +241,10 @@
             dropOverlay.classList.add('d-none');
             dropOverlay.classList.remove('d-flex');
 
+            if (!isServerStopped()) {
+                showToast('Stop the server before uploading ' + contentLabel + '.', 'danger');
+                return;
+            }
             if (e.dataTransfer && e.dataTransfer.files.length > 0) {
                 uploadFiles(e.dataTransfer.files);
             }

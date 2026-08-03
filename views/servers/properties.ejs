@@ -109,9 +109,7 @@
                 <label class="form-check-label" for="saveBackup">Create backup before saving</label>
                 <div class="form-text">
                     Takes a restore point <em>before</em> the changes are applied, so restoring it undoes them.
-                    <% if (!['stopped', 'crashed'].includes(server.state)) { %>
-                        The server will be stopped for the backup and restarted afterwards.
-                    <% } %>
+                    <span data-hide-when="stopped crashed"<%= ['stopped', 'crashed'].includes(server.state) ? ' class="d-none"' : '' %>>The server will be stopped for the backup and restarted afterwards.</span>
                 </div>
             </div>
 

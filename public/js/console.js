@@ -152,6 +152,12 @@
         if (navHeader) navHeader.dataset.state = state;
         if (navHeader) navHeader.dataset.restarting = isRestarting ? 'true' : 'false';
 
+        // Re-gate state-dependent controls elsewhere on the page (applyStateGates
+        // in app.js). The console's own buttons are handled directly below.
+        document.dispatchEvent(new CustomEvent('craftbox:state', {
+            detail: { serverId: serverId, state: state, restarting: isRestarting }
+        }));
+
         // Update badge
         if (stateBadge) {
             const color = stateColors[state] || 'secondary';

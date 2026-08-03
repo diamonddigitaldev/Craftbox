@@ -27,14 +27,18 @@
     </ol>
 </nav>
 
-<% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
 <%
+// Downloads need the server stopped (it holds handles on world data and jars).
+// Rendered once and gated declaratively so the page tracks live state — see
+// applyStateGates in app.js.
+const _serverStopped = ['stopped', 'crashed'].includes(server.state);
+const _gate = 'stopped crashed';
 const _isPluginsOrMods = currentPath === 'plugins' || currentPath === 'mods';
 const _contentTypes = { paper: 'Plugins', purpur: 'Plugins', folia: 'Plugins', fabric: 'Mods', forge: 'Mods' };
 const _hasContentTab = !!_contentTypes[server.serverType];
 %>
-<% if (_isPluginsOrMods && !_serverStopped) { %>
-<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+<% if (_isPluginsOrMods) { %>
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3<%= _serverStopped ? ' d-none' : '' %>" data-hide-when="<%= _gate %>">
     <span class="material-icons-outlined">warning</span>
     <div>
         Stop the server before modifying files in this folder. Changes while running may not take effect or could cause instability.
@@ -45,17 +49,13 @@ const _hasContentTab = !!_contentTypes[server.serverType];
 <% } %>
 <!-- Actions -->
 <div class="d-flex gap-2 mb-3">
-    <% if (_serverStopped) { %>
-    <a href="/servers/<%= server.id %>/download-zip" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1">
+    <a href="/servers/<%= server.id %>/download-zip"
+       class="btn btn-outline-success btn-sm d-flex align-items-center gap-1<%= _serverStopped ? '' : ' disabled' %>"
+       data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to download files" data-enabled-title=""
+       <%= _serverStopped ? '' : 'aria-disabled="true" tabindex="-1" title="Stop the server to download files"' %>>
         <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
         Download Server (.zip)
     </a>
-    <% } else { %>
-    <button class="btn btn-outline-success btn-sm d-flex align-items-center gap-1" disabled title="Stop the server to download files">
-        <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
-        Download Server (.zip)
-    </button>
-    <% } %>
 </div>
 
 <!-- File listing -->
@@ -109,16 +109,14 @@ const _hasContentTab = !!_contentTypes[server.serverType];
                                 <span class="material-icons-outlined" style="font-size: 1rem;">edit</span>
                             </a>
                             <% } %>
-                            <% if (_serverStopped) { %>
                             <a href="/servers/<%= server.id %>/download?path=<%= encodeURIComponent((currentPath ? currentPath + '/' : '') + file.name) %>"
-                               class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" title="Download">
+                               class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center<%= _serverStopped ? '' : ' disabled' %>"
+                               style="width: 32px; height: 32px; padding: 0;"
+                               data-enable-when="<%= _gate %>" data-enabled-title="Download" data-disabled-title="Stop server to download"
+                               title="<%= _serverStopped ? 'Download' : 'Stop server to download' %>"
+                               <%= _serverStopped ? '' : 'aria-disabled="true" tabindex="-1"' %>>
                                 <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
                             </a>
-                            <% } else { %>
-                            <button class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px; padding: 0;" disabled title="Stop server to download">
-                                <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
-                            </button>
-                            <% } %>
                         </div>
                         <% } %>
                     </td>
