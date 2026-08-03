@@ -221,6 +221,27 @@ function guardFileInput(input, extensions, message) {
     });
 }
 
+// ── Lock every control inside a container during an async operation ──
+// Buttons that dismiss a modal are deliberately left enabled: the upload flows
+// wire `hide.bs.modal` to abort the transfer, so Cancel / X / Esc must stay
+// reachable while everything else is frozen.
+// Forms are marked [data-busy] so the required-field validator below cannot
+// re-enable the submit button out from under the lock.
+// Unlocking re-enables every control, so callers that derive a button's state
+// from validation should re-run that check afterwards.
+function setControlsLocked(root, locked) {
+    if (!root) return;
+    root.querySelectorAll('input, select, textarea, button:not([data-bs-dismiss="modal"])')
+        .forEach(function (el) { el.disabled = locked; });
+
+    var forms = Array.prototype.slice.call(root.querySelectorAll('form'));
+    if (root.tagName === 'FORM') forms.push(root);
+    forms.forEach(function (form) {
+        if (locked) form.setAttribute('data-busy', '');
+        else form.removeAttribute('data-busy');
+    });
+}
+
 // ── Required field validation — disable submit until all required fields are filled ──
 // Applies to any <form> with a [data-validate-required] submit button inside it.
 // The button stays disabled/muted until every [required] input in the form has a value.
@@ -231,6 +252,9 @@ function guardFileInput(input, extensions, message) {
         if (!form) return;
 
         function check() {
+            // A busy form is locked by setControlsLocked — leave its submit
+            // button alone or an incidental input/change event unlocks it.
+            if (form.hasAttribute('data-busy')) return;
             var fields = form.querySelectorAll('[required]');
             var allFilled = true;
             fields.forEach(function (f) {

@@ -21,8 +21,8 @@
 
     function resetModal() {
         uploading = false;
+        setControlsLocked(modalEl, false);
         fileInput.value = '';
-        fileInput.disabled = false;
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = confirmBtnHtml;
         progressWrap.classList.add('d-none');
@@ -48,15 +48,16 @@
         uploading = true;
         currentUpload = new AbortController();
 
-        confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Importing...';
-        fileInput.disabled = true;
+        // Freeze the modal for the duration of the transfer — Cancel and the
+        // header X stay live so the upload can still be aborted.
+        setControlsLocked(modalEl, true);
         progressWrap.classList.remove('d-none');
 
         function fail(message) {
             showToast(message || 'Import failed.', 'danger');
             uploading = false;
-            fileInput.disabled = false;
+            setControlsLocked(modalEl, false);
             confirmBtn.innerHTML = confirmBtnHtml;
             confirmBtn.disabled = !fileInput.files.length;
             progressWrap.classList.add('d-none');
@@ -250,6 +251,7 @@
         if (!mrpackModalEl || !mrpackForm) return;
         mrpackDroppedFile = file;
         mrpackUploading = false;
+        setControlsLocked(mrpackModalEl, false);
         mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
         mrpackProgressWrap.classList.add('d-none');
         mrpackProgressBar.style.width = '0%';
@@ -278,9 +280,11 @@
 
             mrpackUploading = true;
             mrpackUpload = new AbortController();
-            mrpackConfirmBtn.disabled = true;
             mrpackConfirmBtn.innerHTML =
                 '<span class="spinner-border spinner-border-sm" role="status"></span> Creating...';
+            // The field values were snapshotted into `fields` below, so leaving
+            // the inputs editable during the upload would silently discard edits.
+            setControlsLocked(mrpackModalEl, true);
             mrpackProgressWrap.classList.remove('d-none');
 
             uploadFile('/api/v1/servers/from-mrpack', mrpackDroppedFile, {
@@ -300,12 +304,14 @@
                 mrpackUploading = false;
                 if (res.aborted) {
                     showToast('Upload cancelled.', 'info');
+                    setControlsLocked(mrpackModalEl, false);
                     mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
                     mrpackForm.dispatchEvent(new Event('input'));
                     return;
                 }
                 if (res.status !== 201) {
                     showToast((res.data && (res.data.message || res.data.error)) || 'Failed to create server from modpack.', 'danger');
+                    setControlsLocked(mrpackModalEl, false);
                     mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
                     mrpackProgressWrap.classList.add('d-none');
                     mrpackProgressBar.style.width = '0%';
