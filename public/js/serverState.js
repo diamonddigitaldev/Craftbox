@@ -79,6 +79,23 @@
     connect();
 })();
 
+// ── Unlock the page when provisioning finishes ──
+// The nav links and the console's action buttons are rendered server-side from
+// the provisioning state, and the management pages are closed behind
+// blockWhileProvisioning. Rather than patch each of those live, reload once the
+// server leaves provisioning so everything re-renders from the real state.
+// Both state updaters (this file's and console.js's) write data-state on the
+// nav header, so watching that attribute covers every server page.
+(function () {
+    var navHeader = document.getElementById('server-nav-header');
+    if (!navHeader || navHeader.dataset.state !== 'provisioning') return;
+
+    new MutationObserver(function () {
+        if (navHeader.dataset.state === 'provisioning') return;
+        window.location.reload();
+    }).observe(navHeader, { attributes: true, attributeFilter: ['data-state'] });
+})();
+
 // ── Live version label ──
 // The nav header's "<Type> <version>" text goes stale when a version upgrade
 // finishes. Runs on every server sub-page, including the console page (where

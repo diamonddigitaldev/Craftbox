@@ -4,6 +4,12 @@
 const _displayVersion = (server.serverType || 'vanilla') === 'custom'
     ? '(Unknown Version)'
     : (server.version || '(Unknown Version)');
+// While the server directory is still being assembled, every page except
+// Console and Events is closed (blockWhileProvisioning redirects them). Show
+// that in the nav rather than letting the click bounce.
+const _provisioning = server.state === 'provisioning';
+const _gated = _provisioning ? ' disabled' : '';
+const _gatedTitle = _provisioning ? ' title="Available once provisioning finishes" aria-disabled="true"' : '';
 %>
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="server-nav-header" data-state="<%= server.state %>">
     <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
@@ -26,12 +32,12 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link d-flex align-items-center gap-1<%= active === 'settings' ? ' active' : '' %>" href="/servers/<%= server.id %>/edit">
+        <a class="nav-link d-flex align-items-center gap-1<%= active === 'settings' ? ' active' : '' %><%= _gated %>" href="/servers/<%= server.id %>/edit"<%- _gatedTitle %>>
             <span class="material-icons-outlined" style="font-size: 1rem;">edit</span> Settings
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link d-flex align-items-center gap-1<%= active === 'properties' ? ' active' : '' %>" href="/servers/<%= server.id %>/properties">
+        <a class="nav-link d-flex align-items-center gap-1<%= active === 'properties' ? ' active' : '' %><%= _gated %>" href="/servers/<%= server.id %>/properties"<%- _gatedTitle %>>
             <span class="material-icons-outlined" style="font-size: 1rem;">tune</span> Properties
         </a>
     </li>
@@ -42,18 +48,18 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
     %>
     <% if (_contentLabel) { %>
     <li class="nav-item">
-        <a class="nav-link d-flex align-items-center gap-1<%= active === 'plugins' ? ' active' : '' %>" href="/servers/<%= server.id %>/plugins">
+        <a class="nav-link d-flex align-items-center gap-1<%= active === 'plugins' ? ' active' : '' %><%= _gated %>" href="/servers/<%= server.id %>/plugins"<%- _gatedTitle %>>
             <span class="material-icons-outlined" style="font-size: 1rem;"><%= _contentIcon %></span> <%= _contentLabel %>
         </a>
     </li>
     <% } %>
     <li class="nav-item">
-        <a class="nav-link d-flex align-items-center gap-1<%= active === 'files' ? ' active' : '' %>" href="/servers/<%= server.id %>/files">
+        <a class="nav-link d-flex align-items-center gap-1<%= active === 'files' ? ' active' : '' %><%= _gated %>" href="/servers/<%= server.id %>/files"<%- _gatedTitle %>>
             <span class="material-icons-outlined" style="font-size: 1rem;">folder</span> Files
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link d-flex align-items-center gap-1<%= active === 'backups' ? ' active' : '' %>" href="/servers/<%= server.id %>/backups">
+        <a class="nav-link d-flex align-items-center gap-1<%= active === 'backups' ? ' active' : '' %><%= _gated %>" href="/servers/<%= server.id %>/backups"<%- _gatedTitle %>>
             <span class="material-icons-outlined" style="font-size: 1rem;">backup</span> Backups
         </a>
     </li>

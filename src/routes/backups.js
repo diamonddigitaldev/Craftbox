@@ -3,6 +3,7 @@ const fs = require('fs');
 const contentDisposition = require('content-disposition');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
+const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
 const { serversDb, backupsDb } = require('../db');
 const { log } = require('../utils/log');
 const {
@@ -27,7 +28,7 @@ async function getServerWithState(req) {
 }
 
 // GET /servers/:id/backups — Backups page (view only; mutations live on /api/v1)
-router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
+router.get('/servers/:id/backups', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {
@@ -68,7 +69,7 @@ router.get('/servers/:id/backups', ensureAuth, async (req, res) => {
 });
 
 // GET /servers/:id/backups/:backupId/download — Download a backup ZIP (binary)
-router.get('/servers/:id/backups/:backupId/download', ensureAuth, async (req, res) => {
+router.get('/servers/:id/backups/:backupId/download', ensureAuth, blockWhileProvisioning, async (req, res) => {
     if (!UUID_RE.test(req.params.backupId)) {
         return res.status(400).json({ error: 'Invalid backup ID.' });
     }

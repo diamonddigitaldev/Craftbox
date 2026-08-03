@@ -4,6 +4,7 @@ const path = require('path');
 const contentDisposition = require('content-disposition');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
+const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
 const { serversDb, eventsDb, SERVERS_DIR } = require('../db');
 const { listBackups, resolveBackupPath, tryAcquireBackupLock, releaseBackupLock } = require('../mc/BackupManager');
 const { getModEnvMap } = require('../utils/modEnvironment');
@@ -92,7 +93,7 @@ function formatSize(bytes) {
 // Edit Server Settings (view only — mutations in /api/v1)
 // ═══════════════════════════════════════════
 
-router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
+router.get('/servers/:id/edit', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {
@@ -122,7 +123,7 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
 // Server Properties Editor (view only — mutations in /api/v1)
 // ═══════════════════════════════════════════
 
-router.get('/servers/:id/properties', ensureAuth, async (req, res) => {
+router.get('/servers/:id/properties', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {
@@ -222,14 +223,14 @@ async function handleFiles(req, res, subpath) {
     delete req.session.flash;
 }
 
-router.get('/servers/:id/files', ensureAuth, (req, res) => handleFiles(req, res, ''));
-router.get('/servers/:id/files/*subpath', ensureAuth, (req, res) => {
+router.get('/servers/:id/files', ensureAuth, blockWhileProvisioning, (req, res) => handleFiles(req, res, ''));
+router.get('/servers/:id/files/*subpath', ensureAuth, blockWhileProvisioning, (req, res) => {
     const sub = Array.isArray(req.params.subpath) ? req.params.subpath.join('/') : req.params.subpath;
     handleFiles(req, res, sub);
 });
 
 // Individual file download (binary — stays here, browser-driven)
-router.get('/servers/:id/download', ensureAuth, async (req, res) => {
+router.get('/servers/:id/download', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Not found' });
 
@@ -269,7 +270,7 @@ router.get('/servers/:id/download', ensureAuth, async (req, res) => {
 });
 
 // Full server directory download as .zip (binary — stays here)
-router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
+router.get('/servers/:id/download-zip', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Not found' });
 
@@ -302,7 +303,7 @@ router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
 // Server transfer export — server files + Craftbox settings always, backups and
 // event history when requested. Importable on another Craftbox instance via
 // POST /api/v1/servers/import. (binary download — stays here)
-router.get('/servers/:id/export', ensureAuth, async (req, res) => {
+router.get('/servers/:id/export', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Not found' });
 
@@ -431,7 +432,7 @@ router.get('/servers/:id/export', ensureAuth, async (req, res) => {
     }
 });
 
-router.get('/servers/:id/edit-file', ensureAuth, async (req, res) => {
+router.get('/servers/:id/edit-file', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {

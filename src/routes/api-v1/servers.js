@@ -144,6 +144,10 @@ async function runWithRestorePoint({ req, res, server, label, operation, apply }
     const initiatedBy = req.user.username;
     const { runBackupJob, tryAcquireBackupLock, releaseBackupLock, formatSize } = require('../../mc/BackupManager');
 
+    if (serverManager.getState(server) === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
+
     if (!tryAcquireBackupLock(id)) {
         return res.status(409).json({ error: 'A backup is already in progress for this server.' });
     }
@@ -210,7 +214,7 @@ async function runWithRestorePoint({ req, res, server, label, operation, apply }
         if (lockOwnedByRoute) releaseBackupLock(id);
         log('error', `Restore-point setup failed for ${id}: ${err.message}`);
         if (!res.headersSent) {
-            res.status(500).json({ error: err.message });
+            res.status(err.status === 409 ? 409 : 500).json({ error: err.message });
         }
     }
 }
@@ -528,8 +532,11 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
     if (!server) return;
 
     const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(server.id);
-    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+    const liveState = serverManager.getState(server);
+    if (liveState === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
+    if (!['stopped', 'crashed'].includes(liveState)) {
         return res.status(409).json({ error: 'Stop the server before upgrading the jar.' });
     }
 
@@ -641,6 +648,7 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
         if (lockOwnedByRoute) releaseBackupLock(server.id);
         log('error', `Jar upgrade setup failed for ${req.params.id}: ${err.message}`);
         if (!res.headersSent) {
+            if (err.status === 409) return res.status(409).json({ error: err.message });
             res.status(500).json({ error: `Failed to upgrade jar: ${err.message}` });
         }
     }
@@ -1554,11 +1562,16 @@ router.post('/servers/:id/stop', async (req, res) => {
 
 // POST /servers/:id/restart
 router.post('/servers/:id/restart', async (req, res) => {
-    if (!await loadServerOr404(req, res)) return;
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
     const serverManager = req.app.get('serverManager');
     const id = req.params.id;
     const initiatedBy = req.user.username;
     const createBackupFirst = req.body?.backup === 'true' || req.body?.backup === true;
+
+    if (serverManager.getState(server) === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
 
     if (!createBackupFirst) {
         try {
@@ -1617,7 +1630,7 @@ router.post('/servers/:id/restart', async (req, res) => {
         if (lockOwnedByRoute) releaseBackupLock(id);
         log('error', `Restart-with-backup setup failed for ${id}: ${err.message}`);
         if (!res.headersSent) {
-            res.status(500).json({ error: err.message });
+            res.status(err.status === 409 ? 409 : 500).json({ error: err.message });
         }
     }
 });

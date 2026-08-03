@@ -101,6 +101,10 @@ class BackupScheduler {
                     log('info', `[${server.name}] Skipping catch-up backup: another backup is already in progress.`);
                     return;
                 }
+                if (this.serverManager.getState(server) === STATES.PROVISIONING) {
+                    log('info', `[${server.name}] Skipping catch-up backup: server is still provisioning.`);
+                    return;
+                }
                 log('info', `[${server.name}] Missed scheduled backup detected (last: ${lastScheduled.createdAt}). Creating catch-up backup...`);
 
                 // Stop server if running before creating backup
@@ -319,6 +323,15 @@ class BackupScheduler {
 
         if (isBackupInProgress(serverId)) {
             log('info', `[${server.name}] Skipping scheduled backup: another backup is already in progress.`);
+            return;
+        }
+
+        // A provisioning server has no process yet, so it would otherwise fall
+        // into the "not running, back up directly" branch below and archive a
+        // half-assembled directory. setOperationalState would refuse the
+        // transition anyway; skip cleanly rather than logging a failure.
+        if (this.serverManager.getState(server) === STATES.PROVISIONING) {
+            log('info', `[${server.name}] Skipping scheduled backup: server is still provisioning.`);
             return;
         }
 

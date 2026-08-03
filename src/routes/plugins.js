@@ -4,6 +4,7 @@ const path = require('path');
 const contentDisposition = require('content-disposition');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
+const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
 const { serversDb, SERVERS_DIR } = require('../db');
 const { log } = require('../utils/log');
 const { getContentType } = require('../utils/contentType');
@@ -35,7 +36,7 @@ function formatSize(bytes) {
 }
 
 // GET /servers/:id/plugins — Plugins/Mods page (view only; mutations live on /api/v1)
-router.get('/servers/:id/plugins', ensureAuth, async (req, res) => {
+router.get('/servers/:id/plugins', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {
@@ -97,7 +98,7 @@ router.get('/servers/:id/plugins', ensureAuth, async (req, res) => {
 });
 
 // GET /servers/:id/plugins/download — Download a single plugin/mod JAR (binary)
-router.get('/servers/:id/plugins/download', ensureAuth, async (req, res) => {
+router.get('/servers/:id/plugins/download', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) return res.status(404).json({ error: 'Server not found.' });
 
@@ -147,7 +148,7 @@ router.get('/servers/:id/plugins/download', ensureAuth, async (req, res) => {
 });
 
 // GET /servers/:id/plugins/download-all — Download all plugins/mods as ZIP (binary)
-router.get('/servers/:id/plugins/download-all', ensureAuth, async (req, res) => {
+router.get('/servers/:id/plugins/download-all', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) return res.status(404).json({ error: 'Server not found.' });
 
