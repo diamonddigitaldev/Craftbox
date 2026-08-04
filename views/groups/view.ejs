@@ -44,9 +44,9 @@
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label for="group-rename-input" class="form-label">Group Name</label>
+                    <label for="group-rename-input" class="form-label required-star">Group Name</label>
                     <input type="text" class="form-control" id="group-rename-input" maxlength="50"
-                        pattern="[a-zA-Z0-9 _\-]+" value="<%= groupName %>" autocomplete="off">
+                        pattern="[a-zA-Z0-9 _\-]+" value="<%= groupName %>" autocomplete="off" required>
                     <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens, underscores.</div>
                 </div>
                 <div>

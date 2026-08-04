@@ -228,12 +228,13 @@ const _hasContentTab = !!_contentTypes[server.serverType];
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <label class="form-label" for="rename-input">New name</label>
-                <input type="text" class="form-control form-control-sm" id="rename-input" autocomplete="off" spellcheck="false">
+                <label class="form-label required-star" for="rename-input">New name</label>
+                <input type="text" class="form-control form-control-sm" id="rename-input" maxlength="255" autocomplete="off" spellcheck="false" required>
+                <div class="form-text">Cannot contain \ / &lt; &gt; : &quot; | ? * or end with a dot.</div>
             </div>
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-success btn-sm" id="confirm-rename-btn">Rename</button>
+                <button type="button" class="btn btn-success btn-sm" id="confirm-rename-btn" disabled>Rename</button>
             </div>
         </div>
     </div>
@@ -251,13 +252,14 @@ const _hasContentTab = !!_contentTypes[server.serverType];
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <label class="form-label" for="new-folder-input">Folder name</label>
-                <input type="text" class="form-control form-control-sm" id="new-folder-input" autocomplete="off" spellcheck="false">
+                <label class="form-label required-star" for="new-folder-input">Folder name</label>
+                <input type="text" class="form-control form-control-sm" id="new-folder-input" maxlength="255" autocomplete="off" spellcheck="false" required>
                 <div class="form-text">Created in <%= currentPath ? currentPath : 'the server root' %>.</div>
+                <div class="form-text">Cannot contain \ / &lt; &gt; : &quot; | ? * or end with a dot.</div>
             </div>
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-success btn-sm" id="confirm-new-folder-btn">Create</button>
+                <button type="button" class="btn btn-success btn-sm" id="confirm-new-folder-btn" disabled>Create</button>
             </div>
         </div>
     </div>

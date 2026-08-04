@@ -15,6 +15,25 @@
         parent.appendChild(strong);
     }
 
+    // Mirrors safeEntryName + newNameError (src/utils/fileBrowser.js) so the
+    // confirm button only lights up for a name the API would actually accept.
+    // The server still re-checks — this just saves a round trip to be told no.
+    var RESERVED_DEVICE_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+
+    function nameError(name) {
+        var trimmed = String(name || '').trim();
+        if (!trimmed) return 'Enter a name.';
+        if (trimmed.length > 255) return 'A name cannot be longer than 255 characters.';
+        if (trimmed === '.' || trimmed === '..') return 'That name cannot be used.';
+        if (/[/\\]/.test(trimmed)) return 'A name cannot contain a slash.';
+        // eslint-disable-next-line no-control-regex
+        if (/[\x00-\x1f]/.test(trimmed)) return 'A name cannot contain control characters.';
+        if (/[<>:"|?*]/.test(trimmed)) return 'A name cannot contain any of: < > : " | ? *';
+        if (/\.$/.test(trimmed)) return 'A name cannot end with a dot.';
+        if (RESERVED_DEVICE_NAMES.test(trimmed)) return '"' + trimmed + '" is a reserved name and cannot be used.';
+        return null;
+    }
+
     // ── Search / Filter ──
 
     var searchInput = document.getElementById('search-input');
@@ -267,6 +286,14 @@
     if (renameModal) {
         var bsRenameModal = new bootstrap.Modal(renameModal);
 
+        // Renaming to the current name is a no-op the modal handles by just
+        // closing, so only the name's own validity gates the button.
+        function updateRenameConfirm() {
+            confirmRenameBtn.disabled = !!nameError(renameInput.value);
+        }
+
+        renameInput.addEventListener('input', updateRenameConfirm);
+
         document.querySelectorAll('.rename-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 var row = btn.closest('tr[data-path]');
@@ -278,6 +305,7 @@
                 };
                 renameTitleEl.textContent = pendingRename.isDirectory ? 'Rename Folder' : 'Rename File';
                 renameInput.value = pendingRename.name;
+                updateRenameConfirm();
                 bsRenameModal.show();
             });
         });
@@ -303,8 +331,9 @@
             confirmRenameBtn.addEventListener('click', async function () {
                 if (!pendingRename) return;
                 var newName = renameInput.value.trim();
-                if (!newName) {
-                    showToast('Enter a new name.', 'warning');
+                var problem = nameError(newName);
+                if (problem) {
+                    showToast(problem, 'warning');
                     return;
                 }
                 if (newName === pendingRename.name) {
@@ -328,13 +357,13 @@
                         window.location.reload();
                     } else {
                         showToast(data.error || 'Rename failed.', 'danger');
-                        confirmRenameBtn.disabled = false;
                         confirmRenameBtn.textContent = 'Rename';
+                        updateRenameConfirm();
                     }
                 } catch {
                     showToast('Rename failed. Please try again.', 'danger');
-                    confirmRenameBtn.disabled = false;
                     confirmRenameBtn.textContent = 'Rename';
+                    updateRenameConfirm();
                 }
             });
         }
@@ -350,8 +379,15 @@
     if (newFolderBtn && newFolderModal) {
         var bsNewFolderModal = new bootstrap.Modal(newFolderModal);
 
+        function updateNewFolderConfirm() {
+            confirmNewFolderBtn.disabled = !!nameError(newFolderInput.value);
+        }
+
+        newFolderInput.addEventListener('input', updateNewFolderConfirm);
+
         newFolderBtn.addEventListener('click', function () {
             newFolderInput.value = '';
+            updateNewFolderConfirm();
             bsNewFolderModal.show();
         });
 
@@ -369,8 +405,9 @@
         if (confirmNewFolderBtn) {
             confirmNewFolderBtn.addEventListener('click', async function () {
                 var name = newFolderInput.value.trim();
-                if (!name) {
-                    showToast('Enter a folder name.', 'warning');
+                var problem = nameError(name);
+                if (problem) {
+                    showToast(problem, 'warning');
                     return;
                 }
 
@@ -390,13 +427,13 @@
                         window.location.reload();
                     } else {
                         showToast(data.error || 'Could not create the folder.', 'danger');
-                        confirmNewFolderBtn.disabled = false;
                         confirmNewFolderBtn.textContent = 'Create';
+                        updateNewFolderConfirm();
                     }
                 } catch {
                     showToast('Could not create the folder. Please try again.', 'danger');
-                    confirmNewFolderBtn.disabled = false;
                     confirmNewFolderBtn.textContent = 'Create';
+                    updateNewFolderConfirm();
                 }
             });
         }

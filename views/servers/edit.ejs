@@ -34,9 +34,14 @@ const _gate = 'stopped crashed'; %>
                                             value="<%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %>"
                                             disabled>
                                     </div>
+                                    <%# The jar URL and version are starred like the create page — both are
+                                        mandatory server settings. Neither carries `required`: they arrive
+                                        prefilled and can be disabled while the server runs, and an existing
+                                        server with a blank one (a modpack pinned to no version, an older
+                                        import) would leave data-validate-required wedging Save for good. %>
                                     <% if ((server.serverType || 'vanilla' )==='custom' ) { %>
                                         <div class="col-md-8 mt-3 mt-md-0">
-                                            <label for="customJarUrl" class="form-label">JAR Download URL</label>
+                                            <label for="customJarUrl" class="form-label required-star">JAR Download URL</label>
                                             <input type="url" class="form-control" id="customJarUrl" name="customJarUrl"
                                                 value="<%= server.customJarUrl || '' %>"
                                                 data-current-url="<%= server.customJarUrl || '' %>"
@@ -52,7 +57,7 @@ const _gate = 'stopped crashed'; %>
                                         </div>
                                         <% } else { %>
                                             <div class="col-md-4 mt-3 mt-md-0">
-                                                <label class="form-label" for="version-display">Version</label>
+                                                <label class="form-label required-star" for="version-display">Version</label>
                                                 <div class="input-group"
                                                     data-enable-when="<%= _gate %>" data-enabled-title=""
                                                     data-disabled-title="Stop the server to change the version."
