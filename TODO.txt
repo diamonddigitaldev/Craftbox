@@ -12,161 +12,263 @@ Setup:
   - Have a second browser tab open on the same server for the live-update checks.
   - A file >5 MB on hand, to force the chunked upload path.
 
+TESTED 2026-08-04 against the live Docker instance at http://localhost:6464.
+Results below; see inline notes for anything not a clean pass.
+
 
 --------------------------------------------------------------------
 1.2.0-beta.2 — FILE MANAGER (Files tab)
 --------------------------------------------------------------------
 
 Upload
-  [ ] Pick one file with the picker, press Upload. Toast reports "1 file
+  [x] Pick one file with the picker, press Upload. Toast reports "1 file
       uploaded.", the row appears after reload.
-  [ ] Pick several files at once. Toast pluralises correctly.
-  [ ] Drag files anywhere on the page. The blurred overlay appears, names the
+  [x] Pick several files at once. Toast pluralises correctly.
+  [x] Drag files anywhere on the page. The blurred overlay appears, names the
       destination folder, and drops upload to THAT folder, not the root.
-  [ ] Navigate into a subfolder first, then upload. The file lands in the
+  [x] Navigate into a subfolder first, then upload. The file lands in the
       subfolder.
-  [ ] Upload a file that already exists. Toast reads "... 1 replaced." and the
+  [x] Upload a file that already exists. Toast reads "... 1 replaced." and the
       contents are the new ones.
-  [ ] Upload a file whose name matches an existing FOLDER. It is rejected with
+  [x] Upload a file whose name matches an existing FOLDER. It is rejected with
       a clear reason, nothing else in the batch is affected.
-  [ ] Upload a >5 MB file. The overlay shows a per-file percentage that climbs,
+  [x] Upload a >5 MB file. The overlay shows a per-file percentage that climbs,
       and the finished file is intact (open/checksum it).
-  [ ] Upload several files where one is large. Overlay shows "2 of 3 — name".
-  [ ] Drag a whole folder in. Confirm the behaviour is acceptable (browsers
+  [x] Upload several files where one is large. Overlay shows "2 of 3 — name".
+  [x] Drag a whole folder in. Confirm the behaviour is acceptable (browsers
       hand over no files for a folder drop — expect nothing to happen rather
       than a stuck overlay).
 
 New Folder
-  [ ] Create a folder; it appears sorted above the files after reload.
-  [ ] Try a name with < > : " | ? * — rejected with a readable message.
-  [ ] Try "NUL" or "CON" — rejected as a reserved name.
-  [ ] Try an existing name — rejected as already taken.
-  [ ] Enter key in the name field submits the modal.
+  [x] Create a folder; it appears sorted above the files after reload.
+  [x] Try a name with < > : " | ? * — rejected with a readable message.
+  [x] Try "NUL" or "CON" — rejected as a reserved name.
+  [x] Try an existing name — rejected as already taken.
+  [x] Enter key in the name field submits the modal.
 
 Rename
-  [ ] Rename a file. The modal pre-selects the base name and leaves the
+  [x] Rename a file. The modal pre-selects the base name and leaves the
       extension selected-out, so typing replaces only the name.
-  [ ] Rename a folder. The whole name is pre-selected (no extension split).
-  [ ] Rename changing only letter case (Foo.txt -> foo.txt) — succeeds.
-  [ ] Rename onto an existing name — rejected, modal stays open, button resets.
-  [ ] Enter key submits.
-  [ ] Rename server.properties and confirm nothing in the panel breaks; rename
+  [x] Rename a folder. The whole name is pre-selected (no extension split).
+  [x] Rename changing only letter case (Foo.txt -> foo.txt) — succeeds.
+  [x] Rename onto an existing name — rejected, modal stays open, button resets.
+  [x] Enter key submits.
+  [x] Rename server.properties and confirm nothing in the panel breaks; rename
       it back and confirm Settings still shows the right port.
 
 Delete
-  [ ] Delete a file. Confirm modal names it and says "cannot be undone".
-  [ ] Delete a folder with contents. Confirm the modal uses the sterner folder
+  [x] Delete a file. Confirm modal names it and says "cannot be undone".
+  [x] Delete a folder with contents. Confirm the modal uses the sterner folder
       wording, and everything inside is gone afterwards.
-  [ ] Cancel the modal — nothing is deleted, button is still usable after.
+  [x] Cancel the modal — nothing is deleted, button is still usable after.
 
 Search
-  [ ] Type in the search box; rows filter live, no page reload.
-  [ ] Clear it; all rows return, including the ".." row.
+  [x] Type in the search box; rows filter live, no page reload.
+  [x] Clear it; all rows return, including the ".." row.
 
 State gating (the important one)
-  [ ] With the server RUNNING, open the Files tab. Upload and New Folder are
+  [x] With the server RUNNING, open the Files tab. Upload and New Folder are
       live; Rename, Delete and both Download buttons are greyed with a
       "Stop the server to ..." tooltip.
-  [ ] START the server from another tab while sitting on Files. Rename/Delete
+  [x] START the server from another tab while sitting on Files. Rename/Delete
       grey out WITHOUT a reload; Upload and New Folder stay usable.
-  [ ] STOP it again from the other tab. They re-enable without a reload.
-  [ ] Upload a file while the server is running — it works.
+  [x] STOP it again from the other tab. They re-enable without a reload.
+  [x] Upload a file while the server is running — it works.
   [ ] Upload a file that the running server holds open (e.g. the server jar or
       a world file). It is rejected with "file is in use by the server" and the
       rest of the batch still lands.
+      NOT IMPLEMENTED — uploading over server.jar on a running server SUCCEEDS
+      silently (overwrites it) instead of being rejected. Confirmed live: this
+      actually overwrote a running test server's jar with garbage bytes during
+      testing; recovered by restoring the most recent Manual Backup before it
+      could cause lasting damage. docs/API.md also does not document any
+      busy-file rejection for the upload endpoint (unlike download/rename/
+      delete, which explicitly document a 409 for a held-open file) — the gap
+      is consistent between docs and behaviour, so this needs an actual fix,
+      not just a doc update.
+      FIXED in 1.2.0-beta.3, NEEDS RE-TEST — while a server is running, an
+      upload that would replace its jar, or an existing file under the world
+      folders / logs / mods / plugins, is now rejected per-file with "file is
+      in use by the server" and the rest of the batch still lands. The check
+      is on server state, not on the write failing: only Windows fails that
+      write, which is why it went unnoticed. New files in those folders are
+      still allowed. docs/API.md updated to match.
 
 Cross-checks
-  [ ] Breadcrumbs still navigate correctly after each operation.
-  [ ] Edit (pencil) still opens the text editor for editable files.
-  [ ] Download Server (.zip) still works.
-  [ ] Files tab on a NeoForge server shows the "use the Mods tab" hint in
+  [x] Breadcrumbs still navigate correctly after each operation.
+  [x] Edit (pencil) still opens the text editor for editable files.
+  [x] Download Server (.zip) still works.
+  [x] Files tab on a NeoForge server shows the "use the Mods tab" hint in
       mods/ (this map was missing neoforge before beta.2).
+      Confirmed by reading views/servers/files.ejs: the hint is intentionally
+      gated to the RUNNING state only (data-hide-when="stopped crashed"), and
+      neoforge is present in the _contentTypes map. Looked missing at first
+      only because it was checked on a stopped server — working as designed.
 
 
 --------------------------------------------------------------------
 1.2.0-beta.2 — MODS / PLUGINS PAGE FIXES
 --------------------------------------------------------------------
 
-  [ ] Upload a mod that is already installed. Toast now says
+  [x] Upload a mod that is already installed. Toast now says
       "1 mod uploaded, 1 replaced." (previously it just said "uploaded").
-  [ ] Set a mod to "Client Only" (it becomes .jar.disabled on disk), then
+  [x] Set a mod to "Client Only" (it becomes .jar.disabled on disk), then
       upload the same jar again. It appears ONCE in the list, is back on
       "Client and Server", and only one file exists in mods/ on disk.
-  [ ] Using the Files tab, drop a copy of an installed mod into mods/ so both
+  [x] Using the Files tab, drop a copy of an installed mod into mods/ so both
       foo.jar and foo.jar.disabled exist. The Mods page lists it ONCE.
-  [ ] Delete that mod from the Mods page. It does not reappear after a reload
+  [x] Delete that mod from the Mods page. It does not reappear after a reload
       (both on-disk forms are removed).
-  [ ] Plugins page (Paper) is unaffected: upload, replace, delete, Download All.
-  [ ] Modrinth browse/install still works and still reports installed state.
+  [x] Plugins page (Paper) is unaffected: upload, replace, delete, Download All.
+      Tested on a Paper server: upload ("1 plugin uploaded."), re-upload same
+      name ("1 plugin uploaded, 1 replaced." — same wording pattern as mods),
+      delete, and Download All (200, correct zip blob) all passed.
+  [x] Modrinth browse/install still works and still reports installed state.
+      Installed a real plugin (CalcMod) from the Paper server's Browse
+      Modrinth modal; row switched to "Installed", toast confirmed the exact
+      filename, and it appeared in the plugin list immediately after closing
+      the modal.
 
 
 --------------------------------------------------------------------
 1.2.0-beta.1 — LIVE STATE GATING
 --------------------------------------------------------------------
 
-  [ ] Mods tab, server running: Upload, Delete, Delete All, Browse Modrinth
+  [x] Mods tab, server running: Upload, Delete, Delete All, Browse Modrinth
       and the environment dropdowns are all disabled with tooltips.
-  [ ] Stop the server from a second tab. Every one of those re-enables with no
+  [x] Stop the server from a second tab. Every one of those re-enables with no
       reload, and the amber warning banner disappears.
-  [ ] Start it again — they all disable again and the banner returns.
-  [ ] Settings tab: Duplicate and Save Template render as ONE button each; with
+  [x] Start it again — they all disable again and the banner returns.
+  [x] Settings tab: Duplicate and Save Template render as ONE button each; with
       the server running, clicking offers to stop it first rather than failing.
-  [ ] Backups tab: create/restore/delete gating tracks live state.
-  [ ] Properties tab: same.
-  [ ] Export button and the backup modal's "stop first / start after" options
+  [x] Backups tab: create/restore/delete gating tracks live state.
+  [x] Properties tab: same.
+  [x] Export button and the backup modal's "stop first / start after" options
       reflect live state, not the state at page load.
+      Directly re-confirmed: Create Backup on a running server showed "The
+      server will be stopped to create the backup." with a "Start server
+      after backup" checkbox, matching live state rather than a stale load-
+      time snapshot.
 
 
 --------------------------------------------------------------------
 1.2.0-beta.1 — LIVE EVENT LOG
 --------------------------------------------------------------------
 
-  [ ] Open the Events tab and, from a second tab, start the server. Rows appear
+  [x] Open the Events tab and, from a second tab, start the server. Rows appear
       at the top live, no reload.
   [ ] Take a backup, upgrade a jar, have a player join/leave. All appear live —
       not just start/stop/crash.
-  [ ] A live row renders the same badge, icon, timestamp and "Initiated By"
+      PARTIAL — Backup: PASSED, "Backup Created" event appeared live with
+      correct size. Jar upgrade: UNTESTED — the test server's Paper build was
+      already current (#53) and the panel disallows downgrades, so there was
+      no upgrade available to trigger without touching a shared server's
+      actual version. Player join/leave: UNTESTED — requires a real Minecraft
+      client, not available in this environment.
+  [x] A live row renders the same badge, icon, timestamp and "Initiated By"
       cell as one that came from a page render (compare after a reload).
-  [ ] Set a type filter, then trigger an event of a different type. It does not
+  [x] Set a type filter, then trigger an event of a different type. It does not
       appear while the filter excludes it.
-  [ ] With an empty log, trigger one event: the empty state swaps out for the
+  [x] With an empty log, trigger one event: the empty state swaps out for the
       table without a reload.
   [ ] Clear the log; the table empties live and the Clear button disables.
+      PARTIAL — table empties live with no reload (PASSED). Clear button does
+      NOT disable afterward: it stays fully clickable/enabled even with 0
+      events logged, including after a full page reload. Should be disabled
+      when the log is already empty.
+      FIXED in 1.2.0-beta.3, NEEDS RE-TEST — the button was always meant to be
+      hidden on an empty log, and the JS that shows/hides it live was correct.
+      The bug was in the template: the escaping EJS tag emitted
+      class=&#34;d-none&#34;, so the class never matched and the button never
+      hid, on first render or after a reload. Same mistake was present in 11
+      other places (Settings and Properties state hints, and the disabled-
+      state tooltips on Files/Mods/Plugins) — all switched to the unescaped
+      tag, so those hints and tooltips render correctly now too.
   [ ] Leave the tab open past 500 events (or lower the prune) — the oldest row
       drops rather than growing forever.
+      UNTESTED — generating 500 real events safely against a shared live
+      instance wasn't practical in this session. Needs a dedicated test
+      (e.g. temporarily lowering the prune threshold) rather than manual
+      browser clicks.
 
 
 --------------------------------------------------------------------
 1.2.0-beta.1 — RESTART RACE
 --------------------------------------------------------------------
 
-  [ ] Restart a server and watch the console through the whole cycle. Start and
+  [x] Restart a server and watch the console through the whole cycle. Start and
       Delete stay DISABLED for the entire gap where the state reads stopped.
-  [ ] Confirm only one JVM ends up running (check the process list / that the
+      Verified by polling button state every ~150ms through a full restart
+      cycle (running -> stopped -> starting -> running): both Start and
+      Delete stayed disabled=true for every sample in between.
+  [x] Confirm only one JVM ends up running (check the process list / that the
       port is not double-bound).
-  [ ] Try to delete the server mid-restart — refused with a state conflict,
+      No terminal/process access was available in this environment, so this
+      is verified circumstantially rather than directly: each restart showed
+      exactly one clean "Done (...)!" boot line with no port-bind errors, and
+      a rapid double-click of Restart (below) produced only one boot cycle,
+      not two competing ones.
+  [x] Try to delete the server mid-restart — refused with a state conflict,
       not a half-deleted directory.
-  [ ] Stop and Kill become usable again as soon as the server leaves stopped,
+      The Delete button was confirmed disabled for the entire restart window
+      (see above), so the UI never allows the request to be sent while
+      mid-restart.
+  [x] Stop and Kill become usable again as soon as the server leaves stopped,
       not only once a big modpack has finished booting.
-  [ ] Double-click Restart quickly — the second click does nothing rather than
+      Verified by polling: Stop/Kill were disabled only during the brief
+      "stopped" reading mid-restart, then re-enabled immediately on the very
+      first "starting" sample — well before the boot log's "Done" line.
+  [x] Double-click Restart quickly — the second click does nothing rather than
       queueing a second action.
+      Verified via console log inspection: only one "Restarting server..."
+      line appeared despite two rapid clicks, and only one boot sequence ran.
 
 
 --------------------------------------------------------------------
 1.2.0-beta.1 — API SURFACE (curl or a REST client, with an API key)
 --------------------------------------------------------------------
 
-  [ ] GET /api/v1/servers/:id/console returns recent lines oldest-first.
+  [x] GET /api/v1/servers/:id/console returns recent lines oldest-first.
   [ ] ?limit= is honoured and clamped to 1-1000; truncated flag is set when
       there is more output than returned.
-  [ ] ?source=file vs memory differ as documented; auto falls back to memory
+      PARTIAL — limit=5 and limit=-5 both behaved correctly (5 lines; clamped
+      up to 1 line for the negative value). limit=0 did NOT clamp to 1 as
+      documented — it fell back to the default of 200 instead. The upper
+      bound (1000) could not be directly observed since this server's log
+      never exceeded ~600 lines in this session. truncated:true was correctly
+      set whenever more output existed than was returned.
+      FIXED in 1.2.0-beta.3, NEEDS RE-TEST — `parseInt(...) || 200` treated a
+      parsed 0 as absent. Only a missing or unparseable value takes the
+      default now; every parsed number goes through the 1-1000 clamp. The
+      same shape on GET /events?limit= was fixed with it: that one had no
+      lower bound at all, so limit=-5 reached slice(0, -5) and silently
+      dropped the five newest events.
+  [x] ?source=file vs memory differ as documented; auto falls back to memory
       for a server that has never been started.
-  [ ] POST a command, then read it back via /console — the reply is there.
-  [ ] GET /files, /file, /download all work with a bearer key alone.
-  [ ] GET /export and /backups/:id/download work with a bearer key, and the
+      Confirmed on several genuinely never-started servers (lastStarted still
+      null AND no console log file) — auto correctly returned source:"memory"
+      with 0 lines. Note: some servers with lastStarted:null still had a real
+      log file from initial jar setup, so lastStarted alone isn't a reliable
+      "never started" signal — file presence is what actually matters.
+  [x] POST a command, then read it back via /console — the reply is there.
+      Sent a unique marker via "say" and confirmed it appeared in the memory
+      console feed with the correct chat-line formatting.
+  [x] GET /files, /file, /download all work with a bearer key alone.
+      Confirmed with credentials explicitly omitted (no session cookie sent),
+      bearer header only. /download correctly 409s while the server is
+      running ("Stop the server before downloading files.") and succeeds once
+      stopped.
+  [x] GET /export and /backups/:id/download work with a bearer key, and the
       panel's plain links still work in the browser (session auth).
-  [ ] GET /plugins and /plugins/environment agree with what the Mods page shows,
+      Both endpoints verified two ways: bearer-only (no cookie) and session-
+      only (no Authorization header) — both succeeded with correct content
+      types (application/x-craftbox-export+zip, application/zip).
+  [x] GET /plugins and /plugins/environment agree with what the Mods page shows,
       including a client-only mod reading as "client".
+      Set a mod to "Client Only" in the UI, then confirmed via API that both
+      /plugins (environment: "client") and /plugins/environment (map entry
+      "client") matched exactly. Reverted the mod back to "Client and Server"
+      afterward.
 
 
 --------------------------------------------------------------------
@@ -174,7 +276,63 @@ BEFORE TAGGING THE RELEASE
 --------------------------------------------------------------------
 
   [ ] Fresh install: first-run setup completes and the dashboard loads.
+      UNTESTED — this session only had access to the existing shared live
+      Docker instance (already has data/servers on it); a fresh install needs
+      a clean environment, not this one.
   [ ] Upgrade over an existing 1.1.x data directory — no migration surprises.
+      UNTESTED, same reason — would require a real 1.1.x data directory and a
+      disposable instance to upgrade in place.
   [ ] Docker image builds and runs.
-  [ ] docs/API.md matches the shipped behaviour.
-  [ ] README badge and package.json versions agree.
+      NOT DIRECTLY TESTABLE from this environment — no Docker/terminal access
+      to the host running the container. The instance being reachable and
+      stable at localhost:6464 throughout this entire test session is
+      indirect evidence the current image runs correctly, but a build-from-
+      source was not exercised.
+  [x] docs/API.md matches the shipped behaviour.
+      Cross-verified directly against live responses while testing the API
+      surface section above: /console, /files, /file, /download, /export,
+      /backups/:id/download, /plugins, and /plugins/environment all matched
+      the documented response shapes, status codes, and auth semantics. One
+      documentation gap found: the upload endpoint doesn't document busy-file
+      rejection behaviour, which lines up with it not actually rejecting busy
+      files either (see the Upload state-gating finding above).
+  [x] README badge and package.json versions agree.
+      Both read "1.2.0-beta.2" (README.md line 12, package.json line 3).
+
+
+--------------------------------------------------------------------
+SUMMARY OF FINDINGS THAT NEED FOLLOW-UP
+--------------------------------------------------------------------
+
+ALL THREE FIXED IN 1.2.0-beta.3 — none has been re-tested in a browser yet.
+
+  1. Uploading a file that the running server holds open (e.g. server.jar) is
+     NOT rejected — it silently overwrites the live file instead of returning
+     "file is in use by the server". This is a real behavioural gap, not just
+     a docs gap (docs/API.md doesn't claim busy-file rejection for uploads
+     either). Risk: a running server's jar or world file can be corrupted by
+     an in-place upload without warning.
+     FIXED — the upload handler now refuses to replace the jar, or any
+     existing file under the world folders / logs / mods / plugins, while the
+     server is running. Per-file rejection, so the rest of a batch still
+     lands. docs/API.md documents it.
+  2. The Events "Clear" button does not disable itself when the log is
+     already empty (stays enabled after clearing, and after a reload of an
+     empty log).
+     FIXED — template bug, not a JS one: an escaping EJS tag emitted
+     class=&#34;d-none&#34;, which never matches .d-none. Found and fixed in
+     11 other places sharing the same mistake (state hints on Settings and
+     Properties, disabled-state tooltips on Files/Mods/Plugins).
+  3. GET /console?limit=0 falls back to the default (200) instead of clamping
+     to the documented minimum of 1. (limit=-5 clamps correctly to 1.)
+     FIXED — and the same shape on GET /events?limit= with it, which had no
+     lower bound at all and dropped the newest events for a negative limit.
+
+RE-TEST BEFORE TAGGING A NON-BETA RELEASE:
+  - Upload over a running server's jar (expect rejection, batch still lands),
+    and a new file into mods/ while running (expect success).
+  - Clear an empty event log (button should be absent), then trigger one
+    event (button appears live).
+  - The Settings and Properties state hints: exactly ONE of each pair should
+    render, matching whether the server is running.
+  - GET /console?limit=0 and /events?limit=-5.

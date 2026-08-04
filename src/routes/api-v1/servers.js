@@ -761,7 +761,11 @@ router.get('/servers/:id/events', async (req, res) => {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
-        const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+        // Same clamp shape as /console: only a missing/unparseable value takes
+        // the default. There was no lower bound here at all, so limit=-5 reached
+        // getEvents and slice(0, -5) quietly dropped the five newest events.
+        const rawLimit = parseInt(req.query.limit, 10);
+        const limit = Math.min(Math.max(Number.isNaN(rawLimit) ? 50 : rawLimit, 1), 200);
         const types = req.query.types ? req.query.types.split(',') : null;
         const events = await getEvents(server.id, { limit, types });
 
@@ -2509,6 +2513,32 @@ function requireStoppedForFiles(req, res, server, verb) {
     return true;
 }
 
+// The files a running server holds open: its jar, its world folders, its logs,
+// and the mods/plugins the JVM has loaded. Overwriting one of these mid-session
+// is what corrupts a live server — and on Linux the write SUCCEEDS silently
+// rather than failing with EBUSY the way it does on Windows, so the state has
+// to be checked up front instead of waiting for copyFileSync to throw.
+//
+// Reading server.properties per request is cheap next to the upload itself, and
+// level-name can change under us, so it is resolved fresh rather than cached.
+function heldOpenTargets(server, serverDir) {
+    const level = parseServerProperties(serverDir)['level-name'] || 'world';
+    const dirs = ['logs', level, `${level}_nether`, `${level}_the_end`];
+    const content = getContentType(server.serverType);
+    if (content) dirs.push(content.folder);
+
+    return {
+        files: [path.resolve(serverDir, server.jarFile || 'server.jar')],
+        dirs: dirs.map(d => path.join(serverDir, d)).filter(d => fs.existsSync(d))
+    };
+}
+
+function isHeldOpen(targets, destPath) {
+    const resolved = path.resolve(destPath);
+    return targets.files.includes(resolved)
+        || targets.dirs.some(dir => isPathInside(dir, resolved));
+}
+
 // Craftbox mirrors a few server.properties / eula.txt values in the database,
 // so touching either from the file manager has to re-sync them exactly as
 // /edit-file does, or the panel keeps reporting the old port and EULA state.
@@ -2543,6 +2573,15 @@ const uploadFilesHandler = async (req, res) => {
         return res.status(400).json({ error: 'No files uploaded.' });
     }
 
+    // Uploading stays allowed while a server runs (see the note above
+    // requireStoppedForFiles) — but replacing a file it currently holds open
+    // does not. New files are unaffected: nothing can be holding a handle on a
+    // name that isn't there yet.
+    const liveState = req.app.get('serverManager').getState(server);
+    const heldOpen = ['stopped', 'crashed'].includes(liveState)
+        ? null
+        : heldOpenTargets(server, serverDir);
+
     const uploaded = [];
     const rejected = [];
     let replaced = 0;
@@ -2570,12 +2609,18 @@ const uploadFilesHandler = async (req, res) => {
                 continue;
             }
 
+            if (existing && heldOpen && isHeldOpen(heldOpen, destPath)) {
+                rejected.push({ name: safeName, reason: 'file is in use by the server' });
+                continue;
+            }
+
             try {
                 fs.copyFileSync(file.path, destPath);
             } catch (err) {
-                // Overwriting a file a running server holds open fails on
-                // Windows rather than silently winning. One bad file shouldn't
-                // sink the batch, so report it like any other rejection.
+                // Backstop for anything the check above doesn't know to expect:
+                // on Windows a held-open file fails here rather than silently
+                // winning. One bad file shouldn't sink the batch, so report it
+                // like any other rejection.
                 rejected.push({
                     name: safeName,
                     reason: ['EBUSY', 'EPERM', 'EACCES'].includes(err.code)
@@ -2774,7 +2819,11 @@ router.get('/servers/:id/console', async (req, res) => {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
+        // `|| 200` here would have turned an explicit limit=0 into the default
+        // instead of clamping it to 1, so only a missing/unparseable value
+        // falls back — every parsed number goes through the clamp.
+        const rawLimit = parseInt(req.query.limit, 10);
+        const limit = Math.min(Math.max(Number.isNaN(rawLimit) ? 200 : rawLimit, 1), 1000);
         const source = String(req.query.source || 'auto').toLowerCase();
         if (!['auto', 'file', 'memory'].includes(source)) {
             return res.status(400).json({ error: 'source must be one of: auto, file, memory.' });

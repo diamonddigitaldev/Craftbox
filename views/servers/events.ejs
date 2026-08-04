@@ -43,8 +43,12 @@ const eventLabels = Object.fromEntries(
             <option value="<%= t %>" <%= typeFilter === t ? 'selected' : '' %>><%= eventLabels[t] || t %></option>
             <% }) %>
         </select>
-        <%# Always rendered so it can appear the moment a live event arrives. %>
-        <form id="clear-events-form" data-server-id="<%= server.id %>"<%= events.length > 0 ? '' : ' class="d-none"' %>>
+        <%# Always rendered so it can appear the moment a live event arrives.
+            Unescaped output is required when a tag emits a whole attribute:
+            the escaping form turns the quotes into &#34;, which the browser
+            reads as a class literally named "d-none", quotes and all. It never
+            matches .d-none, so the button stayed visible on an empty log. %>
+        <form id="clear-events-form" data-server-id="<%= server.id %>"<%- events.length > 0 ? '' : ' class="d-none"' %>>
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button type="submit" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1">
                 <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span> Clear

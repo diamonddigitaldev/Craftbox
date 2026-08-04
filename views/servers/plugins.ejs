@@ -28,7 +28,7 @@ const _gate = 'stopped crashed';
         </a>
         <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" id="delete-all-btn"
             data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to delete" data-enabled-title=""
-            <%= _serverStopped ? '' : 'disabled title="Stop the server to delete"' %>>
+            <%- _serverStopped ? '' : 'disabled title="Stop the server to delete"' %>>
             <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span>
             Delete All
         </button>
@@ -65,14 +65,14 @@ const _gate = 'stopped crashed';
         enabled state and consults isServerStopped() — no data-enable-when here. %>
     <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
         id="upload-btn" data-label="<%= contentType.label.toLowerCase() %>" disabled
-        <%= _serverStopped ? '' : 'title="Stop the server to upload"' %>>
+        <%- _serverStopped ? '' : 'title="Stop the server to upload"' %>>
         <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
         Upload
     </button>
     <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
         id="modrinth-browse-btn"
         data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to install" data-enabled-title=""
-        <%= _serverStopped ? '' : 'disabled title="Stop the server to install"' %>>
+        <%- _serverStopped ? '' : 'disabled title="Stop the server to install"' %>>
         <span class="material-icons-outlined" style="font-size: 1rem;">travel_explore</span>
         Browse Modrinth
     </button>

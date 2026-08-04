@@ -57,7 +57,7 @@ const _hasContentTab = !!_contentTypes[server.serverType];
     <a href="/servers/<%= server.id %>/download-zip"
        class="btn btn-outline-success btn-sm d-flex align-items-center gap-1<%= _serverStopped ? '' : ' disabled' %>"
        data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to download files" data-enabled-title=""
-       <%= _serverStopped ? '' : 'aria-disabled="true" tabindex="-1" title="Stop the server to download files"' %>>
+       <%- _serverStopped ? '' : 'aria-disabled="true" tabindex="-1" title="Stop the server to download files"' %>>
         <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
         Download Server (.zip)
     </a>
@@ -145,7 +145,7 @@ const _hasContentTab = !!_contentTypes[server.serverType];
                                    style="width: 32px; height: 32px; padding: 0;"
                                    data-enable-when="<%= _gate %>" data-enabled-title="Download" data-disabled-title="Stop server to download"
                                    title="<%= _serverStopped ? 'Download' : 'Stop server to download' %>"
-                                   <%= _serverStopped ? '' : 'aria-disabled="true" tabindex="-1"' %>>
+                                   <%- _serverStopped ? '' : 'aria-disabled="true" tabindex="-1"' %>>
                                     <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
                                 </a>
                             <% } %>

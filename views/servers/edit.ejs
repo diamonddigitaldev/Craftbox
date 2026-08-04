@@ -51,8 +51,8 @@ const _gate = 'stopped crashed'; %>
                                             data-disabled-title="Stop the server to change the JAR URL."
                                             title="<%= _canChangeJar ? '' : 'Stop the server to change the JAR URL.' %>">
                                                 <div class="form-text">
-                                                    <span data-show-when="<%= _gate %>"<%= _canChangeJar ? '' : ' class="d-none"' %>>Change the URL to replace the server jar.</span>
-                                                    <span data-hide-when="<%= _gate %>"<%= _canChangeJar ? ' class="d-none"' : '' %>>Stop the server to change the JAR URL.</span>
+                                                    <span data-show-when="<%= _gate %>"<%- _canChangeJar ? '' : ' class="d-none"' %>>Change the URL to replace the server jar.</span>
+                                                    <span data-hide-when="<%= _gate %>"<%- _canChangeJar ? ' class="d-none"' : '' %>>Stop the server to change the JAR URL.</span>
                                                 </div>
                                         </div>
                                         <% } else { %>
@@ -79,8 +79,8 @@ const _gate = 'stopped crashed'; %>
                                                     data-server-type="<%= server.serverType || 'vanilla' %>"
                                                     data-current-version="<%= server.version %>">
                                                 <div class="form-text">
-                                                    <span data-show-when="<%= _gate %>"<%= _canChangeJar ? '' : ' class="d-none"' %>>Only upgrades are permitted — downgrades are not allowed.</span>
-                                                    <span data-hide-when="<%= _gate %>"<%= _canChangeJar ? ' class="d-none"' : '' %>>Stop the server to change the version.</span>
+                                                    <span data-show-when="<%= _gate %>"<%- _canChangeJar ? '' : ' class="d-none"' %>>Only upgrades are permitted — downgrades are not allowed.</span>
+                                                    <span data-hide-when="<%= _gate %>"<%- _canChangeJar ? ' class="d-none"' : '' %>>Stop the server to change the version.</span>
                                                 </div>
                                             </div>
                                             <% } %>
@@ -179,7 +179,7 @@ const _gate = 'stopped crashed'; %>
                                     <div class="form-text">
                                         Takes a restore point <em>before</em> the changes are applied, so restoring it
                                         undoes them.
-                                        <span data-hide-when="<%= _gate %>"<%= _canChangeJar ? ' class="d-none"' : '' %>>The server will be stopped for the backup and restarted afterwards.</span>
+                                        <span data-hide-when="<%= _gate %>"<%- _canChangeJar ? ' class="d-none"' : '' %>>The server will be stopped for the backup and restarted afterwards.</span>
                                     </div>
                                 </div>
 
