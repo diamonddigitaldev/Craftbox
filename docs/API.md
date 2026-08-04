@@ -160,8 +160,16 @@ Paths are relative to the server directory and are resolved against it with syml
 | GET | `/servers/:id/files?path=` | List a directory (`path` omitted = server root). Returns `{"path", "files": [{name, isDirectory, size, sizeFormatted, modified, modifiedISO, editable}]}`, directories first then by name. `editable` marks files the text endpoint will serve. `404` if the path is not a directory |
 | GET | `/servers/:id/file?path=` | Read a text file. Returns `{"file": {name, path, size, modifiedISO, content}}`. `400` for a binary extension — use `/download` |
 | GET | `/servers/:id/download?path=` | Stream any single file as `application/octet-stream`. Requires the server `stopped`/`crashed` (`409` otherwise), since a running server holds handles on world data and jars; a read that fails mid-stream with `EBUSY` also returns `409` |
+| POST | `/servers/:id/files/upload` | Upload file(s) into a directory. Multipart, any field names, plus a `path` text field naming the destination directory (omitted = server root) — on the multipart path it must precede the files in the stream. Any file type, no size cap (bounded by disk space). An existing file of the same name is **overwritten**; a name already taken by a folder is rejected. Returns `{"success": true, "count", "uploaded": [...], "replaced": <n>, "rejected": [{name, reason}]}`. `404` if the destination is not a directory. Also accepts [chunked uploads](#chunked-uploads-dgup) (one file per session) at `/servers/:id/files/upload/*` |
+| POST | `/servers/:id/files/mkdir` | Create a directory. Body: `{path, name}` — `path` is the parent (omitted = server root). `409` if the name is taken |
+| POST | `/servers/:id/files/rename` | Rename a file or directory in place. Body: `{path, newName}`. Requires the server `stopped`/`crashed` (`409` otherwise). `409` if the new name is taken, or if the entry is held open by the server; changing only the letter case is allowed |
+| POST | `/servers/:id/files/delete` | Delete a file, or a directory and everything inside it. Body: `{path}`. Requires the server `stopped`/`crashed` (`409` otherwise); `409` if the entry is held open by the server. `400` for the server directory itself |
 
 > **Text vs binary is decided by extension, not by content.** The editable set is `.txt .log .properties .json .yml .yaml .xml .cfg .conf .ini .toml .csv .md .sh .bat .cmd .ps1 .js .ts .py .java .html .css .mcmeta .lang .sk .nbt`. Everything else is downloadable but not readable as text.
+
+> **Creating is ungated, destroying is not.** Upload and mkdir work in any server state, matching `/edit-file`, which already writes into a running server's directory. Rename and delete require the server stopped: they are the destructive pair, and a running server holds open handles. Uploading or deleting `server.properties` or `eula.txt` in the server root re-syncs the mirrored database fields, exactly as `/edit-file` does.
+>
+> New names supplied to `rename` and `mkdir` must be a single path segment and are rejected (`400`) if they contain `< > : " | ? *`, end in a dot or space, or are a reserved device name (`CON`, `NUL`, `COM1`…) — those would fail confusingly at the filesystem layer, on Windows now or after an export/import later.
 
 ### Restore-point backups
 
@@ -253,11 +261,12 @@ Each upload endpoint exposes a DGUP sub-resource:
 /servers/from-mrpack/upload/{init,chunk,complete,cancel}
 /servers/:id/icon/upload/{init,chunk,complete,cancel}
 /servers/:id/plugins/upload/{init,chunk,complete,cancel}   (one file per session)
+/servers/:id/files/upload/{init,chunk,complete,cancel}     (one file per session)
 ```
 
 All four are `POST` and require the same auth (and, for session auth, `X-CSRF-Token`) as the parent endpoint.
 
-> `/servers/from-mrpack` takes form fields alongside the file (`name`, `port`, …). On the chunked path, send them as additional keys in the `complete` request body — the handler sees the same fields either way.
+> `/servers/from-mrpack` takes form fields alongside the file (`name`, `port`, …). On the chunked path, send them as additional keys in the `complete` request body — the handler sees the same fields either way. `/servers/:id/files/upload` takes its destination `path` the same way — which is why `init` cannot pre-validate the destination directory for that endpoint, only that the server exists.
 
 ### Lifecycle
 

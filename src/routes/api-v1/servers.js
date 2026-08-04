@@ -28,7 +28,7 @@ const { writeServerProperties, writeEula, parseServerProperties, updateServerPro
 const { PROPERTY_META } = require('../../mc/propertyMeta');
 const { getContentType } = require('../../utils/contentType');
 const { copyModEnvMap, setModEnvMap, getModEnvMap } = require('../../utils/modEnvironment');
-const { isZipFile } = require('../../utils/uploadSafety');
+const { isZipFile, cleanupTempFiles } = require('../../utils/uploadSafety');
 const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
@@ -36,7 +36,7 @@ const { isPathInside } = require('../../utils/pathSafety');
 const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
 const { pickPreferredBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
-const { isTextFile, listDirectory } = require('../../utils/fileBrowser');
+const { isTextFile, listDirectory, safeEntryName, newNameError } = require('../../utils/fileBrowser');
 const { readConsoleTail } = require('../../utils/consoleLog');
 const { cleanupServerData } = require('../../utils/serverCleanup');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
@@ -2481,6 +2481,281 @@ router.get('/servers/:id/download', async (req, res) => {
         }
     });
     stream.pipe(res);
+});
+
+// ── File management ─────────────────────────────────────────────────────────
+// Creating things (upload, mkdir) works in any state, matching /edit-file,
+// which already writes into a running server's directory. Delete and rename
+// are gated on a stopped server: they are the destructive pair, and a running
+// server holds open handles on world data and jars.
+
+// No extension filter and no size cap. This is a general file manager, and an
+// authenticated user can already edit any text file and download the whole
+// directory — an allowlist here would be theatre rather than a boundary.
+// Files stream to disk, so size is bounded by disk space, not memory.
+const fileUpload = multer({ dest: os.tmpdir() });
+
+// Returns false once a response has been sent — the caller must `return`.
+function requireStoppedForFiles(req, res, server, verb) {
+    const liveState = req.app.get('serverManager').getState(server);
+    if (liveState === STATES.PROVISIONING) {
+        res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+        return false;
+    }
+    if (!['stopped', 'crashed'].includes(liveState)) {
+        res.status(409).json({ error: `Stop the server before ${verb} files.` });
+        return false;
+    }
+    return true;
+}
+
+// Craftbox mirrors a few server.properties / eula.txt values in the database,
+// so touching either from the file manager has to re-sync them exactly as
+// /edit-file does, or the panel keeps reporting the old port and EULA state.
+async function syncIfConfigFile(serverId, serverDir, ...targets) {
+    const touched = targets.some(p => p
+        && path.dirname(p) === serverDir
+        && ['server.properties', 'eula.txt'].includes(path.basename(p)));
+    if (touched) await syncServerConfig(serverId);
+}
+
+// Shared by the multipart and DGUP paths, as uploadPluginsHandler is.
+const uploadFilesHandler = async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) {
+        cleanupTempFiles(req.files);
+        return;
+    }
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) {
+        cleanupTempFiles(req.files);
+        return;
+    }
+    const { serverDir, targetPath: targetDir } = resolved;
+
+    if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+        cleanupTempFiles(req.files);
+        return res.status(404).json({ error: 'Directory not found.' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded.' });
+    }
+
+    const uploaded = [];
+    const rejected = [];
+    let replaced = 0;
+
+    try {
+        for (const file of req.files) {
+            const safeName = safeEntryName(file.originalname);
+            if (!safeName) {
+                rejected.push({ name: file.originalname, reason: 'invalid filename' });
+                continue;
+            }
+
+            const destPath = path.join(targetDir, safeName);
+            // Catches a name that survived sanitising but resolves outside the
+            // directory anyway — most plausibly an existing symlink at destPath.
+            if (!isPathInside(targetDir, destPath)) {
+                rejected.push({ name: safeName, reason: 'invalid path' });
+                continue;
+            }
+
+            let existing = null;
+            try { existing = fs.statSync(destPath); } catch { /* nothing there yet */ }
+            if (existing && existing.isDirectory()) {
+                rejected.push({ name: safeName, reason: 'a folder with that name already exists' });
+                continue;
+            }
+
+            try {
+                fs.copyFileSync(file.path, destPath);
+            } catch (err) {
+                // Overwriting a file a running server holds open fails on
+                // Windows rather than silently winning. One bad file shouldn't
+                // sink the batch, so report it like any other rejection.
+                rejected.push({
+                    name: safeName,
+                    reason: ['EBUSY', 'EPERM', 'EACCES'].includes(err.code)
+                        ? 'file is in use by the server'
+                        : 'could not be written'
+                });
+                continue;
+            }
+
+            if (existing) replaced++;
+            uploaded.push(safeName);
+        }
+    } finally {
+        cleanupTempFiles(req.files);
+    }
+
+    if (uploaded.length > 0) {
+        log('info', `Uploaded ${uploaded.length} file(s) to "${req.body.path || '/'}" `
+            + `on server ${server.name} (${server.id})`);
+        await syncIfConfigFile(server.id, serverDir, ...uploaded.map(n => path.join(targetDir, n)));
+    }
+
+    res.json({ success: true, count: uploaded.length, uploaded, replaced, rejected });
+};
+
+// POST /servers/:id/files/upload — Upload file(s) into a directory.
+// The `path` body field picks the destination (omitted = server root). On the
+// multipart path it must precede the files in the stream, or multer will not
+// have parsed it by the time the handler runs.
+router.post('/servers/:id/files/upload', multerShim(fileUpload.any()), uploadFilesHandler);
+
+// POST /servers/:id/files/upload/{init,chunk,complete,cancel} — DGUP chunked
+// upload for files too large for a single request (e.g. behind Cloudflare
+// Tunnel's 100 MB body cap). complete() runs uploadFilesHandler unchanged.
+router.use('/servers/:id/files/upload', createDgupRouter({
+    routeKey: 'files',
+    field: 'files',
+    fileMode: 'array',
+    maxBytes: Infinity,
+    ext: null,                              // any file type, as above
+    mimetype: 'application/octet-stream',
+    // The destination directory rides on `complete`, not `init` (see the
+    // `fields` option in public/js/dgup.js), so the server's existence is the
+    // only thing there is to preflight here.
+    validate: async (req) => {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return { status: 404, error: 'Server not found.' };
+        return null;
+    }
+}, uploadFilesHandler));
+
+// POST /servers/:id/files/delete — Delete a file, or a directory and its contents.
+router.post('/servers/:id/files/delete', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+    if (!requireStoppedForFiles(req, res, server, 'deleting')) return;
+
+    if (!req.body.path) return res.status(400).json({ error: 'No path specified.' });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { serverDir, targetPath } = resolved;
+
+    if (targetPath === serverDir) {
+        return res.status(400).json({ error: 'The server directory itself cannot be deleted.' });
+    }
+
+    // lstat, not stat: a symlink should be unlinked, not followed and emptied.
+    let stat;
+    try {
+        stat = fs.lstatSync(targetPath);
+    } catch {
+        return res.status(404).json({ error: 'File not found.' });
+    }
+
+    try {
+        if (stat.isDirectory()) {
+            fs.rmSync(targetPath, { recursive: true, force: true });
+        } else {
+            fs.unlinkSync(targetPath);
+        }
+    } catch (err) {
+        if (['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'].includes(err.code)) {
+            return res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
+        }
+        log('error', `Failed to delete ${req.body.path}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to delete file.' });
+    }
+
+    log('info', `Deleted ${stat.isDirectory() ? 'folder' : 'file'} "${req.body.path}" `
+        + `from server ${server.name} (${server.id})`);
+    await syncIfConfigFile(server.id, serverDir, targetPath);
+    res.json({ success: true });
+});
+
+// POST /servers/:id/files/rename — Rename a file or directory in place.
+router.post('/servers/:id/files/rename', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+    if (!requireStoppedForFiles(req, res, server, 'renaming')) return;
+
+    if (!req.body.path) return res.status(400).json({ error: 'No path specified.' });
+
+    const newName = safeEntryName(req.body.newName);
+    if (!newName) return res.status(400).json({ error: 'Invalid name.' });
+    const nameError = newNameError(newName);
+    if (nameError) return res.status(400).json({ error: nameError });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { serverDir, targetPath } = resolved;
+
+    if (targetPath === serverDir) {
+        return res.status(400).json({ error: 'The server directory itself cannot be renamed.' });
+    }
+    if (!fs.existsSync(targetPath)) return res.status(404).json({ error: 'File not found.' });
+
+    const destPath = path.join(path.dirname(targetPath), newName);
+    if (!isPathInside(serverDir, destPath)) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    // Changing only the case is a legitimate rename, but on a case-insensitive
+    // filesystem the destination "already exists" — it is the source.
+    const caseOnly = destPath.toLowerCase() === targetPath.toLowerCase();
+    if (!caseOnly && fs.existsSync(destPath)) {
+        return res.status(409).json({ error: 'Something with that name already exists here.' });
+    }
+
+    try {
+        fs.renameSync(targetPath, destPath);
+    } catch (err) {
+        if (['EBUSY', 'EPERM', 'EACCES'].includes(err.code)) {
+            return res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
+        }
+        log('error', `Failed to rename ${req.body.path}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to rename file.' });
+    }
+
+    log('info', `Renamed "${req.body.path}" to "${newName}" on server ${server.name} (${server.id})`);
+    await syncIfConfigFile(server.id, serverDir, targetPath, destPath);
+    res.json({ success: true, name: newName });
+});
+
+// POST /servers/:id/files/mkdir — Create a directory.
+router.post('/servers/:id/files/mkdir', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+
+    const name = safeEntryName(req.body.name);
+    if (!name) return res.status(400).json({ error: 'Invalid folder name.' });
+    const nameError = newNameError(name);
+    if (nameError) return res.status(400).json({ error: nameError });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { targetPath: parentDir } = resolved;
+
+    if (!fs.existsSync(parentDir) || !fs.statSync(parentDir).isDirectory()) {
+        return res.status(404).json({ error: 'Directory not found.' });
+    }
+
+    const destPath = path.join(parentDir, name);
+    if (!isPathInside(parentDir, destPath)) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+    if (fs.existsSync(destPath)) {
+        return res.status(409).json({ error: 'Something with that name already exists here.' });
+    }
+
+    try {
+        fs.mkdirSync(destPath);
+    } catch (err) {
+        log('error', `Failed to create folder ${name}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to create folder.' });
+    }
+
+    log('info', `Created folder "${name}" in "${req.body.path || '/'}" `
+        + `on server ${server.name} (${server.id})`);
+    res.json({ success: true, name });
 });
 
 // GET /servers/:id/console?limit=&source= — Read recent console output.
