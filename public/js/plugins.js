@@ -96,6 +96,7 @@
 
         var uploaded = [];
         var rejected = [];
+        var replaced = 0;
         var failure = null;
 
         try {
@@ -114,6 +115,7 @@
                 if (res.ok && data.success) {
                     uploaded = data.uploaded || [];
                     rejected = rejected.concat(data.rejected || []);
+                    replaced += data.replaced || 0;
                 } else {
                     failure = (data && data.error) || 'Upload failed.';
                 }
@@ -136,6 +138,7 @@
                     if (result.ok && result.data && result.data.success) {
                         uploaded = uploaded.concat(result.data.uploaded || []);
                         rejected = rejected.concat(result.data.rejected || []);
+                        replaced += result.data.replaced || 0;
                     } else {
                         failure = (result.data && result.data.error) || 'Upload failed.';
                         break;
@@ -149,6 +152,7 @@
         var uploadedCount = uploaded.length;
         var rejectedCount = rejected.length;
         var noun = uploadedCount === 1 ? contentSingular : contentLabel;
+        var replacedNote = replaced > 0 ? ', ' + replaced + ' replaced' : '';
 
         if (failure && uploadedCount > 0) {
             // Some files landed before the failure — reload to show them.
@@ -170,11 +174,12 @@
             hideOverlay();
         } else if (rejectedCount > 0) {
             // Partial success — reload to show what landed, with a warning toast.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded, ' + rejectedCount + ' rejected.', 'warning');
+            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote
+                + ', ' + rejectedCount + ' rejected.', 'warning');
             window.location.reload();
         } else {
             // Clean success path.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded.', 'success');
+            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote + '.', 'success');
             window.location.reload();
         }
     }

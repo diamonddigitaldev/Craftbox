@@ -79,6 +79,7 @@ const uploadPluginsHandler = async (req, res) => {
 
     const uploaded = [];
     const rejected = [];
+    let replaced = 0;
     try {
         for (const file of req.files) {
             const safeName = path.basename(file.originalname).replace(/[/\\]/g, '');
@@ -98,7 +99,25 @@ const uploadPluginsHandler = async (req, res) => {
                 continue;
             }
 
+            // One mod, one file. A disabled twin left on disk would make the
+            // upload land beside the copy it was meant to replace: the list
+            // would show the mod twice, deleting it would remove only one of
+            // the pair, and the environment dropdown would silently no-op
+            // (enableOnDisk/disableOnDisk skip a rename when both exist).
+            const disabledTwin = destPath + DISABLED_SUFFIX;
+            const hadDisabledTwin = fs.existsSync(disabledTwin);
+            const hadEnabled = fs.existsSync(destPath);
+
             fs.copyFileSync(file.path, destPath);
+            if (hadDisabledTwin) {
+                fs.unlinkSync(disabledTwin);
+                // Uploading is an explicit "put this on the server", so the
+                // mod comes back as Client and Server rather than staying
+                // tagged client-only from its previous life.
+                if (contentType.label === 'Mods') await clearModEnv(server.id, safeName);
+            }
+
+            if (hadEnabled || hadDisabledTwin) replaced++;
             uploaded.push(safeName);
         }
     } finally {
@@ -111,7 +130,7 @@ const uploadPluginsHandler = async (req, res) => {
     if (rejected.length > 0) {
         log('warn', `Rejected ${rejected.length} upload(s) to server ${server.name} (${server.id}): ${rejected.map(r => `${r.name} (${r.reason})`).join(', ')}`);
     }
-    res.json({ success: true, count: uploaded.length, uploaded, rejected });
+    res.json({ success: true, count: uploaded.length, uploaded, replaced, rejected });
 };
 
 // GET /servers/:id/plugins — List installed plugins/mods.
@@ -228,17 +247,20 @@ router.post('/servers/:id/plugins/delete', async (req, res) => {
         return res.status(403).json({ error: 'Access denied.' });
     }
 
+    // One row can stand for both forms on disk, so delete every one of them —
+    // removing just the enabled half would leave the disabled twin behind and
+    // the mod would reappear on the next load.
     const disabledPath = targetPath + DISABLED_SUFFIX;
-    const existingPath = fs.existsSync(targetPath) && !fs.statSync(targetPath).isDirectory()
-        ? targetPath
-        : (fs.existsSync(disabledPath) && !fs.statSync(disabledPath).isDirectory() ? disabledPath : null);
+    const existingPaths = [targetPath, disabledPath].filter(p => {
+        try { return !fs.statSync(p).isDirectory(); } catch { return false; }
+    });
 
-    if (!existingPath) {
+    if (existingPaths.length === 0) {
         return res.status(404).json({ error: 'File not found.' });
     }
 
     try {
-        fs.unlinkSync(existingPath);
+        for (const p of existingPaths) fs.unlinkSync(p);
         if (contentType.label === 'Mods') {
             await clearModEnv(server.id, safeName);
         }
