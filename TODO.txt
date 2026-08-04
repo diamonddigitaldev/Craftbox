@@ -1,0 +1,180 @@
+CRAFTBOX 1.2.0 — MANUAL BROWSER TEST CHECKLIST
+==============================================
+
+Covers everything in 1.2.0-beta.1 and 1.2.0-beta.2. These are the checks that
+need a real browser and a real Minecraft server; the beta.2 API surface
+(upload / rename / delete / mkdir, path traversal, state gating, chunked
+upload, config re-sync) has already been exercised over HTTP and passed.
+
+Setup:
+  - One mod-loader server (Fabric or Forge) with a few mods installed.
+  - One Paper server, for the plugins-vs-mods differences.
+  - Have a second browser tab open on the same server for the live-update checks.
+  - A file >5 MB on hand, to force the chunked upload path.
+
+
+--------------------------------------------------------------------
+1.2.0-beta.2 — FILE MANAGER (Files tab)
+--------------------------------------------------------------------
+
+Upload
+  [ ] Pick one file with the picker, press Upload. Toast reports "1 file
+      uploaded.", the row appears after reload.
+  [ ] Pick several files at once. Toast pluralises correctly.
+  [ ] Drag files anywhere on the page. The blurred overlay appears, names the
+      destination folder, and drops upload to THAT folder, not the root.
+  [ ] Navigate into a subfolder first, then upload. The file lands in the
+      subfolder.
+  [ ] Upload a file that already exists. Toast reads "... 1 replaced." and the
+      contents are the new ones.
+  [ ] Upload a file whose name matches an existing FOLDER. It is rejected with
+      a clear reason, nothing else in the batch is affected.
+  [ ] Upload a >5 MB file. The overlay shows a per-file percentage that climbs,
+      and the finished file is intact (open/checksum it).
+  [ ] Upload several files where one is large. Overlay shows "2 of 3 — name".
+  [ ] Drag a whole folder in. Confirm the behaviour is acceptable (browsers
+      hand over no files for a folder drop — expect nothing to happen rather
+      than a stuck overlay).
+
+New Folder
+  [ ] Create a folder; it appears sorted above the files after reload.
+  [ ] Try a name with < > : " | ? * — rejected with a readable message.
+  [ ] Try "NUL" or "CON" — rejected as a reserved name.
+  [ ] Try an existing name — rejected as already taken.
+  [ ] Enter key in the name field submits the modal.
+
+Rename
+  [ ] Rename a file. The modal pre-selects the base name and leaves the
+      extension selected-out, so typing replaces only the name.
+  [ ] Rename a folder. The whole name is pre-selected (no extension split).
+  [ ] Rename changing only letter case (Foo.txt -> foo.txt) — succeeds.
+  [ ] Rename onto an existing name — rejected, modal stays open, button resets.
+  [ ] Enter key submits.
+  [ ] Rename server.properties and confirm nothing in the panel breaks; rename
+      it back and confirm Settings still shows the right port.
+
+Delete
+  [ ] Delete a file. Confirm modal names it and says "cannot be undone".
+  [ ] Delete a folder with contents. Confirm the modal uses the sterner folder
+      wording, and everything inside is gone afterwards.
+  [ ] Cancel the modal — nothing is deleted, button is still usable after.
+
+Search
+  [ ] Type in the search box; rows filter live, no page reload.
+  [ ] Clear it; all rows return, including the ".." row.
+
+State gating (the important one)
+  [ ] With the server RUNNING, open the Files tab. Upload and New Folder are
+      live; Rename, Delete and both Download buttons are greyed with a
+      "Stop the server to ..." tooltip.
+  [ ] START the server from another tab while sitting on Files. Rename/Delete
+      grey out WITHOUT a reload; Upload and New Folder stay usable.
+  [ ] STOP it again from the other tab. They re-enable without a reload.
+  [ ] Upload a file while the server is running — it works.
+  [ ] Upload a file that the running server holds open (e.g. the server jar or
+      a world file). It is rejected with "file is in use by the server" and the
+      rest of the batch still lands.
+
+Cross-checks
+  [ ] Breadcrumbs still navigate correctly after each operation.
+  [ ] Edit (pencil) still opens the text editor for editable files.
+  [ ] Download Server (.zip) still works.
+  [ ] Files tab on a NeoForge server shows the "use the Mods tab" hint in
+      mods/ (this map was missing neoforge before beta.2).
+
+
+--------------------------------------------------------------------
+1.2.0-beta.2 — MODS / PLUGINS PAGE FIXES
+--------------------------------------------------------------------
+
+  [ ] Upload a mod that is already installed. Toast now says
+      "1 mod uploaded, 1 replaced." (previously it just said "uploaded").
+  [ ] Set a mod to "Client Only" (it becomes .jar.disabled on disk), then
+      upload the same jar again. It appears ONCE in the list, is back on
+      "Client and Server", and only one file exists in mods/ on disk.
+  [ ] Using the Files tab, drop a copy of an installed mod into mods/ so both
+      foo.jar and foo.jar.disabled exist. The Mods page lists it ONCE.
+  [ ] Delete that mod from the Mods page. It does not reappear after a reload
+      (both on-disk forms are removed).
+  [ ] Plugins page (Paper) is unaffected: upload, replace, delete, Download All.
+  [ ] Modrinth browse/install still works and still reports installed state.
+
+
+--------------------------------------------------------------------
+1.2.0-beta.1 — LIVE STATE GATING
+--------------------------------------------------------------------
+
+  [ ] Mods tab, server running: Upload, Delete, Delete All, Browse Modrinth
+      and the environment dropdowns are all disabled with tooltips.
+  [ ] Stop the server from a second tab. Every one of those re-enables with no
+      reload, and the amber warning banner disappears.
+  [ ] Start it again — they all disable again and the banner returns.
+  [ ] Settings tab: Duplicate and Save Template render as ONE button each; with
+      the server running, clicking offers to stop it first rather than failing.
+  [ ] Backups tab: create/restore/delete gating tracks live state.
+  [ ] Properties tab: same.
+  [ ] Export button and the backup modal's "stop first / start after" options
+      reflect live state, not the state at page load.
+
+
+--------------------------------------------------------------------
+1.2.0-beta.1 — LIVE EVENT LOG
+--------------------------------------------------------------------
+
+  [ ] Open the Events tab and, from a second tab, start the server. Rows appear
+      at the top live, no reload.
+  [ ] Take a backup, upgrade a jar, have a player join/leave. All appear live —
+      not just start/stop/crash.
+  [ ] A live row renders the same badge, icon, timestamp and "Initiated By"
+      cell as one that came from a page render (compare after a reload).
+  [ ] Set a type filter, then trigger an event of a different type. It does not
+      appear while the filter excludes it.
+  [ ] With an empty log, trigger one event: the empty state swaps out for the
+      table without a reload.
+  [ ] Clear the log; the table empties live and the Clear button disables.
+  [ ] Leave the tab open past 500 events (or lower the prune) — the oldest row
+      drops rather than growing forever.
+
+
+--------------------------------------------------------------------
+1.2.0-beta.1 — RESTART RACE
+--------------------------------------------------------------------
+
+  [ ] Restart a server and watch the console through the whole cycle. Start and
+      Delete stay DISABLED for the entire gap where the state reads stopped.
+  [ ] Confirm only one JVM ends up running (check the process list / that the
+      port is not double-bound).
+  [ ] Try to delete the server mid-restart — refused with a state conflict,
+      not a half-deleted directory.
+  [ ] Stop and Kill become usable again as soon as the server leaves stopped,
+      not only once a big modpack has finished booting.
+  [ ] Double-click Restart quickly — the second click does nothing rather than
+      queueing a second action.
+
+
+--------------------------------------------------------------------
+1.2.0-beta.1 — API SURFACE (curl or a REST client, with an API key)
+--------------------------------------------------------------------
+
+  [ ] GET /api/v1/servers/:id/console returns recent lines oldest-first.
+  [ ] ?limit= is honoured and clamped to 1-1000; truncated flag is set when
+      there is more output than returned.
+  [ ] ?source=file vs memory differ as documented; auto falls back to memory
+      for a server that has never been started.
+  [ ] POST a command, then read it back via /console — the reply is there.
+  [ ] GET /files, /file, /download all work with a bearer key alone.
+  [ ] GET /export and /backups/:id/download work with a bearer key, and the
+      panel's plain links still work in the browser (session auth).
+  [ ] GET /plugins and /plugins/environment agree with what the Mods page shows,
+      including a client-only mod reading as "client".
+
+
+--------------------------------------------------------------------
+BEFORE TAGGING THE RELEASE
+--------------------------------------------------------------------
+
+  [ ] Fresh install: first-run setup completes and the dashboard loads.
+  [ ] Upgrade over an existing 1.1.x data directory — no migration surprises.
+  [ ] Docker image builds and runs.
+  [ ] docs/API.md matches the shipped behaviour.
+  [ ] README badge and package.json versions agree.
