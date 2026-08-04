@@ -131,7 +131,7 @@ const _hasContentTab = !!_contentTypes[server.serverType];
                     </td>
                     <td class="text-body-secondary small"><%= file.isDirectory ? '—' : file.sizeFormatted %></td>
                     <td class="text-body-secondary small"><span class="format-date" data-iso="<%= file.modifiedISO %>"></span></td>
-                    <td class="text-center">
+                    <td class="text-end">
                         <div class="d-inline-flex gap-1">
                             <% if (!file.isDirectory) { %>
                                 <% if (file.editable) { %>
