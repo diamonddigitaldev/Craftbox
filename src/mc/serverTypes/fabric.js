@@ -36,6 +36,21 @@ module.exports = {
         return null;
     },
 
+    // Fabric records the loader version as its build (see downloadJar below, and
+    // modpacks which pin fabric-loader exactly). getBuilds stays null so the
+    // create/edit version picker keeps auto-selecting, but the upgrade check
+    // needs to know what the newest loader is — otherwise a Fabric server can
+    // never be told an update exists.
+    async getLatestBuild() {
+        const res = await fetch(`${BASE}/versions/loader`);
+        if (!res.ok) throw new Error(`Failed to fetch Fabric loader versions: HTTP ${res.status}`);
+        const loaders = await res.json();
+
+        const stable = loaders.find(l => l.stable) || loaders[0];
+        if (!stable) return null;
+        return { build: stable.version, channel: stable.stable ? 'stable' : 'beta' };
+    },
+
     async downloadJar(version, build, destPath) {
         // Honor a pinned loader version (modpacks pin fabric-loader exactly);
         // otherwise use the latest stable loader.

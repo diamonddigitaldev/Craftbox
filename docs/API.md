@@ -83,6 +83,8 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 
 Allowed lifecycle actions: **start** from `stopped`/`crashed`; **stop** from `running`/`starting`; **restart** from `running`; **kill** from `running`/`starting`/`stopping`.
 
+> **Provisioning is exclusive.** A server created, imported, duplicated or built from a modpack stays `provisioning` until its directory is fully assembled, and can only leave that state for `stopped` or `crashed`. Backups, restores, jar upgrades, restarts, and the settings/properties restore-point saves all reject with `409 {"error": "Wait for the server to finish provisioning."}` until it clears — `stopFirst` does not override this. Poll `GET /servers/:id` or watch the WebSocket `state` message to know when it is ready.
+
 
 ## Servers
 
@@ -121,6 +123,20 @@ The server object returned by these endpoints contains the full configuration (n
 | POST | `/servers/:id/kill` | Force-kill the process |
 | POST | `/servers/:id/command` | Send a console line. Body: `{command}`. `409` if not running |
 
+### Console
+
+The [WebSocket](#websocket-protocol) is the live feed, but it does not accept bearer keys — this is how an API-key client reads console output. It pairs with `POST /servers/:id/command`, which sends a line but returns nothing of the reply.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/servers/:id/console?limit=&source=` | Recent console output, oldest first. Returns `{"source": "file"\|"memory", "truncated": bool, "lines": [{timestamp, line}]}`. `limit` 1–1000 (default 200); `truncated` means older output exists beyond what was returned |
+
+`source` selects where the output comes from, and the two differ:
+
+- **`file`** — `logs/craftbox-console.log` in the server directory. Durable, timestamped, survives a panel restart, and is what you want for automation. Append-only and never rotated, so reads are tailed from the end.
+- **`memory`** — the live process buffer. A few hundred lines at most, `timestamp` is always `null`, and it is discarded whenever the process object is rebuilt (which includes every start of a stopped server). It does hold the handful of `[Craftbox] ...` lines emitted after the log stream closes on exit, which never reach disk.
+- **`auto`** (default) — `file`, falling back to `memory` for a server that has never been started on this install.
+
 ### Settings
 
 | Method | Path | Description |
@@ -129,11 +145,34 @@ The server object returned by these endpoints contains the full configuration (n
 | POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ..., "color": ...}` — `color` is the group's folder color (null when ungrouped) |
 | POST | `/servers/:id/autorestart` | Body: `{enabled: bool}`. Returns `{"autoRestart": bool}` |
 | POST | `/servers/:id/autostart` | Body: `{enabled: bool}`. Returns `{"autoStart": bool}` |
-| POST | `/servers/:id/statuspublic` | Toggle the public status page. Body: `{enabled: bool}` |
+| POST | `/servers/:id/statuspublic` | Toggle listing on the `/status` index. Body: `{enabled: bool}`. Does **not** gate direct access — see [Public status endpoints](#public-status-endpoints) |
 | POST | `/servers/:id/advertisedip` | Set the address shown on the status page. Body: `{value}` |
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
 | POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
 | POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` for non-text extensions |
+
+### Files
+
+Paths are relative to the server directory and are resolved against it with symlinks fully resolved — anything landing outside returns `403 {"error": "Access denied."}`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/servers/:id/files?path=` | List a directory (`path` omitted = server root). Returns `{"path", "files": [{name, isDirectory, size, sizeFormatted, modified, modifiedISO, editable}]}`, directories first then by name. `editable` marks files the text endpoint will serve. `404` if the path is not a directory |
+| GET | `/servers/:id/file?path=` | Read a text file. Returns `{"file": {name, path, size, modifiedISO, content}}`. `400` for a binary extension — use `/download` |
+| GET | `/servers/:id/download?path=` | Stream any single file as `application/octet-stream`. Requires the server `stopped`/`crashed` (`409` otherwise), since a running server holds handles on world data and jars; a read that fails mid-stream with `EBUSY` also returns `409` |
+| POST | `/servers/:id/files/upload` | Upload file(s) into a directory. Multipart, any field names, plus a `path` text field naming the destination directory (omitted = server root) — on the multipart path it must precede the files in the stream. Any file type, no size cap (bounded by disk space). An existing file of the same name is **overwritten**; a name already taken by a folder is rejected, as is one that would replace a file a running server holds open (`reason: "file is in use by the server"`). Returns `{"success": true, "count", "uploaded": [...], "replaced": <n>, "rejected": [{name, reason}]}`. `404` if the destination is not a directory. Also accepts [chunked uploads](#chunked-uploads-dgup) (one file per session) at `/servers/:id/files/upload/*` |
+| POST | `/servers/:id/files/mkdir` | Create a directory. Body: `{path, name}` — `path` is the parent (omitted = server root). `409` if the name is taken |
+| POST | `/servers/:id/files/mkfile` | Create an empty file. Body: `{path, name}` — `path` is the parent directory (omitted = server root). Any extension; an existing file is never truncated — `409` if the name is taken |
+| POST | `/servers/:id/files/rename` | Rename a file or directory in place. Body: `{path, newName}`. Requires the server `stopped`/`crashed` (`409` otherwise). `409` if the new name is taken, or if the entry is held open by the server; changing only the letter case is allowed |
+| POST | `/servers/:id/files/delete` | Delete a file, or a directory and everything inside it. Body: `{path}`. Requires the server `stopped`/`crashed` (`409` otherwise); `409` if the entry is held open by the server. `400` for the server directory itself |
+
+> **Text vs binary is decided by extension, not by content.** The editable set is `.txt .log .properties .json .yml .yaml .xml .cfg .conf .ini .toml .csv .md .sh .bat .cmd .ps1 .js .ts .py .java .html .css .mcmeta .lang .sk .nbt`. Everything else is downloadable but not readable as text.
+
+> **Creating is ungated, destroying is not.** Upload, mkdir and mkfile work in any server state, matching `/edit-file`, which already writes into a running server's directory. Rename and delete require the server stopped: they are the destructive pair, and a running server holds open handles. Uploading, creating or deleting `server.properties` or `eula.txt` in the server root re-syncs the mirrored database fields, exactly as `/edit-file` does.
+>
+> **Replacing what a running server holds open is the one upload that is gated.** While a server is not `stopped`/`crashed`, an upload that would overwrite its jar, or any existing file under its world folders, `logs/`, or `mods/`/`plugins/`, is rejected per-file with `reason: "file is in use by the server"` — the rest of the batch still lands. Windows fails that write with `EBUSY` anyway; Linux does not, and would silently corrupt a live server. New files in those folders are unaffected: nothing can hold a handle on a name that isn't there yet.
+>
+> New names supplied to `rename`, `mkdir` and `mkfile` must be a single path segment and are rejected (`400`) if they contain `< > : " | ? *`, end in a dot or space, or are a reserved device name (`CON`, `NUL`, `COM1`…) — those would fail confusingly at the filesystem layer, on Windows now or after an export/import later.
 
 ### Restore-point backups
 
@@ -161,8 +200,10 @@ The response is `202 {"success": true, "status": "started"}` instead of the endp
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/servers/:id/check-upgrade` | Returns `{"upgradeAvailable": bool, "currentBuild", "latestBuild", "channel", ...}` — `latestBuild` is the newest *stable* build where the version has stable builds, so stable servers are never offered alpha/beta builds |
+| GET | `/servers/:id/check-upgrade` | Returns `{"upgradeAvailable": bool, "currentBuild", "latestBuild", "channel", "reason"?}` — `latestBuild` is the newest *stable* build where the version has stable builds, so stable servers are never offered alpha/beta builds. A server with no recorded build (`currentBuild: null`) reports `upgradeAvailable: true` with a `reason`: upgrading is what records a build. `reason` is also set, with `upgradeAvailable: false`, when the type has no build tracking (`custom`, `vanilla`) or the version has no published builds |
 | POST | `/servers/:id/upgrade-jar` | Download the newer build. Body: `{version?, jarUrl?, backup?}` — `version` upgrades a tracked server to that version in the same operation (upgrade-only, same downgrade rules as `/edit`); `jarUrl` (custom servers only — required there, ignored otherwise) replaces the jar from a new http/https URL, downloading to a sidecar so a failed fetch leaves the old jar intact; `backup: true` creates a backup first (state passes through `backing_up`, then `upgrading_jar`; `409` if a backup is already in progress). Returns `202`; `409` if running. Completes via WS `operation: "jar-upgrade"` with a payload of `{build, version}` |
+
+> **`build` is not one type.** Paper, Purpur and Folia report an integer build number; Forge, NeoForge and Fabric report a dotted version string (Fabric's is its loader version, which is what a modpack pins). Compare builds segment-wise rather than lexically — `"21.1.100"` is newer than `"21.1.95"`. `vanilla` and `custom` servers have no build at all.
 
 
 ## Backups
@@ -175,8 +216,7 @@ The response is `202 {"success": true, "status": "started"}` instead of the endp
 | DELETE | `/servers/:id/backups/:backupId` | Delete a backup |
 | POST | `/servers/:id/backup-schedule` | Body: `{enabled, intervalHours (1–168), countdownMinutes (1–30)}`. Returns `{"backupSchedule": {...}, "nextBackupAt": ...}` |
 | POST | `/servers/:id/backup-retention` | Body: `{retentionCount (0–100), retentionDays (0–365)}` (0 = unlimited) |
-
-> Backup archive downloads are served by the browser-facing panel route `GET /servers/:id/backups/:backupId/download` (session auth, outside `/api/v1`).
+| GET | `/servers/:id/backups/:backupId/download` | Stream the backup archive as `application/zip`. `404` if the backup does not belong to this server |
 
 
 ## Server transfer
@@ -185,7 +225,7 @@ Move a server — files, Craftbox settings, and optionally backups and event his
 
 ### Export
 
-`GET /servers/:id/export?backups=true&events=true&start=true` (browser-facing panel route, session auth, outside `/api/v1`) streams the download as `<server-name>.cbx` with `Content-Type: application/x-craftbox-export+zip`. The server must be `stopped` or `crashed`. Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option).
+`GET /servers/:id/export?backups=true&events=true&start=true` streams the download as `<server-name>.cbx` with `Content-Type: application/x-craftbox-export+zip`. The server must be `stopped` or `crashed` (`409` otherwise). Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option). Requesting `backups` holds the backup lock for the duration, so a scheduled backup cannot write a partial archive into the export; `409` if a backup is already running.
 
 > **`.cbx` is Craftbox's transfer-archive extension.** The container is an ordinary zip, so any zip tool can open one for inspection — only the extension and media type are Craftbox-specific. Import requires the `.cbx` extension but never trusts it: the upload is also checked against the zip magic bytes and must carry a valid `craftbox-manifest.json`, so renaming an arbitrary zip to `.cbx` is still rejected.
 
@@ -224,11 +264,12 @@ Each upload endpoint exposes a DGUP sub-resource:
 /servers/from-mrpack/upload/{init,chunk,complete,cancel}
 /servers/:id/icon/upload/{init,chunk,complete,cancel}
 /servers/:id/plugins/upload/{init,chunk,complete,cancel}   (one file per session)
+/servers/:id/files/upload/{init,chunk,complete,cancel}     (one file per session)
 ```
 
 All four are `POST` and require the same auth (and, for session auth, `X-CSRF-Token`) as the parent endpoint.
 
-> `/servers/from-mrpack` takes form fields alongside the file (`name`, `port`, …). On the chunked path, send them as additional keys in the `complete` request body — the handler sees the same fields either way.
+> `/servers/from-mrpack` takes form fields alongside the file (`name`, `port`, …). On the chunked path, send them as additional keys in the `complete` request body — the handler sees the same fields either way. `/servers/:id/files/upload` takes its destination `path` the same way — which is why `init` cannot pre-validate the destination directory for that endpoint, only that the server exists.
 
 ### Lifecycle
 
@@ -285,12 +326,14 @@ Only `started`, `stopped`, `crashed` and `restarted` are exposed on public statu
 
 ## Plugins & mods
 
-The server must be `stopped` or `crashed` for all of these.
+Reads work in any state. The **mutating** routes require the server to be `stopped` or `crashed`. All of these `404` on server types with no plugin/mod folder (`vanilla`, `custom`).
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/plugins/upload` | Upload jar(s). Multipart, any field names, `.jar` only, no size cap (bounded by disk space); files are verified to be real zip archives. Returns `{"success": true, "count", "uploaded": [...], "rejected": [{name, reason}]}`. Also accepts [chunked uploads](#chunked-uploads-dgup) (one jar per session) at `/servers/:id/plugins/upload/*` |
-| POST | `/servers/:id/plugins/delete` | Body: `{filename}` |
+| GET | `/servers/:id/plugins` | List installed plugins/mods. Returns `{"contentType": {label, folder}, "files": [{name, size, sizeFormatted, modifiedISO, environment}]}` — `label` is `Plugins` (Paper/Purpur/Folia) or `Mods` (Fabric/Forge/NeoForge), and `environment` is always `both` for plugin loaders. Empty `files` when the folder does not exist yet |
+| GET | `/servers/:id/plugins/environment` | Mod-loader servers only (`400` otherwise). Returns `{"environment": {"<file>.jar": "client"\|"server"}}`. Only non-default entries are stored, so a mod absent from the map is `both` |
+| POST | `/servers/:id/plugins/upload` | Upload jar(s). Multipart, any field names, `.jar` only, no size cap (bounded by disk space); files are verified to be real zip archives. An existing copy is overwritten, including a `.jar.disabled` one (which is removed, and the mod's environment tag reset to `both` — uploading is an explicit "put this on the server"). Returns `{"success": true, "count", "uploaded": [...], "replaced": <n>, "rejected": [{name, reason}]}`. Also accepts [chunked uploads](#chunked-uploads-dgup) (one jar per session) at `/servers/:id/plugins/upload/*` |
+| POST | `/servers/:id/plugins/delete` | Body: `{filename}`. Removes both on-disk forms (`<name>.jar` and `<name>.jar.disabled`), since one listed mod can stand for either |
 | POST | `/servers/:id/plugins/delete-all` | Delete all plugins/mods |
 | POST | `/servers/:id/plugins/environment` | Mod-loader servers only. Body: `{filename, environment}` where environment is `client`, `server`, or `both`. Client-only mods are disabled on the server but still offered on the status page mods download |
 
@@ -354,23 +397,25 @@ Session auth **only** — bearer tokens are rejected with `403 {"error": "sessio
 
 ## Public status endpoints
 
-Unauthenticated, mounted at the site root (not `/api/v1`). Only servers with the public status page enabled are exposed.
+Unauthenticated, mounted at the site root (not `/api/v1`). The `statusPagePublic` flag controls **listing only** — it decides whether a server appears in the `/status` index. An individual server's status page, its JSON, and its mods zip are reachable by anyone holding the server's UUID regardless of that flag.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/status` | HTML index of public servers |
+| GET | `/status` | HTML index of servers with the public status page enabled |
 | GET | `/status/:id` | HTML status page for one server |
 | GET | `/status/:id/api` | JSON: `{"server": {id, name, state, port, version, serverType, playerCount, players, uptime, uptimeFormatted, statusPagePublic, advertisedIp}}` |
 | GET | `/status/:id/mods` | Zip of client-facing mods; `404` if none |
 
 Public responses are sanitized: internal states (`provisioning`, `backing_up`, `restoring`, `upgrading_jar`) are reported as `stopped`, and crash details, file paths, and JVM configuration are never exposed.
 
+> **Note:** unauthenticated `GET` access to these per-server endpoints is intentional, not a security gap. The server UUID *is* the capability token — that is what lets you hand a status link or a client-mods download to players who have no panel account, and keeps that link working. Guessing a v4 UUID is not a practical attack, and the payloads are sanitized as described above: server-only mods are excluded from the zip, and no file paths, JVM configuration, or crash details are ever exposed. Automated scanners sometimes flag these routes as "unauthenticated data exposure"; treat that as a false positive. If you do not want a server reachable this way at all, do not distribute its UUID — there is no per-server toggle that disables the direct link, because share links are the feature.
+
 
 ## WebSocket protocol
 
 The WebSocket shares the panel's HTTP port (`ws://<host>:6464/` or `wss://` behind TLS).
 
-- **Authenticated socket** — connect to the root path with a valid **session cookie**. Bearer API keys are **not** accepted on the WebSocket; the upgrade is rejected with `401` when no session exists.
+- **Authenticated socket** — connect to the root path with a valid **session cookie**. Bearer API keys are **not** accepted on the WebSocket; the upgrade is rejected with `401` when no session exists. Bearer clients should poll [`GET /servers/:id/console`](#console) instead.
 - **Public socket** — connect to `/ws/status` (no auth). Receives the sanitized subset only: no console history/output, public state mapping, crash messages reduced to "Server crashed".
 
 The server pings every 30 seconds and drops sockets that miss a pong.

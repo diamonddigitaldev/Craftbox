@@ -34,4 +34,41 @@ function pickPreferredBuild(builds) {
     return stable || builds[0];
 }
 
-module.exports = { classifyMcId, pickPreferredBuild };
+/**
+ * Compare two build identifiers. Returns >0 when `a` is newer than `b`, <0 when
+ * older, 0 when equivalent or not comparable.
+ *
+ * Providers use two different shapes for `build`: Paper/Purpur/Folia report an
+ * integer build number, while Forge/NeoForge/Fabric report a dotted version
+ * string ("21.1.95", "0.16.9"). Comparing those with `>` compares them as text,
+ * so "21.1.100" > "21.1.95" is false and a genuine upgrade goes undetected —
+ * which is why an upgrade check appeared to work for some builds but not others.
+ * @param {number|string|null} a
+ * @param {number|string|null} b
+ */
+function compareBuilds(a, b) {
+    if (a == null || b == null) return 0;
+
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
+
+    // Dotted versions: compare segment by segment, numerically where both
+    // segments are numeric. A missing segment counts as 0, so "21.1" < "21.1.1".
+    const aParts = String(a).split(/[.\-+]/);
+    const bParts = String(b).split(/[.\-+]/);
+    for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+        const ap = aParts[i] ?? '0';
+        const bp = bParts[i] ?? '0';
+        const an = Number(ap);
+        const bn = Number(bp);
+        if (Number.isFinite(an) && Number.isFinite(bn)) {
+            if (an !== bn) return an - bn;
+        } else if (ap !== bp) {
+            return ap < bp ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
+module.exports = { classifyMcId, pickPreferredBuild, compareBuilds };

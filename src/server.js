@@ -16,6 +16,7 @@ const { securityHeaders, csrfToken, csrfValidate } = require('./security');
 const serverStateMeta = require('./utils/serverStateMeta');
 const { initWebSocket } = require('./websocket');
 const ServerManager = require('./mc/ServerManager');
+const { setEventBroadcaster } = require('./utils/eventLogger');
 const BackupScheduler = require('./mc/BackupScheduler');
 const StatsCollector = require('./utils/StatsCollector');
 const mountRoutes = require('./routes');
@@ -62,6 +63,22 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         // ── 4. Initialize core components ──
         const serverManager = new ServerManager();
         app.set('serverManager', serverManager);
+
+        // Push every logged event to that server's WebSocket subscribers, so the
+        // event log updates live. Wired here rather than imported inside
+        // eventLogger, which ServerProcess already depends on.
+        setEventBroadcaster((serverId, event) => {
+            serverManager.getProcess(serverId)?.broadcast({
+                type: 'event',
+                serverId,
+                eventId: event.id,
+                eventType: event.type,
+                message: event.message,
+                createdAt: event.createdAt,
+                initiatedBy: event.initiatedBy || null,
+                playerName: event.playerName || null
+            });
+        });
 
         const backupScheduler = new BackupScheduler(serverManager);
         app.set('backupScheduler', backupScheduler);

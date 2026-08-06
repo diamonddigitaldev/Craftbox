@@ -1,0 +1,114 @@
+CRAFTBOX 1.2.0-beta.5 — MANUAL BROWSER TEST CHECKLIST
+=====================================================
+
+Covers only what 1.2.0-beta.5 changes. Everything from beta.1 to beta.4 was
+checked off in earlier passes; this file is rewritten each beta so what is left
+unticked is always work outstanding for the build in hand.
+
+Setup:
+  - One server that belongs to a group, and one that belongs to none.
+  - Be able to start a server: some of the Files checks need it running.
+  - A subfolder to browse into, and a folder whose name contains a space.
+
+
+--------------------------------------------------------------------
+NEW TEXT FILE (Files tab)
+--------------------------------------------------------------------
+
+The button
+  [ ] "New Text File" sits immediately to the right of "New Folder" and shares
+      its outline-success styling and size.
+  [ ] It stays usable with the server RUNNING, exactly as New Folder does
+      (creating is ungated; only rename and delete need a stopped server).
+
+The modal
+  [ ] Opens with ".txt" already in the field and the caret BEFORE the dot —
+      typing "notes" gives "notes.txt" without moving the cursor first.
+  [ ] The "File name" label carries the red required asterisk.
+  [ ] Enter in the field submits, the same as New Folder.
+  [ ] Cancel and the X both close it; reopening resets the field back to ".txt"
+      rather than keeping whatever was typed last.
+  [ ] Confirm button gating matches New Folder: it greys out for a name with
+      < > : " | ? *, one ending in a dot, an empty field, and a reserved name
+      (NUL, CON, COM1). It only lights up for a name the API will accept.
+
+Creating
+  [ ] Create "notes.txt" in the server root. Toast reads
+      File "notes.txt" created in the server root. and the row appears after
+      the reload, sorted among the files.
+  [ ] The new file has a working Edit (pencil) button and opens empty in the
+      text editor. Save something into it and reopen to confirm it persisted.
+  [ ] Navigate into a subfolder first, then create — the file lands in the
+      subfolder, not the root.
+  [ ] Create a file whose name is taken by an existing FILE — rejected with
+      "Something with that name already exists here.", the modal stays open,
+      the button resets, and the existing file's contents are UNCHANGED (this
+      is the one that must never truncate).
+  [ ] Same again where the name is taken by a FOLDER — same rejection.
+  [ ] Create one while the server is RUNNING — it works, and the file is there.
+  [ ] Clear the field to just ".txt" and create — a file named ".txt" is a
+      valid name, so this is expected to succeed rather than be blocked.
+  [ ] Give it a non-text extension (e.g. "test.cfg", "test.bin"). Both create;
+      .cfg gets a pencil, .bin does not — the listing decides that, not the
+      create dialog.
+
+Destination line (both create modals)
+  [ ] In the server root, both modals read: Created in the server root.
+  [ ] Inside a folder, both read: Created in "mods". — with the double quotes
+      rendered as quotes, not as &#34;.
+  [ ] Inside a nested folder with a space in the name, the full path is shown
+      inside the quotes and reads unambiguously.
+
+API (curl or a REST client, with an API key)
+  [ ] POST /api/v1/servers/:id/files/mkfile with {path, name} returns
+      {"success": true, "name": ...} and the file exists on disk, empty.
+  [ ] Omitting `path` creates in the server root.
+  [ ] A name with a slash, a traversal attempt ("../x.txt"), and a reserved
+      device name are all rejected 400/403 — nothing is written outside the
+      server directory.
+  [ ] An existing name returns 409 and leaves the file's bytes untouched.
+  [ ] A `path` that is a file rather than a directory returns 404.
+  [ ] Create "server.properties" in the root of a server that has none, then
+      check the panel's port/EULA readings still agree with the file (the
+      mirrored database fields re-sync on create, as they do on upload).
+  [ ] docs/API.md matches what all of the above actually did.
+
+
+--------------------------------------------------------------------
+ASSIGN GROUP POSITION (Settings tab)
+--------------------------------------------------------------------
+
+  [ ] Settings > Advanced Options: the Assign Group field is centred under the
+      gap between Memory and Additional JVM Arguments, not pinned to the left.
+  [ ] Narrow the window below the md breakpoint — it goes full width and the
+      centring makes no difference.
+
+  The centring is now one shared function (centerLoneRowItems, app.js) that
+  both forms call, so the create page needs re-checking for a regression:
+  [ ] Create page, Advanced Options: Assign Group is still centred.
+  [ ] Create page, pick the Custom type — the version picker hides and the
+      Server Port field left alone on that row is still centred.
+  [ ] Switch back off Custom — the port field returns to its half of the row
+      and is NOT left centred.
+  [ ] Create from a Modrinth modpack: the rows that lose a column to modpack
+      mode centre the same way they did before.
+  [ ] The group autocomplete dropdown still opens directly under the input and
+      lines up with it after the move.
+  [ ] Saving still assigns the group, and the dashboard shows the server under
+      it afterwards.
+
+
+--------------------------------------------------------------------
+BACK BUTTON DESTINATION (every server tab)
+--------------------------------------------------------------------
+
+  [ ] Open a server that IS in a group; the back arrow returns to that group's
+      page, not the dashboard.
+  [ ] Do it from a group whose name contains a space — the link resolves, no
+      "no longer exists" flash on arrival.
+  [ ] Open a server with NO group; the back arrow returns to the dashboard.
+  [ ] Move a server into a group from Settings, save, and check the back arrow
+      on the reloaded page now points at the group page.
+  [ ] Remove the group again — back points at the dashboard.
+  [ ] Check the arrow on Console, Settings, Properties, Mods/Plugins, Files,
+      Backups and Events; they all share the same header.

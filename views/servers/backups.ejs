@@ -2,7 +2,13 @@
 
     <%- include('../partials/serverNav', { server, active: 'backups' }) %>
 
-        <% const _serverStopped=['stopped', 'crashed' ].includes(server.state); %>
+        <%
+        // Backing up a running server stops it first. That distinction is
+        // re-derived live (see backups.js and applyStateGates in app.js) rather
+        // than frozen at render time.
+        const _serverStopped=['stopped', 'crashed' ].includes(server.state);
+        const _gate = 'stopped crashed';
+        %>
 
             <!-- CSRF token for JS fetch calls -->
             <input type="hidden" id="csrf-token" value="<%= csrfToken %>">
@@ -164,7 +170,7 @@
                                                     <td class="text-end">
                                                         <div class="d-inline-flex gap-1">
                                                             <!-- Download -->
-                                                            <a href="/servers/<%= server.id %>/backups/<%= backup.id %>/download"
+                                                            <a href="/api/v1/servers/<%= server.id %>/backups/<%= backup.id %>/download"
                                                                 class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center"
                                                                 style="width: 32px; height: 32px; padding: 0;"
                                                                 title="Download">
@@ -213,12 +219,11 @@
                             </h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
+                        <%# stopFirst / startAfter are derived from the live state at
+                            submit time (see backups.js) rather than baked in here,
+                            which used to go stale the moment the server changed state. %>
                         <form id="backup-form">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                            <input type="hidden" name="stopFirst" id="backupStopFirst"
-                                value="<%= _serverStopped ? 'false' : 'true' %>">
-                            <input type="hidden" name="startAfter" id="backupStartAfter"
-                                value="<%= _serverStopped ? 'false' : 'true' %>">
                             <div class="modal-body">
                                 <div class="mb-3">
                                     <label for="backupName" class="form-label">Backup Name</label>
@@ -228,26 +233,25 @@
                                     <div class="form-text">1-50 characters. Letters, numbers, spaces, hyphens,
                                         underscores.</div>
                                 </div>
-                                <% if (!_serverStopped) { %>
-                                    <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3"
-                                        role="alert">
-                                        <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
-                                        <small>The server will be stopped to create the backup.</small>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="startAfterBackup" checked>
-                                        <label class="form-check-label" for="startAfterBackup">Start server after
-                                            backup</label>
-                                    </div>
-                                    <% } %>
+                                <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3<%= _serverStopped ? ' d-none' : '' %>"
+                                    role="alert" data-hide-when="<%= _gate %>">
+                                    <span class="material-icons-outlined" style="font-size: 1.2rem;">warning</span>
+                                    <small>The server will be stopped to create the backup.</small>
+                                </div>
+                                <div class="form-check<%= _serverStopped ? ' d-none' : '' %>" data-hide-when="<%= _gate %>">
+                                    <input class="form-check-input" type="checkbox" id="startAfterBackup" checked>
+                                    <label class="form-check-label" for="startAfterBackup">Start server after
+                                        backup</label>
+                                </div>
                             </div>
                             <div class="modal-footer border-0 pt-0">
                                 <button type="button" class="btn btn-secondary btn-sm"
                                     data-bs-dismiss="modal">Cancel</button>
+                                <%# Label and colour are re-derived on every state change by backups.js. %>
                                 <button type="submit"
                                     class="btn btn-<%= _serverStopped ? 'success' : 'warning' %> btn-sm"
                                     id="confirm-backup-btn">
-                                    <%= _serverStopped ? 'Create Backup' : 'Stop & Backup' %>
+                                    <%= _serverStopped ? 'Create Backup' : 'Stop &amp; Backup' %>
                                 </button>
                             </div>
                         </form>

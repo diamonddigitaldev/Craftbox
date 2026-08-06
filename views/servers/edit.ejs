@@ -3,7 +3,9 @@
     <%- include('../partials/serverNav', { server, active: 'settings' }) %>
 
         <% const _displayVersion=(server.serverType || 'vanilla' )==='custom' ? '(Unknown Version)' : (server.version
-            || '(Unknown Version)' ); const _canChangeJar=['stopped', 'crashed' ].includes(server.state); %>
+            || '(Unknown Version)' ); const _canChangeJar=['stopped', 'crashed' ].includes(server.state);
+// Gate list for data-enable-when / data-show-when — see applyStateGates in app.js.
+const _gate = 'stopped crashed'; %>
 
             <div class="row justify-content-center">
                 <div class="col-lg-8 col-xl-6">
@@ -32,30 +34,41 @@
                                             value="<%= (server.serverType || 'vanilla').charAt(0).toUpperCase() + (server.serverType || 'vanilla').slice(1) %>"
                                             disabled>
                                     </div>
+                                    <%# The jar URL and version are starred like the create page — both are
+                                        mandatory server settings. Neither carries `required`: they arrive
+                                        prefilled and can be disabled while the server runs, and an existing
+                                        server with a blank one (a modpack pinned to no version, an older
+                                        import) would leave data-validate-required wedging Save for good. %>
                                     <% if ((server.serverType || 'vanilla' )==='custom' ) { %>
                                         <div class="col-md-8 mt-3 mt-md-0">
-                                            <label for="customJarUrl" class="form-label">JAR Download URL</label>
+                                            <label for="customJarUrl" class="form-label required-star">JAR Download URL</label>
                                             <input type="url" class="form-control" id="customJarUrl" name="customJarUrl"
                                                 value="<%= server.customJarUrl || '' %>"
                                                 data-current-url="<%= server.customJarUrl || '' %>"
                                                 placeholder="https://example.com/server.jar" <%=_canChangeJar ? ''
                                                 : 'disabled' %>
+                                            data-enable-when="<%= _gate %>" data-enabled-title=""
+                                            data-disabled-title="Stop the server to change the JAR URL."
                                             title="<%= _canChangeJar ? '' : 'Stop the server to change the JAR URL.' %>">
                                                 <div class="form-text">
-                                                    <%= _canChangeJar ? 'Change the URL to replace the server jar.'
-                                                        : 'Stop the server to change the JAR URL.' %>
+                                                    <span data-show-when="<%= _gate %>"<%- _canChangeJar ? '' : ' class="d-none"' %>>Change the URL to replace the server jar.</span>
+                                                    <span data-hide-when="<%= _gate %>"<%- _canChangeJar ? ' class="d-none"' : '' %>>Stop the server to change the JAR URL.</span>
                                                 </div>
                                         </div>
                                         <% } else { %>
                                             <div class="col-md-4 mt-3 mt-md-0">
-                                                <label class="form-label" for="version-display">Version</label>
+                                                <label class="form-label required-star" for="version-display">Version</label>
                                                 <div class="input-group"
+                                                    data-enable-when="<%= _gate %>" data-enabled-title=""
+                                                    data-disabled-title="Stop the server to change the version."
                                                     title="<%= _canChangeJar ? '' : 'Stop the server to change the version.' %>">
                                                     <input type="text" class="form-control" id="version-display"
                                                         readonly value="<%= server.version %>" <%=_canChangeJar ? ''
-                                                        : 'disabled' %>>
+                                                        : 'disabled' %>
+                                                        data-enable-when="<%= _gate %>">
                                                     <button class="btn btn-outline-secondary d-flex align-items-center"
                                                         type="button" id="version-browse-btn"
+                                                        data-enable-when="<%= _gate %>"
                                                         <%=_canChangeJar ? '' : 'disabled' %>>
                                                         <span class="material-icons-outlined"
                                                             style="font-size: 1.2rem;">manage_search</span>
@@ -66,9 +79,8 @@
                                                     data-server-type="<%= server.serverType || 'vanilla' %>"
                                                     data-current-version="<%= server.version %>">
                                                 <div class="form-text">
-                                                    <%= _canChangeJar
-                                                        ? 'Only upgrades are permitted — downgrades are not allowed.'
-                                                        : 'Stop the server to change the version.' %>
+                                                    <span data-show-when="<%= _gate %>"<%- _canChangeJar ? '' : ' class="d-none"' %>>Only upgrades are permitted — downgrades are not allowed.</span>
+                                                    <span data-hide-when="<%= _gate %>"<%- _canChangeJar ? ' class="d-none"' : '' %>>Stop the server to change the version.</span>
                                                 </div>
                                             </div>
                                             <% } %>
@@ -141,6 +153,9 @@
                                                 <div class="form-text">Optional. Extra Java flags.</div>
                                             </div>
                                         </div>
+                                        <%# Alone on its row, so edit.js centres this column through the
+                                            shared centerLoneRowItems — the same call the create form
+                                            makes, rather than a class hardcoded on one of the two. %>
                                         <div class="row mt-3">
                                             <div class="col-md-6">
                                                 <label for="group" class="form-label">Assign Group</label>
@@ -167,9 +182,7 @@
                                     <div class="form-text">
                                         Takes a restore point <em>before</em> the changes are applied, so restoring it
                                         undoes them.
-                                        <% if (!_canChangeJar) { %>
-                                            The server will be stopped for the backup and restarted afterwards.
-                                        <% } %>
+                                        <span data-hide-when="<%= _gate %>"<%- _canChangeJar ? ' class="d-none"' : '' %>>The server will be stopped for the backup and restarted afterwards.</span>
                                     </div>
                                 </div>
 
@@ -464,22 +477,14 @@
                                                     <div class="form-text">Uncheck to copy only configuration and
                                                         mods/plugins (no world data).</div>
                                                 </div>
-                                                <% if (_serverStopped) { %>
-                                                    <button type="submit"
-                                                        class="btn btn-outline-secondary d-flex align-items-center gap-1">
-                                                        <span class="material-icons-outlined"
-                                                            style="font-size: 1rem;">content_copy</span>
-                                                        Duplicate
-                                                    </button>
-                                                    <% } else { %>
-                                                        <button type="button"
-                                                            class="btn btn-outline-secondary d-flex align-items-center gap-1"
-                                                            id="duplicate-running-btn">
-                                                            <span class="material-icons-outlined"
-                                                                style="font-size: 1rem;">content_copy</span>
-                                                            Duplicate
-                                                        </button>
-                                                        <% } %>
+                                                <%# One button either way — edit.js decides at submit time whether to
+                                                    duplicate directly or open the stop-first modal, based on live state. %>
+                                                <button type="submit" id="duplicate-btn"
+                                                    class="btn btn-outline-secondary d-flex align-items-center gap-1">
+                                                    <span class="material-icons-outlined"
+                                                        style="font-size: 1rem;">content_copy</span>
+                                                    Duplicate
+                                                </button>
                                             </form>
                                         </div>
                                     </div>
@@ -528,22 +533,13 @@
                                                     <div class="form-text">1-50 characters. Letters, numbers, spaces,
                                                         hyphens, underscores.</div>
                                                 </div>
-                                                <% if (_serverStopped) { %>
-                                                    <button type="submit"
-                                                        class="btn btn-outline-secondary d-flex align-items-center gap-1">
-                                                        <span class="material-icons-outlined"
-                                                            style="font-size: 1rem;">bookmark_add</span>
-                                                        Save Template
-                                                    </button>
-                                                    <% } else { %>
-                                                        <button type="button"
-                                                            class="btn btn-outline-secondary d-flex align-items-center gap-1"
-                                                            id="template-running-btn">
-                                                            <span class="material-icons-outlined"
-                                                                style="font-size: 1rem;">bookmark_add</span>
-                                                            Save Template
-                                                        </button>
-                                                        <% } %>
+                                                <%# Single button; edit.js branches on live state at submit time. %>
+                                                <button type="submit" id="template-btn"
+                                                    class="btn btn-outline-secondary d-flex align-items-center gap-1">
+                                                    <span class="material-icons-outlined"
+                                                        style="font-size: 1rem;">bookmark_add</span>
+                                                    Save Template
+                                                </button>
                                             </form>
                                         </div>
                                     </div>
@@ -574,7 +570,7 @@
                                                 </div>
                                                 <button type="button"
                                                     class="btn btn-outline-secondary d-flex align-items-center gap-1"
-                                                    id="export-btn" data-server-stopped="<%= _serverStopped %>">
+                                                    id="export-btn">
                                                     <span class="material-icons-outlined"
                                                         style="font-size: 1rem;">ios_share</span>
                                                     Export

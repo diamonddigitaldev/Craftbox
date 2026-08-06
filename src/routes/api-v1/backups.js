@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const contentDisposition = require('content-disposition');
 const router = express.Router();
 const { serversDb, backupsDb } = require('../../db');
 const { log } = require('../../utils/log');
@@ -11,7 +13,8 @@ const {
     applyRetention,
     formatSize,
     tryAcquireBackupLock,
-    releaseBackupLock
+    releaseBackupLock,
+    resolveBackupPath
 } = require('../../mc/BackupManager');
 const { STATES } = require('../../mc/stateMachine');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
@@ -45,6 +48,46 @@ router.get('/servers/:id/backups', async (req, res) => {
     res.json({ backups: backupsFormatted });
 });
 
+// GET /servers/:id/backups/:backupId/download — Stream a backup archive.
+router.get('/servers/:id/backups/:backupId/download', async (req, res) => {
+    if (!UUID_RE.test(req.params.backupId)) {
+        return res.status(400).json({ error: 'Invalid backup ID.' });
+    }
+    const server = await getServerWithState(req);
+    if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+    // Check ownership, not just existence — a backup id from another server
+    // must not be readable through this server's route.
+    const backup = await backupsDb.get(`backup_${req.params.backupId}`);
+    if (!backup || backup.serverId !== server.id) {
+        return res.status(404).json({ error: 'Backup not found.' });
+    }
+
+    let zipPath;
+    try {
+        zipPath = resolveBackupPath(server.id, backup.filename);
+    } catch {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+    if (!fs.existsSync(zipPath)) {
+        return res.status(404).json({ error: 'Backup file not found on disk.' });
+    }
+
+    const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeFilename = backup.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', contentDisposition(`${safeName}_backup_${safeFilename}`));
+    res.setHeader('Content-Length', backup.size);
+
+    const stream = fs.createReadStream(zipPath);
+    stream.on('error', (err) => {
+        log('error', `Backup download error: ${err.message}`);
+        if (!res.headersSent) res.status(500).json({ error: 'Download failed.' });
+    });
+    stream.pipe(res);
+});
+
 // POST /servers/:id/backups — Kick off a manual backup. Returns 202 immediately;
 // completion (or failure) is reported via the per-server WebSocket as
 // { type: 'operation', operation: 'backup', status: 'complete'|'failed', ... }.
@@ -62,7 +105,16 @@ router.post('/servers/:id/backups', async (req, res) => {
         backupName = 'Manual Backup';
     }
 
-    if (proc && ![STATES.STOPPED, STATES.CRASHED].includes(proc.state) && !stopFirst) {
+    // getServerWithState already overlaid the live state, so read it from the
+    // record rather than from `proc` — a provisioning server normally has no
+    // process yet, and a `proc &&` guard would wave it straight through.
+    if (server.state === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
+
+    // stopFirst deliberately does not bypass the provisioning check above: it
+    // means "stop a running server for me", not "interrupt whatever is going on".
+    if (![STATES.STOPPED, STATES.CRASHED].includes(server.state) && !stopFirst) {
         return res.status(409).json({ error: 'Server must be stopped to create a backup.' });
     }
 
@@ -73,7 +125,7 @@ router.post('/servers/:id/backups', async (req, res) => {
 
     let lockOwnedByRoute = true;
     try {
-        if (proc && (proc.state === STATES.RUNNING || proc.state === STATES.STARTING)) {
+        if (server.state === STATES.RUNNING || server.state === STATES.STARTING) {
             await serverManager.stopServer(server.id, { initiatedBy });
             await proc.waitForState(STATES.STOPPED, 60000);
         }
@@ -122,6 +174,8 @@ router.post('/servers/:id/backups', async (req, res) => {
         if (lockOwnedByRoute) releaseBackupLock(server.id);
         log('error', `Backup setup failed for ${server.name}: ${err.message}`);
         if (!res.headersSent) {
+            // A rejected state transition is a conflict, not a server fault.
+            if (err.status === 409) return res.status(409).json({ error: err.message });
             res.status(500).json({ error: `Backup failed: ${err.message}` });
         }
     }
@@ -143,8 +197,14 @@ router.post('/servers/:id/backups/:backupId/restore', async (req, res) => {
     const initiatedBy = req.user.username;
     const backupId = req.params.backupId;
 
+    // Restoring over a directory that is still being assembled would race the
+    // provisioning job and leave a half-built server behind.
+    if (server.state === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
+
     try {
-        if (proc && (proc.state === STATES.RUNNING || proc.state === STATES.STARTING)) {
+        if (server.state === STATES.RUNNING || server.state === STATES.STARTING) {
             await serverManager.stopServer(server.id, { initiatedBy });
             await proc.waitForState(STATES.STOPPED, 60000);
         }
@@ -189,6 +249,7 @@ router.post('/servers/:id/backups/:backupId/restore', async (req, res) => {
     } catch (err) {
         log('error', `Restore setup failed for ${server.name}: ${err.message}`);
         if (!res.headersSent) {
+            if (err.status === 409) return res.status(409).json({ error: err.message });
             res.status(500).json({ error: `Restore failed: ${err.message}` });
         }
     }
