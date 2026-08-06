@@ -86,6 +86,10 @@ const _hasContentTab = !!_contentTypes[server.serverType];
         <span class="material-icons-outlined" style="font-size: 1rem;">create_new_folder</span>
         New Folder
     </button>
+    <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0" id="new-file-btn">
+        <span class="material-icons-outlined" style="font-size: 1rem;">note_add</span>
+        New Text File
+    </button>
 </div>
 
 <!-- File listing -->
@@ -260,6 +264,32 @@ const _hasContentTab = !!_contentTypes[server.serverType];
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success btn-sm" id="confirm-new-folder-btn" disabled>Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Text File Modal -->
+<div class="modal fade" id="newFileModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <span class="material-icons-outlined text-success">note_add</span>
+                    New Text File
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label required-star" for="new-file-input">File name</label>
+                <%# Prefilled with ".txt" by files.js, which then puts the caret before it. %>
+                <input type="text" class="form-control form-control-sm" id="new-file-input" maxlength="255" autocomplete="off" spellcheck="false" required>
+                <div class="form-text">Created in <%= currentPath ? currentPath : 'the server root' %>.</div>
+                <div class="form-text">Cannot contain \ / &lt; &gt; : &quot; | ? * or end with a dot.</div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success btn-sm" id="confirm-new-file-btn" disabled>Create</button>
             </div>
         </div>
     </div>

@@ -369,73 +369,105 @@
         }
     }
 
-    // ── New Folder ──
+    // ── New Folder / New Text File ──
 
-    var newFolderBtn = document.getElementById('new-folder-btn');
-    var newFolderModal = document.getElementById('newFolderModal');
-    var newFolderInput = document.getElementById('new-folder-input');
-    var confirmNewFolderBtn = document.getElementById('confirm-new-folder-btn');
+    // The two create modals are the same dialog pointed at a different
+    // endpoint: same name rules, same Enter-to-submit, same confirm gating.
+    // Wiring both through one function is what keeps them identical, rather
+    // than two near-copies that drift the next time one of them is touched.
+    //
+    // `prefill` seeds the input (the file modal opens on ".txt"); the caret
+    // always goes to position 0, so typing builds a name in front of the
+    // extension. On the empty folder input that is where it lands anyway.
+    function wireCreateModal(opts) {
+        var openBtn = document.getElementById(opts.buttonId);
+        var modal = document.getElementById(opts.modalId);
+        var input = document.getElementById(opts.inputId);
+        var confirmBtn = document.getElementById(opts.confirmId);
+        if (!openBtn || !modal || !input || !confirmBtn) return;
 
-    if (newFolderBtn && newFolderModal) {
-        var bsNewFolderModal = new bootstrap.Modal(newFolderModal);
+        var bsModal = new bootstrap.Modal(modal);
 
-        function updateNewFolderConfirm() {
-            confirmNewFolderBtn.disabled = !!nameError(newFolderInput.value);
+        function updateConfirm() {
+            confirmBtn.disabled = !!nameError(input.value);
         }
 
-        newFolderInput.addEventListener('input', updateNewFolderConfirm);
+        input.addEventListener('input', updateConfirm);
 
-        newFolderBtn.addEventListener('click', function () {
-            newFolderInput.value = '';
-            updateNewFolderConfirm();
-            bsNewFolderModal.show();
+        openBtn.addEventListener('click', function () {
+            input.value = opts.prefill || '';
+            updateConfirm();
+            bsModal.show();
         });
 
-        newFolderModal.addEventListener('shown.bs.modal', function () {
-            newFolderInput.focus();
+        // Focus only lands once the modal is actually visible.
+        modal.addEventListener('shown.bs.modal', function () {
+            input.focus();
+            input.setSelectionRange(0, 0);
         });
 
-        newFolderInput.addEventListener('keydown', function (e) {
+        input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                confirmNewFolderBtn.click();
+                confirmBtn.click();
             }
         });
 
-        if (confirmNewFolderBtn) {
-            confirmNewFolderBtn.addEventListener('click', async function () {
-                var name = newFolderInput.value.trim();
-                var problem = nameError(name);
-                if (problem) {
-                    showToast(problem, 'warning');
-                    return;
+        confirmBtn.addEventListener('click', async function () {
+            var name = input.value.trim();
+            var problem = nameError(name);
+            if (problem) {
+                showToast(problem, 'warning');
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating...';
+
+            function failed(message) {
+                showToast(message, 'danger');
+                confirmBtn.textContent = 'Create';
+                updateConfirm();
+            }
+
+            try {
+                var res = await apiFetch('/api/v1/servers/' + serverId + '/files/' + opts.endpoint, {
+                    method: 'POST',
+                    body: { path: currentPath, name: name }
+                });
+
+                var data = res.data || {};
+                if (res.ok && data.success) {
+                    bsModal.hide();
+                    flashToast(opts.label + ' "' + data.name + '" created in ' + locationLabel + '.', 'success');
+                    window.location.reload();
+                } else {
+                    failed(data.error || 'Could not create the ' + opts.noun + '.');
                 }
-
-                confirmNewFolderBtn.disabled = true;
-                confirmNewFolderBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating...';
-
-                try {
-                    var res = await apiFetch('/api/v1/servers/' + serverId + '/files/mkdir', {
-                        method: 'POST',
-                        body: { path: currentPath, name: name }
-                    });
-
-                    var data = res.data || {};
-                    if (res.ok && data.success) {
-                        bsNewFolderModal.hide();
-                        flashToast('Folder "' + data.name + '" created in ' + locationLabel + '.', 'success');
-                        window.location.reload();
-                    } else {
-                        showToast(data.error || 'Could not create the folder.', 'danger');
-                        confirmNewFolderBtn.textContent = 'Create';
-                        updateNewFolderConfirm();
-                    }
-                } catch {
-                    showToast('Could not create the folder. Please try again.', 'danger');
-                    confirmNewFolderBtn.textContent = 'Create';
-                    updateNewFolderConfirm();
-                }
-            });
-        }
+            } catch {
+                failed('Could not create the ' + opts.noun + '. Please try again.');
+            }
+        });
     }
+
+    wireCreateModal({
+        buttonId: 'new-folder-btn',
+        modalId: 'newFolderModal',
+        inputId: 'new-folder-input',
+        confirmId: 'confirm-new-folder-btn',
+        endpoint: 'mkdir',
+        label: 'Folder',
+        noun: 'folder'
+    });
+
+    wireCreateModal({
+        buttonId: 'new-file-btn',
+        modalId: 'newFileModal',
+        inputId: 'new-file-input',
+        confirmId: 'confirm-new-file-btn',
+        endpoint: 'mkfile',
+        label: 'File',
+        noun: 'file',
+        prefill: '.txt'
+    });
 })();

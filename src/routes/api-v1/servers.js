@@ -2803,6 +2803,57 @@ router.post('/servers/:id/files/mkdir', async (req, res) => {
     res.json({ success: true, name });
 });
 
+// POST /servers/:id/files/mkfile — Create an empty file.
+//
+// Ungated like mkdir: a name that isn't on disk yet cannot be one the running
+// server is holding open. No extension check either — the file manager already
+// takes any file by upload, and the panel decides editable-vs-downloadable by
+// extension when it lists the directory.
+router.post('/servers/:id/files/mkfile', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+
+    const name = safeEntryName(req.body.name);
+    if (!name) return res.status(400).json({ error: 'Invalid file name.' });
+    const nameError = newNameError(name);
+    if (nameError) return res.status(400).json({ error: nameError });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { serverDir, targetPath: parentDir } = resolved;
+
+    if (!fs.existsSync(parentDir) || !fs.statSync(parentDir).isDirectory()) {
+        return res.status(404).json({ error: 'Directory not found.' });
+    }
+
+    const destPath = path.join(parentDir, name);
+    if (!isPathInside(parentDir, destPath)) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+    if (fs.existsSync(destPath)) {
+        return res.status(409).json({ error: 'Something with that name already exists here.' });
+    }
+
+    try {
+        // 'wx' rather than a plain write: creating a file must never truncate
+        // an existing one, including one that appeared since the check above.
+        fs.writeFileSync(destPath, '', { flag: 'wx' });
+    } catch (err) {
+        if (err.code === 'EEXIST') {
+            return res.status(409).json({ error: 'Something with that name already exists here.' });
+        }
+        log('error', `Failed to create file ${name}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to create file.' });
+    }
+
+    log('info', `Created file "${name}" in "${req.body.path || '/'}" `
+        + `on server ${server.name} (${server.id})`);
+    // An empty server.properties / eula.txt created in the root has to re-sync
+    // the mirrored database fields, exactly as uploading or deleting one does.
+    await syncIfConfigFile(server.id, serverDir, destPath);
+    res.json({ success: true, name });
+});
+
 // GET /servers/:id/console?limit=&source= — Read recent console output.
 //
 // The WebSocket is the live feed but rejects bearer tokens, so this is how an
