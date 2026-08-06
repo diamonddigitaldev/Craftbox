@@ -37,6 +37,11 @@ const _gate = 'stopped crashed';
 const _isPluginsOrMods = currentPath === 'plugins' || currentPath === 'mods';
 const _contentTypes = { paper: 'Plugins', purpur: 'Plugins', folia: 'Plugins', fabric: 'Mods', forge: 'Mods', neoforge: 'Mods' };
 const _hasContentTab = !!_contentTypes[server.serverType];
+// Where the New Folder / New Text File modals say the new entry will land. A
+// real path is quoted so its edges are visible — folder names take spaces, and
+// "Created in My Server Backups." reads as a sentence rather than a location.
+// The root has no name to quote, so it stays prose.
+const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
 %>
 
 <!-- CSRF token and current directory for JS fetch calls -->
@@ -258,7 +263,7 @@ const _hasContentTab = !!_contentTypes[server.serverType];
             <div class="modal-body">
                 <label class="form-label required-star" for="new-folder-input">Folder name</label>
                 <input type="text" class="form-control form-control-sm" id="new-folder-input" maxlength="255" autocomplete="off" spellcheck="false" required>
-                <div class="form-text">Created in <%= currentPath ? currentPath : 'the server root' %>.</div>
+                <div class="form-text">Created in <%= _destLabel %>.</div>
                 <div class="form-text">Cannot contain \ / &lt; &gt; : &quot; | ? * or end with a dot.</div>
             </div>
             <div class="modal-footer border-0 pt-0">
@@ -284,7 +289,7 @@ const _hasContentTab = !!_contentTypes[server.serverType];
                 <label class="form-label required-star" for="new-file-input">File name</label>
                 <%# Prefilled with ".txt" by files.js, which then puts the caret before it. %>
                 <input type="text" class="form-control form-control-sm" id="new-file-input" maxlength="255" autocomplete="off" spellcheck="false" required>
-                <div class="form-text">Created in <%= currentPath ? currentPath : 'the server root' %>.</div>
+                <div class="form-text">Created in <%= _destLabel %>.</div>
                 <div class="form-text">Cannot contain \ / &lt; &gt; : &quot; | ? * or end with a dot.</div>
             </div>
             <div class="modal-footer border-0 pt-0">
