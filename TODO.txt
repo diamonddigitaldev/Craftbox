@@ -82,6 +82,16 @@ ASSIGN GROUP POSITION (Settings tab)
       gap between Memory and Additional JVM Arguments, not pinned to the left.
   [ ] Narrow the window below the md breakpoint — it goes full width and the
       centring makes no difference.
+
+  The centring is now one shared function (centerLoneRowItems, app.js) that
+  both forms call, so the create page needs re-checking for a regression:
+  [ ] Create page, Advanced Options: Assign Group is still centred.
+  [ ] Create page, pick the Custom type — the version picker hides and the
+      Server Port field left alone on that row is still centred.
+  [ ] Switch back off Custom — the port field returns to its half of the row
+      and is NOT left centred.
+  [ ] Create from a Modrinth modpack: the rows that lose a column to modpack
+      mode centre the same way they did before.
   [ ] The group autocomplete dropdown still opens directly under the input and
       lines up with it after the move.
   [ ] Saving still assigns the group, and the dashboard shows the server under
