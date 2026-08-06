@@ -10,9 +10,16 @@ const _displayVersion = (server.serverType || 'vanilla') === 'custom'
 const _provisioning = server.state === 'provisioning';
 const _gated = _provisioning ? ' disabled' : '';
 const _gatedTitle = _provisioning ? ' title="Available once provisioning finishes" aria-disabled="true"' : '';
+// Back goes to the page the server was reached from: its group page when it
+// belongs to a group, the dashboard otherwise. A group is implicit — it exists
+// only while a server is in it — so a group with this server in it is always
+// a page that exists.
+const _backHref = server.group
+    ? `/dashboard/groups/${encodeURIComponent(server.group)}`
+    : '/dashboard';
 %>
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="server-nav-header" data-state="<%= server.state %>">
-    <a href="/dashboard" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
+    <a href="<%= _backHref %>" class="btn btn-outline-secondary btn-sm d-flex align-items-center">
         <span class="material-icons-outlined" style="font-size: 1.2rem;">arrow_back</span>
     </a>
     <h4 class="mb-0"><%= server.name %></h4>
