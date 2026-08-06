@@ -153,11 +153,10 @@ const _gate = 'stopped crashed'; %>
                                                 <div class="form-text">Optional. Extra Java flags.</div>
                                             </div>
                                         </div>
-                                        <%# Assign Group is alone on its row, so it is centred rather than
-                                            left under Memory — the two fields above it fill the width
-                                            between them and a half-width field hanging off one edge
-                                            reads as a missing second field. %>
-                                        <div class="row mt-3 justify-content-center">
+                                        <%# Alone on its row, so edit.js centres this column through the
+                                            shared centerLoneRowItems — the same call the create form
+                                            makes, rather than a class hardcoded on one of the two. %>
+                                        <div class="row mt-3">
                                             <div class="col-md-6">
                                                 <label for="group" class="form-label">Assign Group</label>
                                                 <div class="group-picker-wrap">

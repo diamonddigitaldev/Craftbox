@@ -339,6 +339,25 @@ function setControlsLocked(root, locked) {
     });
 }
 
+// ── Centre form fields left alone on their row ──
+// A .row down to one visible column renders as a lopsided half-width field
+// pinned to the left edge: the create form's port field once modpack mode
+// hides the version picker, or Assign Group, which sits alone by design.
+// Centre those, and un-centre again if a sibling column comes back — callers
+// with columns that appear and disappear re-run this as the layout changes.
+// `root` scopes it to one form; every other row on the page is left alone.
+function centerLoneRowItems(root) {
+    if (!root) return;
+    root.querySelectorAll('.row').forEach(function (row) {
+        var cols = row.querySelectorAll(':scope > [class*="col-"]');
+        if (cols.length === 0) return;
+        var visible = Array.prototype.filter.call(cols, function (c) {
+            return !c.classList.contains('d-none');
+        });
+        row.classList.toggle('justify-content-center', visible.length === 1);
+    });
+}
+
 // ── Required field validation — disable submit until all required fields are filled ──
 // Applies to any <form> with a [data-validate-required] submit button inside it.
 // The button stays disabled/muted until every [required] input in the form has a value.

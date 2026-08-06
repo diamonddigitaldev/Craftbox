@@ -65,24 +65,12 @@ function setCustomNoticeVisible(visible) {
     customTypeNotice.classList.toggle('d-flex', visible);
 }
 
-// ── Center form fields left alone on their row ──
-// A row whose other columns are hidden (e.g. the port field once the version
-// picker is gone in modpack mode, or the group picker on its own row) looks
-// lopsided half-width on the left; center it instead.
-function centerLoneRowItems() {
-    form.querySelectorAll('.row').forEach(function (row) {
-        var cols = row.querySelectorAll(':scope > [class*="col-"]');
-        if (cols.length === 0) return;
-        var visible = Array.prototype.filter.call(cols, function (c) {
-            return !c.classList.contains('d-none');
-        });
-        row.classList.toggle('justify-content-center', visible.length === 1);
-    });
-}
-
 // ── Required field validation + EULA gating ──
 function validateCreateForm() {
-    centerLoneRowItems();
+    // Columns come and go here (modpack mode hides the version picker), so the
+    // centring is re-run with every validation pass. centerLoneRowItems is in
+    // app.js — the settings form uses it too.
+    centerLoneRowItems(form);
     if (!eulaCheck.checked) { createBtn.disabled = true; return; }
     var fields = form.querySelectorAll('[required]');
     var allFilled = true;
@@ -200,7 +188,7 @@ async function selectType(typeId) {
         customUrlGroup.classList.remove('d-none');
         versionDisplay.removeAttribute('required');
         setCustomNoticeVisible(true);
-        centerLoneRowItems();
+        centerLoneRowItems(form);
     } else {
         versionGroup.classList.remove('d-none');
         customUrlGroup.classList.add('d-none');

@@ -24,6 +24,12 @@ function _formToBody(form) {
     var backupCheck = document.getElementById('saveBackup');
     var SAVE_BTN_HTML = '<span class="material-icons-outlined" style="font-size: 1.2rem;">save</span> Save Changes';
 
+    // Assign Group sits alone on the last row of Advanced Options, so it gets
+    // centred the same way the create form centres a lone column. Once is
+    // enough here: which columns render is decided server-side (custom JAR URL
+    // vs version and port), and nothing hides one after load.
+    centerLoneRowItems(form);
+
     form.addEventListener('submit', async function (e) {
         e.preventDefault();
         if (!form.reportValidity()) return;
