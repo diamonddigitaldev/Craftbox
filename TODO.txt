@@ -1,14 +1,17 @@
-CRAFTBOX 1.2.0-beta.5 — MANUAL BROWSER TEST CHECKLIST
+CRAFTBOX 1.2.0-beta.6 — MANUAL BROWSER TEST CHECKLIST
 =====================================================
 
-Covers only what 1.2.0-beta.5 changes. Everything from beta.1 to beta.4 was
-checked off in earlier passes; this file is rewritten each beta so what is left
-unticked is always work outstanding for the build in hand.
+Covers what beta.5 and beta.6 change. Everything from beta.1 to beta.4 was
+checked off in earlier passes. Normally this file is rewritten each beta, but
+beta.5 shipped without a browser pass — nothing in it was ever ticked — so its
+sections carry forward here rather than being dropped on the floor.
 
 Setup:
   - One server that belongs to a group, and one that belongs to none.
   - Be able to start a server: some of the Files checks need it running.
   - A subfolder to browse into, and a folder whose name contains a space.
+  - For the detection checks: a .jsonl, a .json5, a file with no extension, a
+    level.dat, and one text file over 5 MB.
 
 
 --------------------------------------------------------------------
@@ -112,3 +115,56 @@ BACK BUTTON DESTINATION (every server tab)
   [ ] Remove the group again — back points at the dashboard.
   [ ] Check the arrow on Console, Settings, Properties, Mods/Plugins, Files,
       Backups and Events; they all share the same header.
+
+
+--------------------------------------------------------------------
+TEXT FILE DETECTION (Files tab + API)
+--------------------------------------------------------------------
+
+  Editable is now decided by reading the file, not by matching its extension
+  against a list. Two shortcuts remain: always-binary extensions are refused
+  without a read, and the old extension list stands in when there is nothing
+  to read (file absent, or locked by the running server).
+
+The files the issue was about
+  [ ] Put a "telemetry.jsonl" and a "config.json5" in the server directory.
+      Both get a pencil in the listing and open in the editor. Save an edit to
+      each and reopen to confirm it persisted.
+  [ ] A file with an extension nobody has heard of ("settings.zonk") that
+      contains plain text also gets a pencil and opens.
+  [ ] A file with NO extension at all ("Dockerfile", "banned-players") opens.
+
+Binaries still refused
+  [ ] "level.dat" and any ".nbt" no longer have a pencil — this is the
+      deliberate change; they are gzipped binary and editing corrupted them.
+      Download still works on both.
+  [ ] A ".jar" in mods/ has no pencil even if you rename a text file to .jar —
+      the extension shortcut wins, no read happens.
+  [ ] Take a real binary and rename it to "thing.zonk" — no pencil, because
+      the content check caught it.
+  [ ] Browsing a mods/ folder with a lot of jars is no slower than before
+      (the binary extensions are refused without opening anything).
+
+Encoding
+  [ ] Save a .txt as UTF-16 in Notepad and put it in the server directory —
+      it now has NO pencil, on purpose. Opening it as UTF-8 showed mojibake
+      and saving corrupted it.
+  [ ] A UTF-8 file with accents/emoji opens, round-trips through a save, and
+      the characters survive.
+  [ ] A live server .log full of ANSI colour codes still opens as text.
+
+Large files (5 MB limit)
+  [ ] A text file over 5 MB has NO pencil in the listing, and visiting its
+      edit URL directly gives "This file is N MB, over the 5 MB editor limit."
+      rather than hanging or a blank editor.
+  [ ] API: GET /api/v1/servers/:id/file?path=big.log returns 413 with the size
+      and the hint about ?tail= / ?offset=&limit=.
+  [ ] API: the same path with &tail=65536 returns the last 64 KB, with
+      truncated: true and an offset near the end of the file.
+  [ ] Do that WHILE THE SERVER IS RUNNING against a log it is writing — it
+      works (this is the gap: /download refuses on a running server).
+  [ ] &offset=0&limit=100 returns the first 100 bytes; &tail= together with
+      &offset= is rejected with a clear message; a negative or non-numeric
+      value is rejected too.
+  [ ] A window cut mid-character comes back without any replacement
+      characters at either edge.
