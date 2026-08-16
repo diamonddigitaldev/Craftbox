@@ -5,7 +5,8 @@ const contentDisposition = require('content-disposition');
 const router = express.Router();
 const ensureAuth = require('../middleware/ensureAuth');
 const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
-const { isTextFile, listDirectory } = require('../utils/fileBrowser');
+const { isEditableFile, listDirectory, MAX_TEXT_BYTES } = require('../utils/fileBrowser');
+const { formatSize } = require('../utils/resourceStats');
 const { serversDb, SERVERS_DIR } = require('../db');
 const { parseServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
@@ -289,9 +290,22 @@ router.get('/servers/:id/edit-file', ensureAuth, blockWhileProvisioning, async (
         });
     }
 
-    if (!isTextFile(path.basename(targetPath))) {
+    if (!isEditableFile(targetPath)) {
         return res.status(400).render('errors/404', {
-            title: 'Not Editable', navbar: true, user: req.user, message: 'This file type cannot be edited.'
+            title: 'Not Editable', navbar: true, user: req.user, message: 'This file is not text and cannot be edited.'
+        });
+    }
+
+    // The editor posts back the whole textarea, so it must never open a partial
+    // file — saving one would truncate the rest away. Oversized files are
+    // refused here and read in windows through the API instead.
+    const size = fs.statSync(targetPath).size;
+    if (size > MAX_TEXT_BYTES) {
+        return res.status(413).render('errors/404', {
+            title: 'Too Large',
+            navbar: true,
+            user: req.user,
+            message: `This file is ${formatSize(size)}, over the ${formatSize(MAX_TEXT_BYTES)} editor limit. Download it to read the whole thing.`
         });
     }
 

@@ -149,7 +149,7 @@ The [WebSocket](#websocket-protocol) is the live feed, but it does not accept be
 | POST | `/servers/:id/advertisedip` | Set the address shown on the status page. Body: `{value}` |
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
 | POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
-| POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` for non-text extensions |
+| POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` if the target is not text (see [Text vs binary](#files)) |
 
 ### Files
 
@@ -157,8 +157,8 @@ Paths are relative to the server directory and are resolved against it with syml
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/servers/:id/files?path=` | List a directory (`path` omitted = server root). Returns `{"path", "files": [{name, isDirectory, size, sizeFormatted, modified, modifiedISO, editable}]}`, directories first then by name. `editable` marks files the text endpoint will serve. `404` if the path is not a directory |
-| GET | `/servers/:id/file?path=` | Read a text file. Returns `{"file": {name, path, size, modifiedISO, content}}`. `400` for a binary extension — use `/download` |
+| GET | `/servers/:id/files?path=` | List a directory (`path` omitted = server root). Returns `{"path", "files": [{name, isDirectory, size, sizeFormatted, modified, modifiedISO, editable}]}`, directories first then by name. `editable` marks files the editor will open in one piece — text **and** within the 5 MB limit; a larger text file lists as `editable: false` but is still readable in windows via `/file` |
+| GET | `/servers/:id/file?path=` | Read a text file. **Works while the server is running** — unlike `/download` — which makes it the way to read a log or a feed a plugin is still appending to. Returns `{"file": {name, path, size, modifiedISO, offset, length, truncated, content}}`, where `size` is the whole file and `offset`/`length` describe the bytes returned. `400` if the file is not text (use `/download`), `413` if it is over 5 MB and no window was requested |
 | GET | `/servers/:id/download?path=` | Stream any single file as `application/octet-stream`. Requires the server `stopped`/`crashed` (`409` otherwise), since a running server holds handles on world data and jars; a read that fails mid-stream with `EBUSY` also returns `409` |
 | POST | `/servers/:id/files/upload` | Upload file(s) into a directory. Multipart, any field names, plus a `path` text field naming the destination directory (omitted = server root) — on the multipart path it must precede the files in the stream. Any file type, no size cap (bounded by disk space). An existing file of the same name is **overwritten**; a name already taken by a folder is rejected, as is one that would replace a file a running server holds open (`reason: "file is in use by the server"`). Returns `{"success": true, "count", "uploaded": [...], "replaced": <n>, "rejected": [{name, reason}]}`. `404` if the destination is not a directory. Also accepts [chunked uploads](#chunked-uploads-dgup) (one file per session) at `/servers/:id/files/upload/*` |
 | POST | `/servers/:id/files/mkdir` | Create a directory. Body: `{path, name}` — `path` is the parent (omitted = server root). `409` if the name is taken |
@@ -166,7 +166,18 @@ Paths are relative to the server directory and are resolved against it with syml
 | POST | `/servers/:id/files/rename` | Rename a file or directory in place. Body: `{path, newName}`. Requires the server `stopped`/`crashed` (`409` otherwise). `409` if the new name is taken, or if the entry is held open by the server; changing only the letter case is allowed |
 | POST | `/servers/:id/files/delete` | Delete a file, or a directory and everything inside it. Body: `{path}`. Requires the server `stopped`/`crashed` (`409` otherwise); `409` if the entry is held open by the server. `400` for the server directory itself |
 
-> **Text vs binary is decided by extension, not by content.** The editable set is `.txt .log .properties .json .yml .yaml .xml .cfg .conf .ini .toml .csv .md .sh .bat .cmd .ps1 .js .ts .py .java .html .css .mcmeta .lang .sk .nbt`. Everything else is downloadable but not readable as text.
+> **Text vs binary is decided by content, not by extension.** There is no list of readable extensions to keep up with: a file is text if its first 8 KB decode as UTF-8, contain no NUL byte, and are not mostly control characters. So `.jsonl`, `.json5`, a mod's own invented config extension and a name with no extension at all all open, without anyone having to add them anywhere. Two shortcuts sit either side of that check — always-binary extensions (`.jar .zip .png .dat .nbt .mca .mrpack .exe .db`, and the rest of the usual archive/image/media/compiled set) are refused without a read, so listing a `mods/` folder stays cheap; and when there is nothing to read at all — the path does not exist yet, or the running server holds it locked — a list of known text extensions stands in.
+>
+> The content check also catches the reverse case: a UTF-16 or latin-1 file wearing a `.txt` is refused, because the panel reads and writes UTF-8 throughout and would show it as mojibake and mangle it on save. `.nbt` and `.dat` are refused for the same reason — they are gzipped binary, and earlier versions wrongly offered them for editing.
+
+> **Reading a file larger than 5 MB.** `/file` returns the whole file up to 5 MB and `413` past it. Beyond that, ask for a byte window with **`?tail=`** (last N bytes) or **`?offset=`&`limit=`** (explicit window) — the two forms are mutually exclusive, and both are byte counts, not lines or characters. A window is clamped to 5 MB and to the file's actual length, so an over-large ask returns short rather than failing, and `truncated` in the response says whether anything was left out. A window landing mid-character is trimmed back to a whole one, so `content` never contains a replacement character from the cut; `offset` reports where the returned bytes actually start after that trim.
+>
+> ```
+> GET /servers/:id/file?path=exchange/telemetry.jsonl&tail=65536
+> → {"file": {"size": 41203847, "offset": 41138311, "length": 65530, "truncated": true, "content": "..."}}
+> ```
+>
+> The editor UI never takes a window: it posts the whole textarea back, so opening a partial file would truncate the rest away on save. It refuses oversized files outright and points at the download instead.
 
 > **Creating is ungated, destroying is not.** Upload, mkdir and mkfile work in any server state, matching `/edit-file`, which already writes into a running server's directory. Rename and delete require the server stopped: they are the destructive pair, and a running server holds open handles. Uploading, creating or deleting `server.properties` or `eula.txt` in the server root re-syncs the mirrored database fields, exactly as `/edit-file` does.
 >

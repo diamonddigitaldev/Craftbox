@@ -36,7 +36,10 @@ const { isPathInside } = require('../../utils/pathSafety');
 const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
 const { pickPreferredBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
-const { isTextFile, listDirectory, safeEntryName, newNameError } = require('../../utils/fileBrowser');
+const {
+    isEditableFile, listDirectory, safeEntryName, newNameError,
+    readTextWindow, parseReadWindow, MAX_TEXT_BYTES
+} = require('../../utils/fileBrowser');
 const { readConsoleTail } = require('../../utils/consoleLog');
 const { cleanupServerData } = require('../../utils/serverCleanup');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
@@ -2410,9 +2413,15 @@ router.get('/servers/:id/files', async (req, res) => {
     }
 });
 
-// GET /servers/:id/file?path= — Read a text file's contents.
+// GET /servers/:id/file?path=[&offset=&limit=|&tail=] — Read a text file.
+//
 // Binary files are refused here and must be fetched from /download instead;
 // this mirrors what the file editor will open (see utils/fileBrowser).
+//
+// Unlike /download this works while the server is running, which makes it the
+// way to read a log or an append-only feed a plugin is still writing to. Such
+// a file has no bound worth trusting, so a whole-file read is capped and
+// callers past the cap ask for a byte window instead.
 router.get('/servers/:id/file', async (req, res) => {
     try {
         const server = await loadServerOr404(req, res);
@@ -2427,18 +2436,34 @@ router.get('/servers/:id/file', async (req, res) => {
         if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
             return res.status(404).json({ error: 'File not found.' });
         }
-        if (!isTextFile(path.basename(targetPath))) {
-            return res.status(400).json({ error: 'This file type cannot be read as text. Use /download instead.' });
+        if (!isEditableFile(targetPath)) {
+            return res.status(400).json({ error: 'This file is not text and cannot be read as text. Use /download instead.' });
         }
 
+        const readWindow = parseReadWindow(req.query);
+        if (readWindow.error) return res.status(400).json({ error: readWindow.error });
+
         const stat = fs.statSync(targetPath);
+        if (!readWindow.windowed && stat.size > MAX_TEXT_BYTES) {
+            return res.status(413).json({
+                error: `File is ${formatSize(stat.size)}, over the ${formatSize(MAX_TEXT_BYTES)} whole-file limit. `
+                    + 'Read part of it with ?tail= or ?offset=&limit= (bytes).',
+                size: stat.size,
+                maxBytes: MAX_TEXT_BYTES
+            });
+        }
+
+        const read = readTextWindow(targetPath, readWindow);
         res.json({
             file: {
                 name: path.basename(targetPath),
                 path: String(req.query.path),
-                size: stat.size,
+                size: read.size,
                 modifiedISO: stat.mtime.toISOString(),
-                content: fs.readFileSync(targetPath, 'utf8')
+                offset: read.offset,
+                length: read.length,
+                truncated: read.truncated,
+                content: read.content
             }
         });
     } catch (err) {
@@ -2807,8 +2832,8 @@ router.post('/servers/:id/files/mkdir', async (req, res) => {
 //
 // Ungated like mkdir: a name that isn't on disk yet cannot be one the running
 // server is holding open. No extension check either — the file manager already
-// takes any file by upload, and the panel decides editable-vs-downloadable by
-// extension when it lists the directory.
+// takes any file by upload, and the panel decides editable-vs-downloadable when
+// it lists the directory.
 router.post('/servers/:id/files/mkfile', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
@@ -3055,8 +3080,8 @@ router.post('/servers/:id/edit-file', async (req, res) => {
         return res.status(403).json({ error: 'Access denied.' });
     }
 
-    if (!isTextFile(path.basename(targetPath))) {
-        return res.status(400).json({ error: 'This file type cannot be edited.' });
+    if (!isEditableFile(targetPath)) {
+        return res.status(400).json({ error: 'This file is not text and cannot be edited.' });
     }
 
     try {
