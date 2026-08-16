@@ -19,85 +19,106 @@ NEW TEXT FILE (Files tab)
 --------------------------------------------------------------------
 
 The button
-  [ ] "New Text File" sits immediately to the right of "New Folder" and shares
+  [x] "New Text File" sits immediately to the right of "New Folder" and shares
       its outline-success styling and size.
-  [ ] It stays usable with the server RUNNING, exactly as New Folder does
+  [x] It stays usable with the server RUNNING, exactly as New Folder does
       (creating is ungated; only rename and delete need a stopped server).
 
 The modal
-  [ ] Opens with ".txt" already in the field and the caret BEFORE the dot —
+  [x] Opens with ".txt" already in the field and the caret BEFORE the dot —
       typing "notes" gives "notes.txt" without moving the cursor first.
-  [ ] The "File name" label carries the red required asterisk.
-  [ ] Enter in the field submits, the same as New Folder.
-  [ ] Cancel and the X both close it; reopening resets the field back to ".txt"
+  [x] The "File name" label carries the red required asterisk.
+  [x] Enter in the field submits, the same as New Folder.
+  [x] Cancel and the X both close it; reopening resets the field back to ".txt"
       rather than keeping whatever was typed last.
-  [ ] Confirm button gating matches New Folder: it greys out for a name with
+  [x] Confirm button gating matches New Folder: it greys out for a name with
       < > : " | ? *, one ending in a dot, an empty field, and a reserved name
       (NUL, CON, COM1). It only lights up for a name the API will accept.
 
 Creating
-  [ ] Create "notes.txt" in the server root. Toast reads
+  [x] Create "notes.txt" in the server root. Toast reads
       File "notes.txt" created in the server root. and the row appears after
       the reload, sorted among the files.
-  [ ] The new file has a working Edit (pencil) button and opens empty in the
+  [x] The new file has a working Edit (pencil) button and opens empty in the
       text editor. Save something into it and reopen to confirm it persisted.
-  [ ] Navigate into a subfolder first, then create — the file lands in the
+  [x] Navigate into a subfolder first, then create — the file lands in the
       subfolder, not the root.
-  [ ] Create a file whose name is taken by an existing FILE — rejected with
+  [x] Create a file whose name is taken by an existing FILE — rejected with
       "Something with that name already exists here.", the modal stays open,
       the button resets, and the existing file's contents are UNCHANGED (this
       is the one that must never truncate).
-  [ ] Same again where the name is taken by a FOLDER — same rejection.
-  [ ] Create one while the server is RUNNING — it works, and the file is there.
-  [ ] Clear the field to just ".txt" and create — a file named ".txt" is a
+  [x] Same again where the name is taken by a FOLDER — same rejection.
+  [x] Create one while the server is RUNNING — it works, and the file is there.
+  [x] Clear the field to just ".txt" and create — a file named ".txt" is a
       valid name, so this is expected to succeed rather than be blocked.
-  [ ] Give it a non-text extension (e.g. "test.cfg", "test.bin"). Both create;
+  [x] Give it a non-text extension (e.g. "test.cfg", "test.bin"). Both create;
       .cfg gets a pencil, .bin does not — the listing decides that, not the
       create dialog.
 
 Destination line (both create modals)
-  [ ] In the server root, both modals read: Created in the server root.
-  [ ] Inside a folder, both read: Created in "mods". — with the double quotes
+  [x] In the server root, both modals read: Created in the server root.
+  [x] Inside a folder, both read: Created in "mods". — with the double quotes
       rendered as quotes, not as &#34;.
-  [ ] Inside a nested folder with a space in the name, the full path is shown
+  [x] Inside a nested folder with a space in the name, the full path is shown
       inside the quotes and reads unambiguously.
 
 API (curl or a REST client, with an API key)
-  [ ] POST /api/v1/servers/:id/files/mkfile with {path, name} returns
+  [x] POST /api/v1/servers/:id/files/mkfile with {path, name} returns
       {"success": true, "name": ...} and the file exists on disk, empty.
-  [ ] Omitting `path` creates in the server root.
+  [x] Omitting `path` creates in the server root.
   [ ] A name with a slash, a traversal attempt ("../x.txt"), and a reserved
       device name are all rejected 400/403 — nothing is written outside the
       server directory.
-  [ ] An existing name returns 409 and leaves the file's bytes untouched.
-  [ ] A `path` that is a file rather than a directory returns 404.
-  [ ] Create "server.properties" in the root of a server that has none, then
+      >> FAILED on the first pass, NOW FIXED IN CODE — see TESTING NOTES #1.
+      newNameError() now runs on the name as typed, before safeEntryName()
+      reduces it to a basename, so a slash is rejected instead of stripped.
+      Unit-checked only (newNameError directly); still needs one re-run
+      through the API and the modal before this line can be ticked:
+      "sub/evil.txt" and "../x.txt" should both return 400 "A name cannot
+      contain a slash.", reserved names should still be 400, and `path` field
+      traversal ("../../../etc") should still be 403.
+  [x] An existing name returns 409 and leaves the file's bytes untouched.
+  [x] A `path` that is a file rather than a directory returns 404.
+  [x] Create "server.properties" in the root of a server that has none, then
       check the panel's port/EULA readings still agree with the file (the
       mirrored database fields re-sync on create, as they do on upload).
   [ ] docs/API.md matches what all of the above actually did.
+      >> Mostly matched; the gap is now closed from the code side rather than
+      the wording side — "must be a single path segment" is true as written
+      now that a slash is rejected. The naming paragraph has also been
+      corrected on two points it had wrong all along: a trailing space is
+      trimmed rather than rejected, and upload deliberately keeps the
+      basename-stripping behaviour that the typed-name routes no longer have.
+      Needs a re-read against the API once #1 is re-run.
 
 
 --------------------------------------------------------------------
 ASSIGN GROUP POSITION (Settings tab)
 --------------------------------------------------------------------
 
-  [ ] Settings > Advanced Options: the Assign Group field is centred under the
+  [x] Settings > Advanced Options: the Assign Group field is centred under the
       gap between Memory and Additional JVM Arguments, not pinned to the left.
-  [ ] Narrow the window below the md breakpoint — it goes full width and the
+  [x] Narrow the window below the md breakpoint — it goes full width and the
       centring makes no difference.
 
   The centring is now one shared function (centerLoneRowItems, app.js) that
   both forms call, so the create page needs re-checking for a regression:
-  [ ] Create page, Advanced Options: Assign Group is still centred.
-  [ ] Create page, pick the Custom type — the version picker hides and the
-      Server Port field left alone on that row is still centred.
-  [ ] Switch back off Custom — the port field returns to its half of the row
+  [x] Create page, Advanced Options: Assign Group is still centred.
+  [x] Create page, pick the Custom type — the version picker hides but the
+      Custom JAR URL field takes its place on the same row, so Server Port
+      still has a neighbour and the row is correctly NOT centred.
+      >> The original wording of this line expected Port to be centred here,
+      which was never right: Custom swaps one field for another rather than
+      removing one. Rewritten to match the layout. Behaviour confirmed correct
+      on the pass — see TESTING NOTES #2. No code change; centerLoneRowItems()
+      is doing exactly what it should.
+  [x] Switch back off Custom — the port field returns to its half of the row
       and is NOT left centred.
-  [ ] Create from a Modrinth modpack: the rows that lose a column to modpack
+  [x] Create from a Modrinth modpack: the rows that lose a column to modpack
       mode centre the same way they did before.
-  [ ] The group autocomplete dropdown still opens directly under the input and
+  [x] The group autocomplete dropdown still opens directly under the input and
       lines up with it after the move.
-  [ ] Saving still assigns the group, and the dashboard shows the server under
+  [x] Saving still assigns the group, and the dashboard shows the server under
       it afterwards.
 
 
@@ -105,15 +126,15 @@ ASSIGN GROUP POSITION (Settings tab)
 BACK BUTTON DESTINATION (every server tab)
 --------------------------------------------------------------------
 
-  [ ] Open a server that IS in a group; the back arrow returns to that group's
+  [x] Open a server that IS in a group; the back arrow returns to that group's
       page, not the dashboard.
-  [ ] Do it from a group whose name contains a space — the link resolves, no
+  [x] Do it from a group whose name contains a space — the link resolves, no
       "no longer exists" flash on arrival.
-  [ ] Open a server with NO group; the back arrow returns to the dashboard.
-  [ ] Move a server into a group from Settings, save, and check the back arrow
+  [x] Open a server with NO group; the back arrow returns to the dashboard.
+  [x] Move a server into a group from Settings, save, and check the back arrow
       on the reloaded page now points at the group page.
-  [ ] Remove the group again — back points at the dashboard.
-  [ ] Check the arrow on Console, Settings, Properties, Mods/Plugins, Files,
+  [x] Remove the group again — back points at the dashboard.
+  [x] Check the arrow on Console, Settings, Properties, Mods/Plugins, Files,
       Backups and Events; they all share the same header.
 
 
@@ -127,44 +148,111 @@ TEXT FILE DETECTION (Files tab + API)
   to read (file absent, or locked by the running server).
 
 The files the issue was about
-  [ ] Put a "telemetry.jsonl" and a "config.json5" in the server directory.
+  [x] Put a "telemetry.jsonl" and a "config.json5" in the server directory.
       Both get a pencil in the listing and open in the editor. Save an edit to
       each and reopen to confirm it persisted.
-  [ ] A file with an extension nobody has heard of ("settings.zonk") that
+  [x] A file with an extension nobody has heard of ("settings.zonk") that
       contains plain text also gets a pencil and opens.
-  [ ] A file with NO extension at all ("Dockerfile", "banned-players") opens.
+  [x] A file with NO extension at all ("Dockerfile", "banned-players") opens.
 
 Binaries still refused
-  [ ] "level.dat" and any ".nbt" no longer have a pencil — this is the
+  [x] "level.dat" and any ".nbt" no longer have a pencil — this is the
       deliberate change; they are gzipped binary and editing corrupted them.
       Download still works on both.
-  [ ] A ".jar" in mods/ has no pencil even if you rename a text file to .jar —
+  [x] A ".jar" in mods/ has no pencil even if you rename a text file to .jar —
       the extension shortcut wins, no read happens.
-  [ ] Take a real binary and rename it to "thing.zonk" — no pencil, because
+  [x] Take a real binary and rename it to "thing.zonk" — no pencil, because
       the content check caught it.
-  [ ] Browsing a mods/ folder with a lot of jars is no slower than before
+  [x] Browsing a mods/ folder with a lot of jars is no slower than before
       (the binary extensions are refused without opening anything).
 
 Encoding
-  [ ] Save a .txt as UTF-16 in Notepad and put it in the server directory —
+  [x] Save a .txt as UTF-16 in Notepad and put it in the server directory —
       it now has NO pencil, on purpose. Opening it as UTF-8 showed mojibake
       and saving corrupted it.
-  [ ] A UTF-8 file with accents/emoji opens, round-trips through a save, and
+  [x] A UTF-8 file with accents/emoji opens, round-trips through a save, and
       the characters survive.
-  [ ] A live server .log full of ANSI colour codes still opens as text.
+  [x] A live server .log full of ANSI colour codes still opens as text.
 
 Large files (5 MB limit)
-  [ ] A text file over 5 MB has NO pencil in the listing, and visiting its
+  [x] A text file over 5 MB has NO pencil in the listing, and visiting its
       edit URL directly gives "This file is N MB, over the 5 MB editor limit."
       rather than hanging or a blank editor.
-  [ ] API: GET /api/v1/servers/:id/file?path=big.log returns 413 with the size
+  [x] API: GET /api/v1/servers/:id/file?path=big.log returns 413 with the size
       and the hint about ?tail= / ?offset=&limit=.
-  [ ] API: the same path with &tail=65536 returns the last 64 KB, with
+  [x] API: the same path with &tail=65536 returns the last 64 KB, with
       truncated: true and an offset near the end of the file.
-  [ ] Do that WHILE THE SERVER IS RUNNING against a log it is writing — it
+  [x] Do that WHILE THE SERVER IS RUNNING against a log it is writing — it
       works (this is the gap: /download refuses on a running server).
-  [ ] &offset=0&limit=100 returns the first 100 bytes; &tail= together with
+  [x] &offset=0&limit=100 returns the first 100 bytes; &tail= together with
       &offset= is rejected with a clear message; a negative or non-numeric
       value is rejected too.
-  [ ] A window cut mid-character comes back without any replacement
+  [x] A window cut mid-character comes back without any replacement
       characters at either edge.
+
+
+====================================================================
+TESTING NOTES (automated pass, 2026-08-16, v1.2.0-beta.6)
+====================================================================
+
+Tested against a clean install running in an isolated sandbox (fresh clone
+of the repo, fresh SQLite DB, real vanilla/paper Minecraft servers actually
+downloaded and booted — not mocked), driven with a real Chromium browser
+plus direct API calls. Everything above is ticked from an actual pass, not
+inferred from reading the code. Two real gaps found, both minor:
+
+#1 — mkfile name validation doesn't match the checklist's stated behaviour
+  POST /api/v1/servers/:id/files/mkfile with name="sub/evil.txt" or
+  name="../x.txt" returns 200 and creates "evil.txt" / "x.txt" in the target
+  directory, rather than 400/403. This is because safeEntryName() (used by
+  mkfile, mkdir, and rename alike) takes path.basename(name) rather than
+  rejecting a multi-segment name outright. It's not a security hole — the
+  isPathInside() check still stops anything from landing outside the server
+  directory, and a `path` field traversal attempt IS correctly rejected 403 —
+  but a name typed with a slash silently gets shortened instead of bounced
+  back with an error, on all three of mkfile/mkdir/rename. Worth either
+  updating the checklist/docs wording, or adding an explicit rejection if the
+  silent-truncate behaviour wasn't intended.
+
+  >> RESOLVED by adding the rejection. The silent truncation was not intended:
+  the browser side already refused a slash (nameError in public/js/files.js),
+  and docs/API.md already claimed a name "must be a single path segment", so
+  the server was the only half of the check missing. newNameError() now takes
+  the name as typed and runs before safeEntryName(), and the three typed-name
+  routes call it in that order. Uploads are deliberately untouched — a browser
+  sends a whole relative path as the filename when a folder is dropped in, so
+  reducing to the basename is correct there and stays.
+
+  While moving the check onto the raw name, two long-standing inaccuracies in
+  the same paragraph of docs/API.md were corrected: a trailing space is
+  trimmed, not rejected, and the doc never mentioned the upload/typed-name
+  split at all.
+
+#2 — Custom server type doesn't leave Server Port alone on its row
+  On the Create page, picking the "Custom" server type hides the version
+  picker (#version-group) but reveals the Custom JAR URL field
+  (#custom-url-group) in the same row, so Server Port ends up next to it —
+  never alone. centerLoneRowItems() only centres a row when exactly one
+  column is visible, so this row is never centred when Custom is picked,
+  contradicting this checklist's line. Confirmed the Modrinth-modpack path
+  (where both the version picker AND the custom URL field are hidden) DOES
+  correctly leave Port alone and centred, so the shared centring function
+  itself is working — this is specifically about the Custom-type case having
+  a second field where the checklist expects none. Worth checking whether the
+  checklist's expectation is stale, or the Custom-type layout should change.
+
+  >> RESOLVED as a stale checklist expectation, no code change. Custom swaps
+  the version picker for the JAR URL field rather than removing it, so two
+  columns stay visible and the row should not centre — which is what it does.
+  The checklist line has been rewritten to describe that. Centring a row whose
+  two halves are both in use would be the bug, not the fix.
+
+Everything else — around 90 other checklist lines — passed as written,
+including the New Folder/New Text File flows in both the browser and via the
+API, group-position centring on Settings/Create/modpack-mode, back-button
+destinations across all seven server tabs (including a Paper server's
+Plugins tab, and a group name with a space in it), and the full text-file
+detection matrix (jsonl/json5/zonk/no-extension/UTF-16/UTF-8-with-emoji/
+ANSI-log/level.dat/.nbt/.jar-in-mods/renamed-binary, plus the 5 MB API
+windowing — tail, offset+limit, running-server reads, and the mid-character
+trim).
