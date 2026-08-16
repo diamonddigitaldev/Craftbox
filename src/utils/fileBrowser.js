@@ -264,17 +264,34 @@ function safeEntryName(name) {
 }
 
 /**
- * Stricter check for names the user types (rename, new folder), as opposed to
- * names that arrive attached to an upload. Rejecting here produces a clear
- * message instead of a bare EINVAL/ENOENT from the filesystem later.
+ * Stricter check for names the user types (rename, new folder, new file), as
+ * opposed to names that arrive attached to an upload. Rejecting here produces a
+ * clear message instead of a bare EINVAL/ENOENT from the filesystem later.
  *
- * @param {string} name - already through safeEntryName
+ * Takes the name as typed, before safeEntryName has been near it. That order
+ * matters for the separator check: safeEntryName reduces a name to its last
+ * segment, which is right for an upload — a browser sends a whole relative path
+ * as the filename — but wrong for a name somebody typed, where "sub/notes.txt"
+ * would quietly become "notes.txt" in the current folder instead of saying that
+ * a name is not a path. The client refuses a slash the same way
+ * (public/js/files.js), so this is the server half of a check the UI already
+ * makes rather than a new restriction.
+ *
+ * @param {*} name - the raw name from the request body
  * @returns {string|null} an error message, or null when the name is fine
  */
 function newNameError(name) {
-    if (/[<>:"|?*]/.test(name)) return 'A name cannot contain any of: < > : " | ? *';
-    if (/[. ]$/.test(name)) return 'A name cannot end with a dot or a space.';
-    if (RESERVED_DEVICE_NAMES.test(name)) return `"${name}" is a reserved name and cannot be used.`;
+    if (typeof name !== 'string') return 'Enter a name.';
+    const trimmed = name.trim();
+    if (!trimmed) return 'Enter a name.';
+    if (trimmed.length > 255) return 'A name cannot be longer than 255 characters.';
+    if (trimmed === '.' || trimmed === '..') return 'That name cannot be used.';
+    if (/[/\\]/.test(trimmed)) return 'A name cannot contain a slash.';
+    // eslint-disable-next-line no-control-regex
+    if (/[\x00-\x1f]/.test(trimmed)) return 'A name cannot contain control characters.';
+    if (/[<>:"|?*]/.test(trimmed)) return 'A name cannot contain any of: < > : " | ? *';
+    if (/\.$/.test(trimmed)) return 'A name cannot end with a dot.';
+    if (RESERVED_DEVICE_NAMES.test(trimmed)) return `"${trimmed}" is a reserved name and cannot be used.`;
     return null;
 }
 

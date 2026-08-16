@@ -183,7 +183,9 @@ Paths are relative to the server directory and are resolved against it with syml
 >
 > **Replacing what a running server holds open is the one upload that is gated.** While a server is not `stopped`/`crashed`, an upload that would overwrite its jar, or any existing file under its world folders, `logs/`, or `mods/`/`plugins/`, is rejected per-file with `reason: "file is in use by the server"` — the rest of the batch still lands. Windows fails that write with `EBUSY` anyway; Linux does not, and would silently corrupt a live server. New files in those folders are unaffected: nothing can hold a handle on a name that isn't there yet.
 >
-> New names supplied to `rename`, `mkdir` and `mkfile` must be a single path segment and are rejected (`400`) if they contain `< > : " | ? *`, end in a dot or space, or are a reserved device name (`CON`, `NUL`, `COM1`…) — those would fail confusingly at the filesystem layer, on Windows now or after an export/import later.
+> New names supplied to `rename`, `mkdir` and `mkfile` must be a single path segment. A name is rejected (`400`) if it contains a slash or backslash, contains `< > : " | ? *` or a control character, ends in a dot, is `.` or `..`, is longer than 255 characters, or is a reserved device name (`CON`, `NUL`, `COM1`…) — the last few would fail confusingly at the filesystem layer, on Windows now or after an export/import later. Leading and trailing whitespace is trimmed rather than rejected, so `"notes.txt "` creates `notes.txt`.
+>
+> The slash rule is a rejection, not a rewrite: `sub/notes.txt` returns `400` rather than quietly creating `notes.txt` in the current folder. Create the directory first, then the file inside it. This differs from **upload**, where a name is reduced to its last segment on purpose — a browser sends a whole relative path as the filename when a folder is dropped in, and only the basename is meaningful there.
 
 ### Restore-point backups
 

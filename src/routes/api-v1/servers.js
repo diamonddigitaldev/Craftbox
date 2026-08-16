@@ -2749,10 +2749,10 @@ router.post('/servers/:id/files/rename', async (req, res) => {
 
     if (!req.body.path) return res.status(400).json({ error: 'No path specified.' });
 
+    const nameError = newNameError(req.body.newName);
+    if (nameError) return res.status(400).json({ error: nameError });
     const newName = safeEntryName(req.body.newName);
     if (!newName) return res.status(400).json({ error: 'Invalid name.' });
-    const nameError = newNameError(newName);
-    if (nameError) return res.status(400).json({ error: nameError });
 
     const resolved = resolveServerPath(req, res, server, req.body.path);
     if (!resolved) return;
@@ -2795,10 +2795,10 @@ router.post('/servers/:id/files/mkdir', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
 
+    const nameError = newNameError(req.body.name);
+    if (nameError) return res.status(400).json({ error: nameError });
     const name = safeEntryName(req.body.name);
     if (!name) return res.status(400).json({ error: 'Invalid folder name.' });
-    const nameError = newNameError(name);
-    if (nameError) return res.status(400).json({ error: nameError });
 
     const resolved = resolveServerPath(req, res, server, req.body.path);
     if (!resolved) return;
@@ -2838,10 +2838,10 @@ router.post('/servers/:id/files/mkfile', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
 
+    const nameError = newNameError(req.body.name);
+    if (nameError) return res.status(400).json({ error: nameError });
     const name = safeEntryName(req.body.name);
     if (!name) return res.status(400).json({ error: 'Invalid file name.' });
-    const nameError = newNameError(name);
-    if (nameError) return res.status(400).json({ error: nameError });
 
     const resolved = resolveServerPath(req, res, server, req.body.path);
     if (!resolved) return;

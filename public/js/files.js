@@ -15,9 +15,11 @@
         parent.appendChild(strong);
     }
 
-    // Mirrors safeEntryName + newNameError (src/utils/fileBrowser.js) so the
+    // Mirrors newNameError (src/utils/fileBrowser.js) check for check, so the
     // confirm button only lights up for a name the API would actually accept.
     // The server still re-checks — this just saves a round trip to be told no.
+    // Keep the two in step: this list was the stricter of the pair for a while,
+    // refusing a slash that the API then quietly stripped to a basename.
     var RESERVED_DEVICE_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
 
     function nameError(name) {
