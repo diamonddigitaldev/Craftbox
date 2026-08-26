@@ -22,7 +22,8 @@ const _gate = 'stopped crashed';
     <h6 class="text-body-secondary mb-0"><%= files.length %> <%= contentType.label.toLowerCase() %> installed</h6>
     <% if (files.length > 0) { %>
     <div class="d-flex gap-2">
-        <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1">
+        <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1"
+           data-download="Mods and plugins">
             <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
             Download All
         </a>
@@ -122,7 +123,8 @@ const _gate = 'stopped crashed';
                         <div class="d-inline-flex gap-1">
                             <a href="/servers/<%= server.id %>/plugins/download?file=<%= encodeURIComponent(file.name) %>"
                                class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center"
-                               style="width: 32px; height: 32px; padding: 0;" title="Download">
+                               style="width: 32px; height: 32px; padding: 0;" title="Download"
+                               data-download="<%= file.name %>">
                                 <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
                             </a>
                             <button type="button"

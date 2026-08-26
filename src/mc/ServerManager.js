@@ -264,8 +264,8 @@ class ServerManager {
      * Only authenticated subscribers receive these (the broadcast filter in
      * ServerProcess generates no publicMsg for unknown types).
      * @param {string} serverId
-     * @param {'backup'|'restore'|'jar-upgrade'|'settings-save'|'create'|'duplicate'|'import'|'modpack-install'} operation
-     * @param {'complete'|'failed'|'progress'} status
+     * @param {'backup'|'restore'|'jar-upgrade'|'settings-save'|'create'|'duplicate'|'import'|'modpack-install'|'download'} operation
+     * @param {'complete'|'failed'|'progress'|'cancelled'} status
      * @param {object|string} payloadOrError - error message on failed, payload object otherwise
      */
     broadcastOperation(serverId, operation, status, payloadOrError) {

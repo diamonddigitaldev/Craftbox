@@ -61,6 +61,7 @@ const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
 <div class="d-flex gap-2 mb-3">
     <a href="/servers/<%= server.id %>/download-zip"
        class="btn btn-outline-success btn-sm d-flex align-items-center gap-1<%= _serverStopped ? '' : ' disabled' %>"
+       data-download="Server files"
        data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to download files" data-enabled-title=""
        <%- _serverStopped ? '' : 'aria-disabled="true" tabindex="-1" title="Stop the server to download files"' %>>
         <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
@@ -152,6 +153,7 @@ const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
                                 <a href="/servers/<%= server.id %>/download?path=<%= encodeURIComponent(_relPath) %>"
                                    class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center<%= _serverStopped ? '' : ' disabled' %>"
                                    style="width: 32px; height: 32px; padding: 0;"
+                                   data-download="<%= file.name %>"
                                    data-enable-when="<%= _gate %>" data-enabled-title="Download" data-disabled-title="Stop server to download"
                                    title="<%= _serverStopped ? 'Download' : 'Stop server to download' %>"
                                    <%- _serverStopped ? '' : 'aria-disabled="true" tabindex="-1"' %>>

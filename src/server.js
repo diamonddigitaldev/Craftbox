@@ -229,6 +229,9 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         // Sweep orphaned chunked-upload part files and start the session reaper
         require('./middleware/dgup').initDgup();
 
+        // Same for archives staged for download but never collected
+        require('./utils/download').initDownloads();
+
         // ── 13. Graceful shutdown ──
         let shuttingDown = false;
         const handleShutdown = async () => {

@@ -4,8 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const StreamZip = require('node-stream-zip');
-const archiver = require('archiver');
-const contentDisposition = require('content-disposition');
+const { DownloadReporter, sendFileDownload, sendArchiveDownload } = require('../../utils/download');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 const { serversDb, backupsDb, eventsDb, SERVERS_DIR } = require('../../db');
@@ -2479,37 +2478,45 @@ router.get('/servers/:id/download', async (req, res) => {
     const server = await loadServerOr404(req, res);
     if (!server) return;
 
-    const liveState = req.app.get('serverManager').getState(server);
+    const serverManager = req.app.get('serverManager');
+    const fileName = req.query.path ? path.basename(String(req.query.path)) : 'file';
+    const reporter = new DownloadReporter({
+        req, serverManager, serverId: server.id, label: fileName
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
+    const liveState = serverManager.getState(server);
     if (liveState === STATES.PROVISIONING) {
-        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+        return reject(409, 'Wait for the server to finish provisioning.');
     }
     if (!['stopped', 'crashed'].includes(liveState)) {
-        return res.status(409).json({ error: 'Stop the server before downloading files.' });
+        return reject(409, 'Stop the server before downloading files.');
     }
 
-    if (!req.query.path) return res.status(400).json({ error: 'No path specified.' });
+    if (!req.query.path) return reject(400, 'No path specified.');
 
     const resolved = resolveServerPath(req, res, server, req.query.path);
-    if (!resolved) return;
+    if (!resolved) return reporter.failed('Access denied.');
     const { targetPath } = resolved;
 
     if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
-        return res.status(404).json({ error: 'File not found.' });
+        return reject(404, 'File not found.');
     }
 
-    res.setHeader('Content-Disposition', contentDisposition(path.basename(targetPath)));
-    res.setHeader('Content-Type', 'application/octet-stream');
-
-    const stream = fs.createReadStream(targetPath);
-    stream.on('error', (err) => {
-        if (res.headersSent) return;
-        if (err.code === 'EBUSY') {
-            res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
-        } else {
-            res.status(500).json({ error: 'Failed to download file.' });
+    sendFileDownload(res, targetPath, {
+        filename: path.basename(targetPath),
+        reporter,
+        onError: (err) => {
+            if (err.code === 'EBUSY') {
+                reject(409, 'File is currently in use by the server. Try again later or stop the server first.');
+            } else {
+                reject(500, 'Failed to download file.');
+            }
         }
     });
-    stream.pipe(res);
 });
 
 // ── File management ─────────────────────────────────────────────────────────
@@ -2953,13 +2960,19 @@ router.get('/servers/:id/export', async (req, res) => {
     const includeEvents = req.query.events === 'true';
     const startAfter = req.query.start === 'true';
     const initiatedBy = req.user?.username;
+    const reporter = new DownloadReporter({
+        req, serverManager, serverId: server.id, label: 'Server export'
+    });
 
-    // Hold the backup lock while streaming so a scheduled backup can't write a
-    // partial zip into the archive mid-export.
+    // Hold the backup lock while the archive is packed so a scheduled backup
+    // can't write a partial zip into it. Released the moment packing ends —
+    // the client's download no longer keeps a scheduled backup waiting.
     let lockHeld = false;
     if (includeBackups) {
         if (!tryAcquireBackupLock(server.id)) {
-            return res.status(409).json({ error: 'A backup is currently in progress. Try again when it completes.' });
+            const busy = 'A backup is currently in progress. Try again when it completes.';
+            reporter.failed(busy);
+            return res.status(409).json({ error: busy });
         }
         lockHeld = true;
     }
@@ -2971,8 +2984,8 @@ router.get('/servers/:id/export', async (req, res) => {
     };
 
     // Optional restart once the archive has fully streamed — by then every
-    // server file has been read, so starting the server can no longer corrupt
-    // the export.
+    // server file has been read and packed, so starting the server can no
+    // longer corrupt the export.
     let startRequested = false;
     const startServerAfterExport = () => {
         if (!startAfter || startRequested || !serverManager) return;
@@ -3007,58 +3020,62 @@ router.get('/servers/:id/export', async (req, res) => {
 
         const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        // A .cbx transfer archive is a zip container with a Craftbox manifest at
-        // its root. The dedicated media type stops browsers from "correcting"
-        // the extension back to .zip on download.
-        res.setHeader('Content-Type', 'application/x-craftbox-export+zip');
-        res.setHeader('Content-Disposition', contentDisposition(`${safeName}.cbx`));
-
-        const archive = archiver('zip', { zlib: { level: 5 } });
-        archive.on('error', (err) => {
-            log('error', `Export archive error for ${server.name}: ${err.message}`);
-            releaseLock();
-            if (!res.headersSent) res.status(500).json({ error: 'Archive failed.' });
-        });
-        res.on('close', releaseLock);
-        archive.on('end', releaseLock);
-        res.on('finish', startServerAfterExport);
-        // 'finish' = the full archive reached the client; 'close' without it
-        // means the download was abandoned mid-stream.
-        res.on('finish', () => {
-            log('info', `Export of "${server.name}" (${server.id}) completed — ${formatSize(archive.pointer())} sent`);
-        });
-        res.on('close', () => {
-            if (!res.writableFinished) {
-                log('warn', `Export of "${server.name}" (${server.id}) aborted by client after ${formatSize(archive.pointer())}`);
-            }
-        });
-
-        archive.pipe(res);
-        archive.append(JSON.stringify(manifest, null, 2), { name: 'craftbox-manifest.json' });
-        archive.append(JSON.stringify(modEnv, null, 2), { name: 'modenv.json' });
-        archive.directory(serverDir, 'server');
-
+        // Sized before packing so a doomed export fails with a legible 507
+        // rather than filling the staging disk, and so the progress report has
+        // a denominator to count towards.
+        let estimatedBytes = getDirectorySize(serverDir);
         if (includeBackups) {
-            archive.append(JSON.stringify(backups, null, 2), { name: 'backups.json' });
-            for (const b of backups) {
-                try {
-                    const zipPath = resolveBackupPath(server.id, b.filename);
-                    if (fs.existsSync(zipPath)) {
-                        archive.file(zipPath, { name: `backups/${b.filename}` });
-                    }
-                } catch { /* skip backups with invalid filenames */ }
-            }
-        }
-        if (includeEvents) {
-            archive.append(JSON.stringify(events, null, 2), { name: 'events.json' });
+            estimatedBytes += backups.reduce((sum, b) => sum + (Number(b.size) || 0), 0);
         }
 
         log('info', `Exporting server "${server.name}" (${server.id}) — backups: ${includeBackups} (${backups.length}), events: ${includeEvents} (${events.length}), startAfter: ${startAfter}`);
-        archive.finalize();
+
+        // A .cbx transfer archive is a zip container with a Craftbox manifest at
+        // its root. The dedicated media type stops browsers from "correcting"
+        // the extension back to .zip on download.
+        const sent = await sendArchiveDownload(req, res, {
+            filename: `${safeName}.cbx`,
+            contentType: 'application/x-craftbox-export+zip',
+            estimatedBytes,
+            reporter,
+            describe: `Export of "${server.name}" (${server.id})`,
+            onPacked: releaseLock,
+            build(archive) {
+                archive.append(JSON.stringify(manifest, null, 2), { name: 'craftbox-manifest.json' });
+                archive.append(JSON.stringify(modEnv, null, 2), { name: 'modenv.json' });
+                archive.directory(serverDir, 'server');
+
+                if (includeBackups) {
+                    archive.append(JSON.stringify(backups, null, 2), { name: 'backups.json' });
+                    for (const b of backups) {
+                        try {
+                            const zipPath = resolveBackupPath(server.id, b.filename);
+                            if (fs.existsSync(zipPath)) {
+                                archive.file(zipPath, { name: `backups/${b.filename}` });
+                            }
+                        } catch { /* skip backups with invalid filenames */ }
+                    }
+                }
+                if (includeEvents) {
+                    archive.append(JSON.stringify(events, null, 2), { name: 'events.json' });
+                }
+            }
+        });
+        releaseLock();
+
+        // Only a delivered archive counts as an export: an abandoned download
+        // leaves the server stopped, exactly as it was before the click.
+        if (res.writableFinished) {
+            log('info', `Export of "${server.name}" (${server.id}) completed — ${formatSize(sent)} sent`);
+            startServerAfterExport();
+        }
     } catch (err) {
         releaseLock();
         log('error', `Export failed for ${server.name}: ${err.message}`);
-        if (!res.headersSent) res.status(500).json({ error: 'Export failed.' });
+        reporter.failed(err.message);
+        if (!res.headersSent) {
+            res.status(err.status || 500).json({ error: err.status === 507 ? err.message : 'Export failed.' });
+        }
     }
 });
 

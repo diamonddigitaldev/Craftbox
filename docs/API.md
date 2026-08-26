@@ -159,7 +159,7 @@ Paths are relative to the server directory and are resolved against it with syml
 |---|---|---|
 | GET | `/servers/:id/files?path=` | List a directory (`path` omitted = server root). Returns `{"path", "files": [{name, isDirectory, size, sizeFormatted, modified, modifiedISO, editable}]}`, directories first then by name. `editable` marks files the editor will open in one piece — text **and** within the 5 MB limit; a larger text file lists as `editable: false` but is still readable in windows via `/file` |
 | GET | `/servers/:id/file?path=` | Read a text file. **Works while the server is running** — unlike `/download` — which makes it the way to read a log or a feed a plugin is still appending to. Returns `{"file": {name, path, size, modifiedISO, offset, length, truncated, content}}`, where `size` is the whole file and `offset`/`length` describe the bytes returned. `400` if the file is not text (use `/download`), `413` if it is over 5 MB and no window was requested |
-| GET | `/servers/:id/download?path=` | Stream any single file as `application/octet-stream`. Requires the server `stopped`/`crashed` (`409` otherwise), since a running server holds handles on world data and jars; a read that fails mid-stream with `EBUSY` also returns `409` |
+| GET | `/servers/:id/download?path=` | Stream any single file as `application/octet-stream`, with an exact `Content-Length`. Requires the server `stopped`/`crashed` (`409` otherwise), since a running server holds handles on world data and jars; a read that fails mid-stream with `EBUSY` also returns `409` |
 | POST | `/servers/:id/files/upload` | Upload file(s) into a directory. Multipart, any field names, plus a `path` text field naming the destination directory (omitted = server root) — on the multipart path it must precede the files in the stream. Any file type, no size cap (bounded by disk space). An existing file of the same name is **overwritten**; a name already taken by a folder is rejected, as is one that would replace a file a running server holds open (`reason: "file is in use by the server"`). Returns `{"success": true, "count", "uploaded": [...], "replaced": <n>, "rejected": [{name, reason}]}`. `404` if the destination is not a directory. Also accepts [chunked uploads](#chunked-uploads-dgup) (one file per session) at `/servers/:id/files/upload/*` |
 | POST | `/servers/:id/files/mkdir` | Create a directory. Body: `{path, name}` — `path` is the parent (omitted = server root). `409` if the name is taken |
 | POST | `/servers/:id/files/mkfile` | Create an empty file. Body: `{path, name}` — `path` is the parent directory (omitted = server root). Any extension; an existing file is never truncated — `409` if the name is taken |
@@ -229,7 +229,7 @@ The response is `202 {"success": true, "status": "started"}` instead of the endp
 | DELETE | `/servers/:id/backups/:backupId` | Delete a backup |
 | POST | `/servers/:id/backup-schedule` | Body: `{enabled, intervalHours (1–168), countdownMinutes (1–30)}`. Returns `{"backupSchedule": {...}, "nextBackupAt": ...}` |
 | POST | `/servers/:id/backup-retention` | Body: `{retentionCount (0–100), retentionDays (0–365)}` (0 = unlimited) |
-| GET | `/servers/:id/backups/:backupId/download` | Stream the backup archive as `application/zip`. `404` if the backup does not belong to this server |
+| GET | `/servers/:id/backups/:backupId/download` | Stream the backup archive as `application/zip`, with an exact `Content-Length` read off the file rather than the record. `404` if the backup does not belong to this server |
 
 
 ## Server transfer
@@ -238,7 +238,9 @@ Move a server — files, Craftbox settings, and optionally backups and event his
 
 ### Export
 
-`GET /servers/:id/export?backups=true&events=true&start=true` streams the download as `<server-name>.cbx` with `Content-Type: application/x-craftbox-export+zip`. The server must be `stopped` or `crashed` (`409` otherwise). Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option). Requesting `backups` holds the backup lock for the duration, so a scheduled backup cannot write a partial archive into the export; `409` if a backup is already running.
+`GET /servers/:id/export?backups=true&events=true&start=true` sends the download as `<server-name>.cbx` with `Content-Type: application/x-craftbox-export+zip` and an exact `Content-Length`. The server must be `stopped` or `crashed` (`409` otherwise). Query flags (`true` to enable): `backups` and `events` select the optional payloads; `start` starts the server once the archive has finished streaming (used by the panel's "Start server after export" option) — an abandoned download leaves the server stopped. Requesting `backups` holds the backup lock while the archive is packed; `409` if a backup is already running. `507` if the staging area cannot hold the archive.
+
+> **The archive is packed before the response begins.** Nothing is sent until the whole `.cbx` exists, which is what makes the size knowable — a zip's length is not known until its last entry is written, and a browser given no `Content-Length` shows an indefinite "Resuming…" for the entire transfer with no size, percentage or ETA. Expect a pause on a large server before the first byte, proportional to the amount being packed. Packing failures therefore land **before** any header is sent and come back as ordinary JSON errors; only a fault while streaming an already-packed archive drops the connection mid-body. The same applies to `/servers/:id/download-zip`, `/servers/:id/plugins/download-all` and `/status/:id/mods`.
 
 > **`.cbx` is Craftbox's transfer-archive extension.** The container is an ordinary zip, so any zip tool can open one for inspection — only the extension and media type are Craftbox-specific. Import requires the `.cbx` extension but never trusts it: the upload is also checked against the zip magic bytes and must carry a valid `craftbox-manifest.json`, so renaming an arbitrary zip to `.cbx` is still rejected.
 
@@ -350,6 +352,8 @@ Reads work in any state. The **mutating** routes require the server to be `stopp
 | POST | `/servers/:id/plugins/delete-all` | Delete all plugins/mods |
 | POST | `/servers/:id/plugins/environment` | Mod-loader servers only. Body: `{filename, environment}` where environment is `client`, `server`, or `both`. Client-only mods are disabled on the server but still offered on the status page mods download |
 
+> **Downloads.** The panel's download links live outside `/api/v1` and are listed here for completeness: `GET /servers/:id/plugins/download?file=` (one jar), `GET /servers/:id/plugins/download-all` (the whole folder as a zip), and `GET /servers/:id/download-zip` (the whole server directory). All three carry an exact `Content-Length` and report their outcome over the WebSocket as `operation: "download"`; the two zips are packed before the response begins, as [Export](#export) describes.
+
 
 ## Modrinth
 
@@ -417,7 +421,7 @@ Unauthenticated, mounted at the site root (not `/api/v1`). The `statusPagePublic
 | GET | `/status` | HTML index of servers with the public status page enabled |
 | GET | `/status/:id` | HTML status page for one server |
 | GET | `/status/:id/api` | JSON: `{"server": {id, name, state, port, version, serverType, playerCount, players, uptime, uptimeFormatted, statusPagePublic, advertisedIp}}` |
-| GET | `/status/:id/mods` | Zip of client-facing mods; `404` if none |
+| GET | `/status/:id/mods` | Zip of client-facing mods, packed before the response begins so it carries an exact `Content-Length`; `404` if none |
 
 Public responses are sanitized: internal states (`provisioning`, `backing_up`, `restoring`, `upgrading_jar`) are reported as `stopped`, and crash details, file paths, and JVM configuration are never exposed.
 
@@ -453,9 +457,13 @@ The server pings every 30 seconds and drops sockets that miss a pong.
 | `state` | `{serverId, state, lastStarted, exitCode, crashReason}` | Lifecycle change |
 | `players` | `{serverId, players, count}` | Join/leave updates |
 | `event` | `{serverId, eventType, message, createdAt}` | Public sockets only receive started/stopped/crashed/restarted |
-| `operation` | `{serverId, operation, status, payload?, error?}` | Progress/completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-upgrade`, `settings-save`, `create`, `duplicate`, `import`, `modpack-install`; `status` ∈ `complete`, `failed`, `progress`. `progress` is currently emitted by `modpack-install` only, with `payload {phase, done?, total?}` (see [Modrinth](#modrinth)). A restore-point save emits `backup` first, then `settings-save` |
+| `operation` | `{serverId, operation, status, payload?, error?}` | Progress/completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-upgrade`, `settings-save`, `create`, `duplicate`, `import`, `modpack-install`, `download`; `status` ∈ `complete`, `failed`, `progress`, `cancelled`. `progress` is emitted by `modpack-install` with `payload {phase, done?, total?}` (see [Modrinth](#modrinth)) and by `download` (see below). A restore-point save emits `backup` first, then `settings-save` |
 | `events_cleared` | `{serverId}` | Event log was cleared |
 | `pong` / `error` | — | Heartbeat reply / protocol errors |
+
+> **`operation: "download"` reports how a download went.** A browser download is invisible to the page that started it, so any download endpoint under a server reports its own outcome here — including the ones that are plain links rather than API calls. Add `?dl=<token>` (any opaque string, up to 64 characters) to the download URL and the token comes back in every message about it, which is how a client matches an outcome to the request it made. Without the token nothing is emitted; API clients read the HTTP status instead.
+>
+> `progress` carries `{token, label, phase, done, total}` where `phase` is `packing` (bytes read so far, out of the estimated source size) or `sending` (`total` is the finished archive's size), throttled to one message a second. `complete` and `cancelled` carry `{token, label, bytes, sizeFormatted}` — `cancelled` means the client hung up before the last byte, whether during packing or mid-transfer. `failed` carries the reason in `error` and covers everything a download can be refused for, including the guard failures (`409` server running, `404` missing file, `507` no staging space) whose response body the browser never shows.
 
 
 ## Rate limiting

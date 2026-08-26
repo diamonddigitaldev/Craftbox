@@ -683,9 +683,11 @@ function _formToBody(form) {
         return url;
     }
 
+    // CraftboxDownload keeps the request off the top-level document, so a 409
+    // or a packing failure lands in a toast instead of replacing this page with
+    // a JSON error body, and reports packing progress and the final outcome.
     function startDownload(startAfter) {
-        showToast('Export download starting...', 'info');
-        window.location.href = exportUrl(startAfter);
+        CraftboxDownload.start(exportUrl(startAfter), 'Server export');
     }
 
     async function stopThenExport() {

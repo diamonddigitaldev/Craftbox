@@ -1,7 +1,7 @@
 const express = require('express');
 const fs = require('fs');
-const contentDisposition = require('content-disposition');
 const router = express.Router();
+const { DownloadReporter, sendFileDownload } = require('../../utils/download');
 const { serversDb, backupsDb } = require('../../db');
 const { log } = require('../../utils/log');
 const { logEvent } = require('../../utils/eventLogger');
@@ -50,42 +50,53 @@ router.get('/servers/:id/backups', async (req, res) => {
 
 // GET /servers/:id/backups/:backupId/download — Stream a backup archive.
 router.get('/servers/:id/backups/:backupId/download', async (req, res) => {
-    if (!UUID_RE.test(req.params.backupId)) {
-        return res.status(400).json({ error: 'Invalid backup ID.' });
-    }
     const server = await getServerWithState(req);
-    if (!server) return res.status(404).json({ error: 'Server not found.' });
+    const reporter = new DownloadReporter({
+        req,
+        serverManager: req.app.get('serverManager'),
+        serverId: server ? server.id : req.params.id,
+        label: 'Backup archive'
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
+    if (!UUID_RE.test(req.params.backupId)) return reject(400, 'Invalid backup ID.');
+    if (!server) return reject(404, 'Server not found.');
 
     // Check ownership, not just existence — a backup id from another server
     // must not be readable through this server's route.
     const backup = await backupsDb.get(`backup_${req.params.backupId}`);
     if (!backup || backup.serverId !== server.id) {
-        return res.status(404).json({ error: 'Backup not found.' });
+        return reject(404, 'Backup not found.');
     }
 
     let zipPath;
     try {
         zipPath = resolveBackupPath(server.id, backup.filename);
     } catch {
-        return res.status(403).json({ error: 'Access denied.' });
+        return reject(403, 'Access denied.');
     }
     if (!fs.existsSync(zipPath)) {
-        return res.status(404).json({ error: 'Backup file not found on disk.' });
+        return reject(404, 'Backup file not found on disk.');
     }
 
     const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     const safeFilename = backup.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', contentDisposition(`${safeName}_backup_${safeFilename}`));
-    res.setHeader('Content-Length', backup.size);
-
-    const stream = fs.createReadStream(zipPath);
-    stream.on('error', (err) => {
-        log('error', `Backup download error: ${err.message}`);
-        if (!res.headersSent) res.status(500).json({ error: 'Download failed.' });
+    // Size comes off the file rather than the record: a backup whose zip was
+    // replaced or truncated on disk would otherwise advertise a Content-Length
+    // the body never matches, and the browser reports a corrupt download.
+    sendFileDownload(res, zipPath, {
+        filename: `${safeName}_backup_${safeFilename}`,
+        contentType: 'application/zip',
+        reporter,
+        onError: (err) => {
+            log('error', `Backup download error: ${err.message}`);
+            reject(500, 'Download failed.');
+        }
     });
-    stream.pipe(res);
 });
 
 // POST /servers/:id/backups — Kick off a manual backup. Returns 202 immediately;

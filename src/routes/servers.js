@@ -1,12 +1,12 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const contentDisposition = require('content-disposition');
 const router = express.Router();
+const { DownloadReporter, sendFileDownload, sendArchiveDownload } = require('../utils/download');
 const ensureAuth = require('../middleware/ensureAuth');
 const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
 const { isEditableFile, listDirectory, MAX_TEXT_BYTES } = require('../utils/fileBrowser');
-const { formatSize } = require('../utils/resourceStats');
+const { formatSize, getDirectorySize } = require('../utils/resourceStats');
 const { serversDb, SERVERS_DIR } = require('../db');
 const { parseServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
@@ -199,38 +199,46 @@ router.get('/servers/:id/download', ensureAuth, blockWhileProvisioning, async (r
     if (!server) return res.status(404).json({ error: 'Not found' });
 
     const serverManager = req.app.get('serverManager');
+    const filePath = req.query.path;
+    const reporter = new DownloadReporter({
+        req,
+        serverManager,
+        serverId: server.id,
+        label: filePath ? path.basename(String(filePath)) : 'File'
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
     const proc = serverManager?.getProcess(server.id);
     if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-        req.session.flash = { error: 'Stop the server before downloading files.' };
-        return res.redirect(`/servers/${server.id}/files`);
+        // The panel starts this in a hidden iframe, so a redirect-and-flash
+        // never surfaces; the reporter is what the user actually sees.
+        return reject(409, 'Stop the server before downloading files.');
     }
 
-    const filePath = req.query.path;
-    if (!filePath) return res.status(400).json({ error: 'No path specified' });
+    if (!filePath) return reject(400, 'No path specified');
 
     const serverDir = path.resolve(SERVERS_DIR, server.id);
     const targetPath = path.resolve(serverDir, filePath);
 
-    if (!isPathInside(serverDir, targetPath)) return res.status(403).json({ error: 'Access denied' });
+    if (!isPathInside(serverDir, targetPath)) return reject(403, 'Access denied');
     if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
-        return res.status(404).json({ error: 'File not found' });
+        return reject(404, 'File not found');
     }
 
-    const fileName = path.basename(targetPath);
-    res.setHeader('Content-Disposition', contentDisposition(fileName));
-    res.setHeader('Content-Type', 'application/octet-stream');
-
-    const stream = fs.createReadStream(targetPath);
-    stream.on('error', (err) => {
-        if (!res.headersSent) {
+    sendFileDownload(res, targetPath, {
+        filename: path.basename(targetPath),
+        reporter,
+        onError: (err) => {
             if (err.code === 'EBUSY') {
-                res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
+                reject(409, 'File is currently in use by the server. Try again later or stop the server first.');
             } else {
-                res.status(500).json({ error: 'Failed to download file.' });
+                reject(500, 'Failed to download file.');
             }
         }
     });
-    stream.pipe(res);
 });
 
 // Full server directory download as .zip (binary — stays here)
@@ -239,29 +247,38 @@ router.get('/servers/:id/download-zip', ensureAuth, blockWhileProvisioning, asyn
     if (!server) return res.status(404).json({ error: 'Not found' });
 
     const serverManager = req.app.get('serverManager');
+    const reporter = new DownloadReporter({
+        req, serverManager, serverId: server.id, label: 'Server files'
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
     const proc = serverManager?.getProcess(server.id);
     if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-        req.session.flash = { error: 'Stop the server before downloading.' };
-        return res.redirect(`/servers/${server.id}/files`);
+        return reject(409, 'Stop the server before downloading.');
     }
 
     const serverDir = path.join(SERVERS_DIR, server.id);
-    if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Directory not found' });
+    if (!fs.existsSync(serverDir)) return reject(404, 'Directory not found');
 
-    const archiver = require('archiver');
     const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', contentDisposition(`${safeName}.zip`));
-
-    const archive = archiver('zip', { zlib: { level: 5 } });
-    archive.on('error', (err) => {
+    try {
+        await sendArchiveDownload(req, res, {
+            filename: `${safeName}.zip`,
+            estimatedBytes: getDirectorySize(serverDir),
+            reporter,
+            describe: `Files download of "${server.name}" (${server.id})`,
+            build: (archive) => archive.directory(serverDir, false)
+        });
+    } catch (err) {
         log('error', `Archive error for ${server.name}: ${err.message}`);
-        if (!res.headersSent) res.status(500).json({ error: 'Archive failed' });
-    });
-    archive.pipe(res);
-    archive.directory(serverDir, false);
-    archive.finalize();
+        reporter.failed(err.message);
+        if (!res.headersSent) {
+            res.status(err.status || 500).json({ error: err.status === 507 ? err.message : 'Archive failed' });
+        }
+    }
 });
 
 router.get('/servers/:id/edit-file', ensureAuth, blockWhileProvisioning, async (req, res) => {

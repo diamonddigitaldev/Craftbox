@@ -1,8 +1,9 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const contentDisposition = require('content-disposition');
 const router = express.Router();
+const { DownloadReporter, sendFileDownload, sendArchiveDownload } = require('../utils/download');
+const { getDirectorySize } = require('../utils/resourceStats');
 const ensureAuth = require('../middleware/ensureAuth');
 const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
 const { serversDb, SERVERS_DIR } = require('../db');
@@ -100,14 +101,25 @@ router.get('/servers/:id/plugins', ensureAuth, blockWhileProvisioning, async (re
 // GET /servers/:id/plugins/download — Download a single plugin/mod JAR (binary)
 router.get('/servers/:id/plugins/download', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
-    if (!server) return res.status(404).json({ error: 'Server not found.' });
+    const filename = req.query.file;
+    const reporter = new DownloadReporter({
+        req,
+        serverManager: req.app.get('serverManager'),
+        serverId: server ? server.id : req.params.id,
+        label: typeof filename === 'string' && filename ? path.basename(filename) : 'File'
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
+    if (!server) return reject(404, 'Server not found.');
 
     const contentType = getContentType(server.serverType);
-    if (!contentType) return res.status(400).json({ error: 'Not supported.' });
+    if (!contentType) return reject(400, 'Not supported.');
 
-    const filename = req.query.file;
     if (!filename || typeof filename !== 'string') {
-        return res.status(400).json({ error: 'No filename specified.' });
+        return reject(400, 'No filename specified.');
     }
 
     const safeName = path.basename(filename);
@@ -116,7 +128,7 @@ router.get('/servers/:id/plugins/download', ensureAuth, blockWhileProvisioning, 
     const targetPath = path.resolve(contentDir, safeName);
 
     if (!isPathInside(contentDir, targetPath)) {
-        return res.status(403).json({ error: 'Access denied.' });
+        return reject(403, 'Access denied.');
     }
 
     const disabledPath = targetPath + DISABLED_SUFFIX;
@@ -128,54 +140,64 @@ router.get('/servers/:id/plugins/download', ensureAuth, blockWhileProvisioning, 
     }
 
     if (!sourcePath) {
-        return res.status(404).json({ error: 'File not found.' });
+        return reject(404, 'File not found.');
     }
 
-    res.setHeader('Content-Disposition', contentDisposition(safeName));
-    res.setHeader('Content-Type', 'application/octet-stream');
-
-    const stream = fs.createReadStream(sourcePath);
-    stream.on('error', (err) => {
-        if (!res.headersSent) {
+    sendFileDownload(res, sourcePath, {
+        filename: safeName,
+        reporter,
+        onError: (err) => {
             if (err.code === 'EBUSY') {
-                res.status(409).json({ error: 'File is currently in use.' });
+                reject(409, 'File is currently in use.');
             } else {
-                res.status(500).json({ error: 'Failed to download file.' });
+                reject(500, 'Failed to download file.');
             }
         }
     });
-    stream.pipe(res);
 });
 
 // GET /servers/:id/plugins/download-all — Download all plugins/mods as ZIP (binary)
 router.get('/servers/:id/plugins/download-all', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
-    if (!server) return res.status(404).json({ error: 'Server not found.' });
+    const reporter = new DownloadReporter({
+        req,
+        serverManager: req.app.get('serverManager'),
+        serverId: server ? server.id : req.params.id,
+        label: 'Mods and plugins'
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
+    if (!server) return reject(404, 'Server not found.');
 
     const contentType = getContentType(server.serverType);
-    if (!contentType) return res.status(400).json({ error: 'Not supported.' });
+    if (!contentType) return reject(400, 'Not supported.');
 
     const serverDir = path.resolve(SERVERS_DIR, server.id);
     const contentDir = path.join(serverDir, contentType.folder);
 
     if (!fs.existsSync(contentDir) || !fs.statSync(contentDir).isDirectory()) {
-        return res.status(404).json({ error: `No ${contentType.folder} folder found.` });
+        return reject(404, `No ${contentType.folder} folder found.`);
     }
 
-    const archiver = require('archiver');
     const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', contentDisposition(`${safeName}_${contentType.folder}.zip`));
-
-    const archive = archiver('zip', { zlib: { level: 5 } });
-    archive.on('error', (err) => {
+    try {
+        await sendArchiveDownload(req, res, {
+            filename: `${safeName}_${contentType.folder}.zip`,
+            estimatedBytes: getDirectorySize(contentDir),
+            reporter,
+            describe: `${contentType.folder} download of "${server.name}" (${server.id})`,
+            build: (archive) => archive.directory(contentDir, contentType.folder)
+        });
+    } catch (err) {
         log('error', `Archive error for ${server.name} ${contentType.folder}: ${err.message}`);
-        if (!res.headersSent) res.status(500).json({ error: 'Archive failed.' });
-    });
-    archive.pipe(res);
-    archive.directory(contentDir, contentType.folder);
-    archive.finalize();
+        reporter.failed(err.message);
+        if (!res.headersSent) {
+            res.status(err.status || 500).json({ error: err.status === 507 ? err.message : 'Archive failed.' });
+        }
+    }
 });
 
 module.exports = router;

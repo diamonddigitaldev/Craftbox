@@ -1,9 +1,8 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
-const contentDisposition = require('content-disposition');
 const router = express.Router();
+const { sendArchiveDownload } = require('../utils/download');
 const { serversDb } = require('../db');
 const { getEvents } = require('../utils/eventLogger');
 const { getUptime, formatUptime } = require('../utils/resourceStats');
@@ -169,23 +168,28 @@ router.get('/status/:id/mods', async (req, res) => {
 
         const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', contentDisposition(`${safeName}_mods.zip`));
+        // Sum the mods actually going in rather than the whole folder: this
+        // listing already dropped the server-only and client-disabled ones.
+        const estimatedBytes = includedFiles.reduce((sum, file) => {
+            try { return sum + fs.statSync(path.join(modsDir, file.onDiskName)).size; } catch { return sum; }
+        }, 0);
 
-        const archive = archiver('zip', { zlib: { level: 5 } });
-        archive.on('error', (err) => {
-            log('error', `Mods archive error: ${err.message}`);
-            if (!res.headersSent) res.status(500).json({ error: 'Archive failed.' });
+        await sendArchiveDownload(req, res, {
+            filename: `${safeName}_mods.zip`,
+            estimatedBytes,
+            describe: `Mods download of "${server.name}"`,
+            build(archive) {
+                for (const file of includedFiles) {
+                    // Always write the clean .jar filename so the player's mod loader will pick it up.
+                    archive.file(path.join(modsDir, file.onDiskName), { name: 'mods/' + file.displayName });
+                }
+            }
         });
-        archive.pipe(res);
-        for (const file of includedFiles) {
-            // Always write the clean .jar filename so the player's mod loader will pick it up.
-            archive.file(path.join(modsDir, file.onDiskName), { name: 'mods/' + file.displayName });
-        }
-        archive.finalize();
     } catch (err) {
         log('error', `Mods download error: ${err.message}`);
-        if (!res.headersSent) res.status(500).json({ error: 'Download failed.' });
+        if (!res.headersSent) {
+            res.status(err.status || 500).json({ error: err.status === 507 ? err.message : 'Download failed.' });
+        }
     }
 });
 
