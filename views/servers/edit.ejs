@@ -555,7 +555,9 @@ const _gate = 'stopped crashed'; %>
                                             <p class="text-body-secondary mb-3" style="font-size: 0.85rem;">
                                                 Download this server as a .cbx transfer archive that can be imported on
                                                 another Craftbox instance. Server files and Craftbox settings are
-                                                always included.
+                                                always included. The archive is packed before the download starts, so
+                                                the browser can show its size and progress — expect a wait on a large
+                                                server.
                                             </p>
                                             <div id="export-controls" data-server-id="<%= server.id %>">
                                                 <div class="form-check mb-2">
