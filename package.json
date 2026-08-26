@@ -31,13 +31,13 @@
     "dependencies": {
         "archiver": "^7.0.1",
         "bcrypt": "^6.0.0",
-        "better-sqlite3": "^13.0.2",
+        "better-sqlite3": "^13.0.3",
         "bootstrap": "^5.3.8",
         "chart.js": "^4.5.1",
         "content-disposition": "^1.0.1",
         "ejs": "^6.0.1",
         "express": "^5.2.1",
-        "express-rate-limit": "^8.6.1",
+        "express-rate-limit": "^8.6.2",
         "express-session": "^1.19.0",
         "material-icons": "^1.13.14",
         "multer": "^2.1.1",
@@ -45,13 +45,13 @@
         "passport": "^0.7.0",
         "passport-local": "^1.0.0",
         "quick.db": "^9.1.7",
-        "sharp": "^0.35.3",
-        "uuid": "^14.0.1",
-        "ws": "^8.21.1"
+        "sharp": "^0.35.4",
+        "uuid": "^14.0.2",
+        "ws": "^8.21.3"
     },
     "allowScripts": {
         "bcrypt@6.0.0": true,
-        "better-sqlite3@13.0.2": true,
-        "sharp@0.35.3": true
+        "better-sqlite3@13.0.3": true,
+        "sharp@0.35.4": true
     }
 }
