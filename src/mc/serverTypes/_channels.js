@@ -16,22 +16,25 @@ function classifyMcId(id) {
     return 'snapshot';
 }
 
-// Channel labels that count as "stable" across upstream APIs:
-// PaperMC Fill uses STABLE, NeoForge/Purpur use release/default,
-// Forge promotions use recommended/latest.
-const STABLE_BUILD_CHANNELS = new Set(['stable', 'release', 'recommended', 'latest', 'default']);
-
 /**
- * Pick the build to install when the caller didn't specify one.
- * Prefers the newest stable-channel build; a version whose builds are all
- * non-stable (e.g. experimental Paper versions with only ALPHA builds)
- * falls back to the newest build so it stays installable.
+ * Pick the build to install when the caller didn't specify one: the newest
+ * build the provider published for that Minecraft version.
+ *
+ * This used to prefer the newest build on a "stable" channel, which on Forge
+ * meant the *recommended* promotion rather than the newest one — MC 1.20.1
+ * installed 47.4.10 while Forge had long since shipped 47.4.23. The same
+ * choice drives the upgrade check, so a server sitting on the recommended
+ * build was also reported up to date forever. Craftbox now tracks the newest
+ * build for every loader; a version's channel still decides whether the
+ * version itself is offered, which is the knob users actually asked for.
+ *
+ * Every provider returns builds newest-first, so the newest is the head of
+ * the list.
  * @param {Array<{build: *, channel?: string}>} builds - newest-first
  */
-function pickPreferredBuild(builds) {
+function pickLatestBuild(builds) {
     if (!Array.isArray(builds) || builds.length === 0) return null;
-    const stable = builds.find(b => STABLE_BUILD_CHANNELS.has(String(b.channel || '').toLowerCase()));
-    return stable || builds[0];
+    return builds[0];
 }
 
 /**
@@ -54,12 +57,13 @@ function compareBuilds(a, b) {
     if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
 
     // Dotted versions: compare segment by segment, numerically where both
-    // segments are numeric. A missing segment counts as 0, so "21.1" < "21.1.1".
+    // segments are numeric.
     const aParts = String(a).split(/[.\-+]/);
     const bParts = String(b).split(/[.\-+]/);
-    for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
-        const ap = aParts[i] ?? '0';
-        const bp = bParts[i] ?? '0';
+    const shared = Math.min(aParts.length, bParts.length);
+    for (let i = 0; i < shared; i++) {
+        const ap = aParts[i];
+        const bp = bParts[i];
         const an = Number(ap);
         const bn = Number(bp);
         if (Number.isFinite(an) && Number.isFinite(bn)) {
@@ -68,7 +72,15 @@ function compareBuilds(a, b) {
             return ap < bp ? -1 : 1;
         }
     }
-    return 0;
+
+    // Equal as far as both go. Trailing segments decide: a numeric tail is a
+    // further revision and wins ("21.1" < "21.1.1"), while a word tail is a
+    // pre-release marker and loses ("21.9.16-beta" < "21.9.16"). Getting this
+    // backwards let NeoForge sort a beta ahead of the release it precedes.
+    const tail = aParts.length > bParts.length ? aParts : bParts;
+    if (tail.length === shared) return 0;
+    const sign = aParts.length > bParts.length ? 1 : -1;
+    return Number.isFinite(Number(tail[shared])) ? sign : -sign;
 }
 
-module.exports = { classifyMcId, pickPreferredBuild, compareBuilds };
+module.exports = { classifyMcId, pickLatestBuild, compareBuilds };

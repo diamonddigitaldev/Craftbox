@@ -35,7 +35,7 @@ const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
 const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
-const { pickPreferredBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
+const { pickLatestBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
 const {
     isEditableFile, listDirectory, safeEntryName, newNameError,
     readTextWindow, parseReadWindow, MAX_TEXT_BYTES
@@ -502,9 +502,9 @@ router.get('/servers/:id/check-upgrade', async (req, res) => {
             preferred = await provider.getLatestBuild(server.version);
         } else {
             const builds = await provider.getBuilds(server.version);
-            // getBuilds includes non-stable channels — prefer the newest stable
-            // build so stable servers aren't offered ALPHA/BETA builds.
-            if (builds && builds.length > 0) preferred = pickPreferredBuild(builds);
+            // The newest build for the version, matching what a fresh install
+            // or an upgrade actually downloads.
+            if (builds && builds.length > 0) preferred = pickLatestBuild(builds);
         }
         if (!preferred) {
             return res.json({ upgradeAvailable: false, reason: 'No builds published for this version.' });

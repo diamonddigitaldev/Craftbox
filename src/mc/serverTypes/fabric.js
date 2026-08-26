@@ -46,23 +46,25 @@ module.exports = {
         if (!res.ok) throw new Error(`Failed to fetch Fabric loader versions: HTTP ${res.status}`);
         const loaders = await res.json();
 
-        const stable = loaders.find(l => l.stable) || loaders[0];
-        if (!stable) return null;
-        return { build: stable.version, channel: stable.stable ? 'stable' : 'beta' };
+        // Newest first in Fabric's listing, and the newest is what Craftbox
+        // targets — the same rule the other loaders now follow.
+        const newest = loaders[0];
+        if (!newest) return null;
+        return { build: newest.version, channel: newest.stable ? 'stable' : 'beta' };
     },
 
     async downloadJar(version, build, destPath) {
         // Honor a pinned loader version (modpacks pin fabric-loader exactly);
-        // otherwise use the latest stable loader.
+        // otherwise use the newest loader Fabric publishes.
         let loaderVersion = build || null;
         if (!loaderVersion) {
             const loaderRes = await fetch(`${BASE}/versions/loader`);
             if (!loaderRes.ok) throw new Error(`Failed to fetch Fabric loader versions: HTTP ${loaderRes.status}`);
             const loaders = await loaderRes.json();
 
-            const stableLoader = loaders.find(l => l.stable) || loaders[0];
-            if (!stableLoader) throw new Error('No Fabric loader versions available.');
-            loaderVersion = stableLoader.version;
+            const newestLoader = loaders[0];
+            if (!newestLoader) throw new Error('No Fabric loader versions available.');
+            loaderVersion = newestLoader.version;
         }
 
         // Get the latest installer version
@@ -70,9 +72,9 @@ module.exports = {
         if (!installerRes.ok) throw new Error(`Failed to fetch Fabric installer versions: HTTP ${installerRes.status}`);
         const installers = await installerRes.json();
 
-        const stableInstaller = installers.find(i => i.stable) || installers[0];
-        if (!stableInstaller) throw new Error('No Fabric installer versions available.');
-        const installerVersion = stableInstaller.version;
+        const newestInstaller = installers[0];
+        if (!newestInstaller) throw new Error('No Fabric installer versions available.');
+        const installerVersion = newestInstaller.version;
 
         const downloadUrl = `${BASE}/versions/loader/${encodeURIComponent(version)}/${loaderVersion}/${installerVersion}/server/jar`;
 
