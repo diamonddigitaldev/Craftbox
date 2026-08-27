@@ -10,20 +10,35 @@
 //     <a href="/servers/x/download-zip" data-download="Server files">…</a>
 //
 // The request is sent through a hidden iframe rather than by navigating, so an
-// error response can never replace the page the user is standing on.
+// error response can never replace the page the user is standing on. Each
+// download in flight gets its own frame, so starting a second one leaves the
+// first streaming untouched.
 (function () {
     'use strict';
 
-    var pending = {};   // token -> { label, statusEl }
-    var frame = null;
+    var pending = {};   // token -> { label, statusEl, frame }
 
-    function ensureFrame() {
+    // One frame per in-flight download. Setting .src on a frame that is still
+    // streaming aborts that transfer at the browser level, so a download in
+    // progress never shares its frame with a later one.
+    //
+    // Frames are reused only once their download has terminally settled, which
+    // keeps a page that downloads repeatedly from growing an unbounded row of
+    // them.
+    var freeFrames = [];
+
+    function acquireFrame() {
+        var frame = freeFrames.pop();
         if (frame) return frame;
         frame = document.createElement('iframe');
         frame.setAttribute('aria-hidden', 'true');
         frame.style.display = 'none';
         document.body.appendChild(frame);
         return frame;
+    }
+
+    function releaseFrame(frame) {
+        if (frame && freeFrames.indexOf(frame) === -1) freeFrames.push(frame);
     }
 
     function newToken() {
@@ -124,12 +139,17 @@
         return 'Preparing ' + label + '…';
     }
 
-    function settle(token, finish) {
+    // `release` says whether the transfer is known to be over. Only a terminal
+    // report from the server proves that; a silence timeout proves nothing, so
+    // that frame is retired rather than handed to another download that would
+    // abort it.
+    function settle(token, finish, release) {
         var entry = pending[token];
         if (!entry) return;
         delete pending[token];
         clearTimeout(entry.timer);
         entry.statusEl.close();
+        if (release) releaseFrame(entry.frame);
         finish(entry);
     }
 
@@ -161,7 +181,7 @@
         if (msg.status === 'failed') {
             var tokens = Object.keys(pending);
             if (tokens.length === 1) {
-                settle(tokens[0], function () {});
+                settle(tokens[0], function () {}, true);
             }
             showToast(msg.error || 'Download failed.', 'danger');
             return;
@@ -179,22 +199,23 @@
         if (msg.status === 'complete') {
             settle(payload.token, function (done) {
                 showToast(done.label + ' downloaded (' + (payload.sizeFormatted || '') + ').', 'success');
-            });
+            }, true);
             return;
         }
         if (msg.status === 'cancelled') {
             settle(payload.token, function (done) {
                 showToast(done.label + ' download cancelled.', 'warning');
-            });
+            }, true);
         }
     });
 
     function start(url, label) {
         label = label || 'file';
         var token = newToken();
-        pending[token] = { label: label, statusEl: openStatus(label), timer: null };
+        var frame = acquireFrame();
+        pending[token] = { label: label, statusEl: openStatus(label), timer: null, frame: frame };
         armTimeout(token);
-        ensureFrame().src = withToken(url, token);
+        frame.src = withToken(url, token);
     }
 
     document.addEventListener('click', function (e) {
