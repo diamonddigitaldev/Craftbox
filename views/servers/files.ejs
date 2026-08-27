@@ -81,21 +81,27 @@ const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
 <%# Uploading and creating folders are allowed while the server runs, so neither
     control is state-gated — only rename and delete below are. %>
 <!-- Upload -->
-<div class="d-flex gap-2 mb-3">
-    <input type="file" class="form-control form-control-sm" id="file-input" multiple style="max-width: 400px;">
-    <%# Upload stays disabled until files are picked, so files.js owns its enabled state. %>
-    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0" id="upload-btn" disabled>
-        <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
-        Upload
-    </button>
-    <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0" id="new-folder-btn">
-        <span class="material-icons-outlined" style="font-size: 1rem;">create_new_folder</span>
-        New Folder
-    </button>
-    <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0" id="new-file-btn">
-        <span class="material-icons-outlined" style="font-size: 1rem;">note_add</span>
-        New Text File
-    </button>
+<%# Below md the create buttons drop onto their own row so the file picker keeps
+    a usable width. %>
+<div class="d-flex flex-column flex-md-row gap-2 mb-3">
+    <div class="d-flex gap-2" style="max-width: 400px;">
+        <input type="file" class="form-control form-control-sm" id="file-input" multiple>
+        <%# Upload stays disabled until files are picked, so files.js owns its enabled state. %>
+        <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0" id="upload-btn" disabled>
+            <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
+            Upload
+        </button>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0" id="new-folder-btn">
+            <span class="material-icons-outlined" style="font-size: 1rem;">create_new_folder</span>
+            New Folder
+        </button>
+        <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0" id="new-file-btn">
+            <span class="material-icons-outlined" style="font-size: 1rem;">note_add</span>
+            New Text File
+        </button>
+    </div>
 </div>
 
 <!-- File listing -->
