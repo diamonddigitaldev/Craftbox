@@ -250,9 +250,17 @@
                 showToast('Stop the server before uploading ' + contentLabel + '.', 'danger');
                 return;
             }
-            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-                uploadFiles(e.dataTransfer.files);
+            // Synchronously, before the drop event's item list is emptied.
+            var dropped = readDroppedItems(e.dataTransfer);
+            if (dropped.files.length === 0 && dropped.folders.length > 0) {
+                showToast(folderDropMessage(dropped.folders,
+                    'Drag the .jar files themselves in instead.'), 'danger');
+                return;
             }
+            // A folder dropped alongside jars needs no message of its own: it is
+            // ignored exactly as any other non-jar in the drop already is, and
+            // uploadFiles reports the batch it kept.
+            if (dropped.files.length > 0) uploadFiles(dropped.files);
         });
     }
 

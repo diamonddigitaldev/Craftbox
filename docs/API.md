@@ -185,7 +185,9 @@ Paths are relative to the server directory and are resolved against it with syml
 >
 > New names supplied to `rename`, `mkdir` and `mkfile` must be a single path segment. A name is rejected (`400`) if it contains a slash or backslash, contains `< > : " | ? *` or a control character, ends in a dot, is `.` or `..`, is longer than 255 characters, or is a reserved device name (`CON`, `NUL`, `COM1`…) — the last few would fail confusingly at the filesystem layer, on Windows now or after an export/import later. Leading and trailing whitespace is trimmed rather than rejected, so `"notes.txt "` creates `notes.txt`.
 >
-> The slash rule is a rejection, not a rewrite: `sub/notes.txt` returns `400` rather than quietly creating `notes.txt` in the current folder. Create the directory first, then the file inside it. This differs from **upload**, where a name is reduced to its last segment on purpose — a browser sends a whole relative path as the filename when a folder is dropped in, and only the basename is meaningful there.
+> The slash rule is a rejection, not a rewrite: `sub/notes.txt` returns `400` rather than quietly creating `notes.txt` in the current folder. Create the directory first, then the file inside it. This differs from **upload**, where a name is reduced to its last segment on purpose — a client can send a whole relative path as the filename, and only the basename is meaningful to an endpoint that writes into one directory.
+>
+> **Directory trees cannot be uploaded.** An upload flattens what it is given into the destination folder; it never recreates a hierarchy under it. The panel refuses a dropped folder before anything is sent, because a browser does not expand one — it hands over a single zero-byte entry standing for the directory itself, which fails the moment it is read. Create the folders with `mkdir` and upload into them.
 
 ### Restore-point backups
 

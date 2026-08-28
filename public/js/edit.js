@@ -515,8 +515,17 @@ function _formToBody(form) {
         if (uploading) return;
         dropArea.style.borderColor = '';
         dropArea.style.boxShadow = '';
-        var file = e.dataTransfer.files[0];
-        if (file) uploadIcon(file);
+        // Synchronously, before the drop event's item list is emptied. The icon
+        // area reports its own errors in the status line under it, so a folder
+        // is answered there rather than with a toast, like the PNG check is.
+        var dropped = readDroppedItems(e.dataTransfer);
+        if (dropped.files.length === 0) {
+            if (dropped.folders.length > 0) {
+                showStatus('danger', folderDropMessage(dropped.folders, 'Drop the PNG file itself.'));
+            }
+            return;
+        }
+        uploadIcon(dropped.files[0]);
     });
 
     deleteBtn.addEventListener('click', async function (e) {

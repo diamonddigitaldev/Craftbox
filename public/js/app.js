@@ -221,6 +221,75 @@ function showToast(message, type) {
     toast.show();
 }
 
+// ── Dropped folders ──
+// A folder dragged onto the page does not arrive as the files inside it. The
+// browser puts a single entry in dataTransfer.files standing for the directory
+// itself — a File with size 0 and an empty type, which looks like an ordinary
+// (if odd) file right up until something tries to read it. Handing that to
+// FormData builds a request the browser then fails to send, and apiFetch has
+// nothing to report but a bare `network_error`, which is what the user saw.
+//
+// Nothing here can upload a directory tree: every upload endpoint takes flat
+// files and reduces a name to its basename (safeEntryName, src/utils/
+// fileBrowser.js). So the fix is to recognise a folder before it is queued and
+// say so, rather than to send it and mistranslate the failure.
+//
+// dataTransfer.items is the part that actually knows: webkitGetAsEntry() must
+// be called synchronously inside the drop handler (the item list is emptied
+// once it returns), and its entry.isDirectory is definitive. Every browser
+// Craftbox targets has it; the size/type shape check below only stands in if
+// it is missing, where it costs an empty extension-less file being called a
+// folder — rarer, and less confusing, than the failed request it replaces.
+function _looksLikeFolder(file) {
+    return file.size === 0 && !file.type && !/\.[^.]+$/.test(file.name);
+}
+
+// Call synchronously from a `drop` handler. Returns the droppable files and the
+// names of anything that was a folder, for the caller to phrase its own message
+// around — what to do instead differs per page.
+function readDroppedItems(dataTransfer) {
+    var files = dataTransfer && dataTransfer.files
+        ? Array.prototype.slice.call(dataTransfer.files)
+        : [];
+
+    // items carries dragged strings (links, selected text) as well as files;
+    // the file-kind ones line up with dataTransfer.files in order.
+    var fileItems = [];
+    if (dataTransfer && dataTransfer.items) {
+        Array.prototype.forEach.call(dataTransfer.items, function (item) {
+            if (item.kind === 'file') fileItems.push(item);
+        });
+    }
+    var aligned = fileItems.length === files.length;
+
+    var kept = [];
+    var folders = [];
+    files.forEach(function (file, i) {
+        var isDirectory = null;
+        if (aligned && typeof fileItems[i].webkitGetAsEntry === 'function') {
+            try {
+                var entry = fileItems[i].webkitGetAsEntry();
+                if (entry) isDirectory = entry.isDirectory;
+            } catch (_) { /* fall through to the shape check */ }
+        }
+        if (isDirectory === null) isDirectory = _looksLikeFolder(file);
+        if (isDirectory) folders.push(file.name); else kept.push(file);
+    });
+
+    return { files: kept, folders: folders };
+}
+
+// Shared opening for those messages, so every page words the refusal the same
+// way and only differs in the advice that follows.
+function folderDropMessage(folders, advice) {
+    var lead = folders.length === 1
+        ? '"' + folders[0] + '" is a folder, and folders cannot be uploaded.'
+        : 'Folders cannot be uploaded, and ' + folders.length + ' of the dropped items are folders.';
+    // `advice` has to read for one folder and for several, so keep it plural
+    // where the caller can — the lead already names the single case.
+    return lead + ' ' + advice;
+}
+
 // ── File input extension guard ──
 // The `accept` attribute only filters the OS file dialog — the user can switch it
 // to "All files" and pick anything — so check the extension the moment a file is

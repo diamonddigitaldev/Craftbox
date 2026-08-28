@@ -205,9 +205,20 @@
             dropOverlay.classList.add('d-none');
             dropOverlay.classList.remove('d-flex');
 
-            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-                uploadFiles(e.dataTransfer.files);
+            // Read the drop here and now: webkitGetAsEntry, which is how
+            // readDroppedItems tells a folder from a file, stops answering the
+            // moment this handler returns.
+            var dropped = readDroppedItems(e.dataTransfer);
+            if (dropped.folders.length > 0) {
+                // A folder alongside real files is a warning, not a refusal —
+                // the files still upload, and the toast says what was skipped.
+                var partial = dropped.files.length > 0;
+                showToast(folderDropMessage(dropped.folders, partial
+                    ? 'The rest of the drop is uploading.'
+                    : 'Create the folders you need here with New Folder, then upload the files into them.'),
+                partial ? 'warning' : 'danger');
             }
+            if (dropped.files.length > 0) uploadFiles(dropped.files);
         });
     }
 

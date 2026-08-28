@@ -150,14 +150,17 @@
             e.stopPropagation();
             if (uploading) return;
 
-            var files = e.dataTransfer ? e.dataTransfer.files : null;
-            if (!files || files.length === 0) return;
+            // Synchronously, before the drop event's item list is emptied.
+            var dropped = readDroppedItems(e.dataTransfer);
+            if (dropped.files.length === 0 && dropped.folders.length === 0) return;
 
-            var file = Array.prototype.find.call(files, function (f) {
+            var file = dropped.files.find(function (f) {
                 return f.name.toLowerCase().endsWith('.cbx');
             });
             if (!file) {
-                showToast('Drop a .cbx transfer archive to import.', 'danger');
+                showToast(dropped.folders.length > 0
+                    ? folderDropMessage(dropped.folders, 'Drop the .cbx transfer archive itself.')
+                    : 'Drop a .cbx transfer archive to import.', 'danger');
                 return;
             }
             setPickedFile(file);
@@ -202,10 +205,12 @@
         document.addEventListener('drop', function (e) {
             if (isOverlayVisible() || uploading || mrpackUploading || isModalOpen()) return;
             hideDropOverlay();
-            if (!e.dataTransfer || e.dataTransfer.files.length === 0) return;
+            // Synchronously, before the drop event's item list is emptied.
+            var dropped = readDroppedItems(e.dataTransfer);
+            if (dropped.files.length === 0 && dropped.folders.length === 0) return;
 
             // .mrpack -> create a new server from the modpack; .cbx -> import
-            var mrpackFile = Array.prototype.find.call(e.dataTransfer.files, function (f) {
+            var mrpackFile = dropped.files.find(function (f) {
                 return f.name.toLowerCase().endsWith('.mrpack');
             });
             if (mrpackFile) {
@@ -213,11 +218,15 @@
                 return;
             }
 
-            var archiveFile = Array.prototype.find.call(e.dataTransfer.files, function (f) {
+            var archiveFile = dropped.files.find(function (f) {
                 return f.name.toLowerCase().endsWith('.cbx');
             });
             if (!archiveFile) {
-                showToast('Drop a .cbx transfer archive to import, or a .mrpack modpack to create a server.', 'danger');
+                showToast(dropped.folders.length > 0
+                    ? folderDropMessage(dropped.folders,
+                        'Drop the .cbx transfer archive or .mrpack modpack itself.')
+                    : 'Drop a .cbx transfer archive to import, or a .mrpack modpack to create a server.',
+                'danger');
                 return;
             }
 
