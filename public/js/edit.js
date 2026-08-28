@@ -494,8 +494,8 @@ function _formToBody(form) {
         fileInput.value = '';
     });
 
-    document.addEventListener('dragover', function (e) { e.preventDefault(); });
-    document.addEventListener('drop', function (e) { e.preventDefault(); });
+    // Cancelling the browser's own handling of a dropped file is app.js's job
+    // now (see "Stray file drops"), for every page rather than just this one.
 
     dropArea.addEventListener('dragover', function (e) {
         e.preventDefault();

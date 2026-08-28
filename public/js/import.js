@@ -112,9 +112,8 @@
 
     // ── Drag & Drop (mirrors the plugins page JAR drop) ──
 
-    // Always prevent default drop behavior so Chrome doesn't open files in a new tab
-    document.addEventListener('dragover', function (e) { e.preventDefault(); });
-    document.addEventListener('drop', function (e) { e.preventDefault(); });
+    // Cancelling the browser's own handling of a dropped file is app.js's job
+    // now (see "Stray file drops"), for every page rather than just this one.
 
     // Load a dropped file into the picker so the rest of the modal — the Import
     // button's enabled state, the filename shown next to "Choose File" — behaves

@@ -221,6 +221,28 @@ function showToast(message, type) {
     toast.show();
 }
 
+// ── Stray file drops ──
+// A file dropped somewhere the page does not handle is a navigation: the browser
+// leaves for that file's own URL, and a half-filled form goes with it. The four
+// pages that own an upload each cancelled that for themselves; every other page
+// never did — including Create, which has the most to lose.
+//
+// Cancel it once here, for every page. Only for drags that carry files: dragging
+// selected text into a textarea is a drop too, and has to keep working. Chrome,
+// Firefox and Safari all put "Files" in `types` for an OS drag, a dragged folder
+// included, and `types` is readable during the drag where the data itself is not.
+function _dragCarriesFiles(e) {
+    var types = e.dataTransfer && e.dataTransfer.types;
+    return !!types && Array.prototype.indexOf.call(types, 'Files') !== -1;
+}
+
+document.addEventListener('dragover', function (e) {
+    if (_dragCarriesFiles(e)) e.preventDefault();
+});
+document.addEventListener('drop', function (e) {
+    if (_dragCarriesFiles(e)) e.preventDefault();
+});
+
 // ── Dropped folders ──
 // A folder dragged onto the page does not arrive as the files inside it. The
 // browser puts a single entry in dataTransfer.files standing for the directory
@@ -288,6 +310,53 @@ function folderDropMessage(folders, advice) {
     // `advice` has to read for one folder and for several, so keep it plural
     // where the caller can — the lead already names the single case.
     return lead + ' ' + advice;
+}
+
+// Lets an <input type="file"> be a drop target in its own right.
+//
+// The page-wide guard above cancels the browser's default handling of a file
+// drop, and that default is what put a dropped file into an input. Pages with a
+// drop zone of their own already re-implement it; an input that IS the drop zone
+// needs it back. It is also the only route by which a folder reaches an input,
+// and the `change` event that follows cannot help — by then all it has is a File,
+// which is exactly what a directory entry looks like.
+function acceptFileDrops(input, advice) {
+    if (!input) return;
+
+    // Both halves are needed: without dragover's preventDefault the drop never
+    // fires at all, and stopPropagation keeps a page-level handler from taking
+    // the same drop a second time.
+    input.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    input.addEventListener('drop', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var dropped = readDroppedItems(e.dataTransfer);
+        if (dropped.folders.length > 0) {
+            showToast(folderDropMessage(dropped.folders, advice),
+                dropped.files.length > 0 ? 'warning' : 'danger');
+        }
+
+        var keep = input.multiple ? dropped.files : dropped.files.slice(0, 1);
+        // Nothing droppable: leave whatever was already chosen alone rather than
+        // clearing it because the drop missed.
+        if (keep.length === 0) return;
+
+        try {
+            var dt = new DataTransfer();
+            keep.forEach(function (f) { dt.items.add(f); });
+            input.files = dt.files;
+        } catch (_) {
+            return; // no DataTransfer support — leave the input as it was
+        }
+        // Whatever the page hangs off `change` (guardFileInput, form validation)
+        // now runs exactly as it would for a file chosen from the dialog.
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
 }
 
 // ── File input extension guard ──

@@ -95,6 +95,12 @@ form.addEventListener('change', validateCreateForm);
 // form listener above, so the Create button goes back to disabled.
 guardFileInput(mrpackFileInput, ['.mrpack'], 'Only .mrpack modpack files can be used here.');
 
+// This page has no drop zone of its own, so the picker is the drop target. A
+// folder dropped on it used to be handed straight to the upload: one named
+// something.mrpack even cleared the extension guard, and the request then failed
+// as a bare network_error.
+acceptFileDrops(mrpackFileInput, 'Drop the .mrpack file itself.');
+
 // ── Form submit — create via /api/v1/servers (or the modpack routes) ──
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
