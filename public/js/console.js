@@ -30,6 +30,7 @@
     let reconnectAttempts = 0;
     let autoScroll = true;
     let currentState = wrapper.dataset.serverState || 'stopped';
+    let isRestarting = false;
     var serverLastStarted = null;
 
     function connect() {
@@ -55,7 +56,7 @@
                     if (msg.history && msg.history.length > 0) {
                         msg.history.forEach(line => appendLine(line));
                     }
-                    if (msg.state) updateState(msg.state, msg.crashReason, msg.exitCode);
+                    if (msg.state) updateState(msg.state, msg.crashReason, msg.exitCode, msg.restarting);
                     updateLastStarted(msg.state, msg.lastStarted);
                     if (typeof msg.playerCount === 'number') updatePlayerCount(msg.playerCount);
                     scrollToBottom();
@@ -76,7 +77,7 @@
 
                 case 'state':
                     if (msg.serverId === serverId) {
-                        updateState(msg.state, msg.crashReason, msg.exitCode);
+                        updateState(msg.state, msg.crashReason, msg.exitCode, msg.restarting);
                         updateLastStarted(msg.state, msg.lastStarted);
                     }
                     break;
@@ -98,6 +99,7 @@
 
         ws.onclose = () => {
             reconnectAttempts++;
+            probeSessionAfterFailures(reconnectAttempts);
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
             setTimeout(connect, delay);
         };
@@ -139,11 +141,22 @@
         output.scrollTop = output.scrollHeight;
     }
 
-    function updateState(state, crashReason, exitCode) {
+    function updateState(state, crashReason, exitCode, restarting) {
         currentState = state;
+        // A restart passes through `stopped` on its way back up. Without this the
+        // buttons would re-enable for the couple of seconds before the respawn,
+        // inviting a Start (or Delete) that races it.
+        isRestarting = restarting === true;
 
         // Update data-state on parent for CSS animations
         if (navHeader) navHeader.dataset.state = state;
+        if (navHeader) navHeader.dataset.restarting = isRestarting ? 'true' : 'false';
+
+        // Re-gate state-dependent controls elsewhere on the page (applyStateGates
+        // in app.js). The console's own buttons are handled directly below.
+        document.dispatchEvent(new CustomEvent('craftbox:state', {
+            detail: { serverId: serverId, state: state, restarting: isRestarting }
+        }));
 
         // Update badge
         if (stateBadge) {
@@ -160,7 +173,9 @@
         // Update button states
         document.querySelectorAll('.server-action-btn').forEach(btn => {
             const action = btn.dataset.action;
-            if (actionStates[action]) {
+            if (isRestarting) {
+                btn.disabled = true;
+            } else if (actionStates[action]) {
                 btn.disabled = !actionStates[action].includes(state);
             } else if (action === 'delete') {
                 btn.disabled = !['stopped', 'crashed'].includes(state);
@@ -286,7 +301,14 @@
     }
 
     // ── Server action buttons (start/stop/restart/kill/delete) ──
+    // One power action at a time. The buttons are re-derived from WebSocket
+    // state, which arrives after the response, so without this latch a double
+    // click sends the request twice before the first result is reflected.
+    var actionInFlight = false;
+
     async function doAction(action, body) {
+        if (actionInFlight) return;
+        actionInFlight = true;
         var labels = {
             start: { title: 'Starting server...', desc: 'Please wait while the command is sent.' },
             stop: { title: 'Stopping server...', desc: 'Please wait while the command is sent.' },
@@ -295,11 +317,16 @@
         };
         if (labels[action]) showOverlay(labels[action].title, labels[action].desc);
 
-        var res = await apiFetch('/api/v1/servers/' + serverId + '/' + action, {
-            method: 'POST',
-            body: body || {}
-        });
-        hideOverlay();
+        var res;
+        try {
+            res = await apiFetch('/api/v1/servers/' + serverId + '/' + action, {
+                method: 'POST',
+                body: body || {}
+            });
+        } finally {
+            actionInFlight = false;
+            hideOverlay();
+        }
         if (!res.ok) {
             showToast((res.data && (res.data.message || res.data.error)) || ('Failed to ' + action + '.'), 'danger');
             return;
@@ -315,6 +342,7 @@
 
     document.querySelectorAll('.server-action-btn').forEach(function (btn) {
         btn.addEventListener('click', function () {
+            if (btn.disabled || isRestarting || actionInFlight) return;
             var action = btn.dataset.action;
             if (action === 'kill' && killModal) { killModal.show(); return; }
             if (action === 'delete' && deleteModal) { deleteModal.show(); return; }
@@ -590,9 +618,12 @@
 
     async function fetchStats() {
         try {
-            var res = await fetch('/api/v1/servers/' + serverId + '/stats');
+            // Polled, so this doubles as a passive session heartbeat: apiFetch
+            // turns a 401 here into the expiry redirect without the user having
+            // to click anything first.
+            var res = await apiFetch('/api/v1/servers/' + serverId + '/stats');
             if (!res.ok) return;
-            var data = await res.json();
+            var data = res.data || {};
             var s = data.stats;
             var isRunning = s.state === 'running';
 

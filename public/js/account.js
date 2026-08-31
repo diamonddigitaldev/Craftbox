@@ -1,6 +1,4 @@
 document.addEventListener('DOMContentLoaded', function () {
-    var csrfToken = document.querySelector('input[name="_csrf"]').value;
-
     // ═══════════════════════════════════════════
     // Change Username / Password
     // ═══════════════════════════════════════════
@@ -105,15 +103,11 @@ document.addEventListener('DOMContentLoaded', function () {
             showOverlay('Generating key...', 'Please wait while the key is created.');
 
             try {
-                var res = await fetch('/api/v1/account/apikeys', {
+                var res = await apiFetch('/api/v1/account/apikeys', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({ name: name })
+                    body: { name: name }
                 });
-                var data = await res.json().catch(function () { return {}; });
+                var data = res.data || {};
                 if (!res.ok) {
                     hideOverlay();
                     confirmCreateBtn.disabled = false;
@@ -186,13 +180,12 @@ document.addEventListener('DOMContentLoaded', function () {
             showOverlay('Deleting key...', 'Please wait while the key is removed.');
 
             try {
-                var res = await fetch('/api/v1/account/apikeys/' + encodeURIComponent(pendingDeleteId), {
-                    method: 'DELETE',
-                    headers: { 'X-CSRF-Token': csrfToken }
+                var res = await apiFetch('/api/v1/account/apikeys/' + encodeURIComponent(pendingDeleteId), {
+                    method: 'DELETE'
                 });
 
                 if (!res.ok && res.status !== 204) {
-                    var data = await res.json().catch(function () { return {}; });
+                    var data = res.data || {};
                     hideOverlay();
                     confirmDeleteBtn.disabled = false;
                     showToast(data.message || data.error || 'Failed to delete key.', 'danger');

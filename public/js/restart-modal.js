@@ -42,8 +42,8 @@
 
     window.history.replaceState({}, '', window.location.pathname);
 
-    var serverState = modalEl.dataset.serverState;
-    if (serverState === 'stopped' || serverState === 'crashed') return;
+    // Live state — the server may have stopped between the save and this check.
+    if (isServerStopped()) return;
 
     new bootstrap.Modal(modalEl).show();
 })();

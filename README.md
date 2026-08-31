@@ -9,7 +9,7 @@
 <div align="center">
 
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)
-![version](https://img.shields.io/badge/version-1.1.0-brightgreen?style=flat-square)
+![version](https://img.shields.io/badge/version-1.2.0--beta.11-orange?style=flat-square)
 ![docker](https://img.shields.io/badge/docker-supported-blue?style=flat-square)
 
 [![discord](https://img.shields.io/discord/667479986214666272?logo=discord&logoColor=white&style=flat-square)](https://diamonddigital.dev/discord)
@@ -157,25 +157,7 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 
 ### AI Disclosure
 
-This project uses AI tools to aid development.
-
-AI is used to:
-- Plan significant changes
-- Implement initial passes of new features
-- Perform security audits (alongside human review)
-- Fix bugs and patch security vulnerabilities
-- Review pull requests (alongside human review)
-
-AI is NOT used to:
-- Design UI/UX
-- Design visual assets (such as bitmap and vector graphics)
-- Triage issues
-- Decide project direction
-- Create release information
-
-AI has a tendency to hallucinate/produce plausible but suboptimal, inaccurate or misleading solutions to delegated tasks.
-
-Every commit is manually reviewed and approved by a member of Diamond Digital Development, and testing is carried out to ensure changes work as intended, do not introduce regressions, and meet reliability and security expectations before being merged into the `master` branch.
+This project uses AI tools to aid development. Read our [AI Transparency & Quality Commitment](https://diamonddigital.dev/ai-transparency) statement for more information.
 
 
 ## Contact Us

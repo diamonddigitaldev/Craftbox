@@ -4,7 +4,7 @@ const { spawn } = require('child_process');
 const { log } = require('../../utils/log');
 const { getJavaForVersion } = require('../../utils/javaVersion');
 const { verifyChecksum } = require('./_verifyChecksum');
-const { pickPreferredBuild } = require('./_channels');
+const { pickLatestBuild, compareBuilds } = require('./_channels');
 
 const MAVEN_API = 'https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge';
 const MAVEN_BASE = 'https://maven.neoforged.net/releases/net/neoforged/neoforge';
@@ -93,26 +93,24 @@ module.exports = {
         if (!res.ok) throw new Error(`Failed to fetch NeoForge versions: HTTP ${res.status}`);
         const data = await res.json();
 
-        const matching = (data.versions || [])
+        // Newest-first. Sorting on the parsed build number alone left
+        // "21.9.16-beta" and "21.9.16" in whatever order the API returned them,
+        // so the beta could be picked over the release it precedes;
+        // compareBuilds reads the -beta suffix as older.
+        return (data.versions || [])
             .filter(v => !/craftmine/i.test(v) && v.startsWith(prefix + '.'))
-            .map(v => {
-                const buildNum = parseInt(v.split('.')[2], 10);
-                return { build: v, channel: isStable(v) ? 'release' : 'beta', _buildNum: buildNum };
-            })
-            .sort((a, b) => b._buildNum - a._buildNum);
-
-        return matching.map(({ build, channel }) => ({ build, channel }));
+            .map(v => ({ build: v, channel: isStable(v) ? 'release' : 'beta' }))
+            .sort((a, b) => compareBuilds(b.build, a.build));
     },
 
     async downloadJar(version, build, destPath) {
-        // Auto-select the newest stable build if none specified; MC versions
-        // with only beta builds fall back to the newest beta.
+        // Auto-select the newest published build if none specified.
         if (!build) {
             const builds = await this.getBuilds(version);
             if (!builds || builds.length === 0) {
                 throw new Error(`No NeoForge builds available for MC ${version}.`);
             }
-            build = pickPreferredBuild(builds).build;
+            build = pickLatestBuild(builds).build;
         }
 
         const installerUrl = `${MAVEN_BASE}/${build}/neoforge-${build}-installer.jar`;

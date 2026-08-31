@@ -50,10 +50,18 @@
             if (msg.type === 'operation' && msg.serverId === serverId) {
                 document.dispatchEvent(new CustomEvent('craftbox:operation', { detail: msg }));
             }
+            // Relayed for the event log page, which renders live rows from these.
+            if (msg.type === 'event' && msg.serverId === serverId) {
+                document.dispatchEvent(new CustomEvent('craftbox:event', { detail: msg }));
+            }
+            if (msg.type === 'events_cleared' && msg.serverId === serverId) {
+                document.dispatchEvent(new CustomEvent('craftbox:events-cleared', { detail: msg }));
+            }
         };
 
         ws.onclose = function () {
             reconnectAttempts++;
+            probeSessionAfterFailures(reconnectAttempts);
             var delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
             setTimeout(connect, delay);
         };
@@ -73,9 +81,33 @@
         badge.id = 'server-state-badge';
         if (stateIconEl) stateIconEl.textContent = icon;
         if (stateTextEl) stateTextEl.textContent = displayName;
+
+        // Re-gate every state-dependent control on the page (see applyStateGates
+        // in app.js). Without this the page's disabled controls stay frozen at
+        // whatever the state was when it was rendered.
+        document.dispatchEvent(new CustomEvent('craftbox:state', {
+            detail: { serverId: serverId, state: state }
+        }));
     }
 
     connect();
+})();
+
+// ── Unlock the page when provisioning finishes ──
+// The nav links and the console's action buttons are rendered server-side from
+// the provisioning state, and the management pages are closed behind
+// blockWhileProvisioning. Rather than patch each of those live, reload once the
+// server leaves provisioning so everything re-renders from the real state.
+// Both state updaters (this file's and console.js's) write data-state on the
+// nav header, so watching that attribute covers every server page.
+(function () {
+    var navHeader = document.getElementById('server-nav-header');
+    if (!navHeader || navHeader.dataset.state !== 'provisioning') return;
+
+    new MutationObserver(function () {
+        if (navHeader.dataset.state === 'provisioning') return;
+        window.location.reload();
+    }).observe(navHeader, { attributes: true, attributeFilter: ['data-state'] });
 })();
 
 // ── Live version label ──

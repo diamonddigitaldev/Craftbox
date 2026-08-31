@@ -6,11 +6,33 @@ const { STATES } = require('./stateMachine');
 
 /**
  * Check if a Minecraft version supports tellraw (added in 1.7.2).
- * Falls back to false for unparseable or missing versions.
+ *
+ * Handles both id eras: legacy 1.x.y and the year.drop.patch versioning that
+ * started in 2026 ("26.2"), where the leading number is a year rather than a
+ * fixed 1. Snapshot ids ("25w03a") map by snapshot year; pre/rc suffixes
+ * resolve like their target release.
+ *
+ * Falls back to false (plain `say`) for missing, pre-1.0 or unparseable ids.
  */
 function supportsTellraw(version) {
     if (!version || typeof version !== 'string') return false;
-    const parts = version.split('.').map(Number);
+
+    const snapshot = /^(\d{2})w\d{2}/.exec(version);
+    if (snapshot) {
+        // 1.7.2 landed late in 2013, so only 14w+ is unambiguously post-tellraw
+        return parseInt(snapshot[1], 10) >= 14;
+    }
+
+    const cleaned = version.replace(/[ _-]?(?:pre|rc).*$/i, '');
+    const parts = cleaned.split('.').map(Number);
+    if (parts.some(Number.isNaN)) return false;  // pre-1.0 ids ("b1.7.3", "rd-132211")
+
+    const major = parts[0] || 0;
+    if (major > 1) return true;   // year.drop.patch era (26.x+) — well past 1.7.2
+    if (major < 1) return false;  // classic/indev ids ("0.30")
+
+    // Legacy 1.x.y versioning. NeoForge-style pseudo ids ("1.26.1" for MC 26.1)
+    // land here too and still read as newer than 1.7.2.
     const minor = parts[1] || 0;
     const patch = parts[2] || 0;
     if (minor > 7) return true;
@@ -47,8 +69,12 @@ class BackupScheduler {
             for (const row of all) {
                 const server = row.value;
                 if (server?.backupSchedule?.enabled) {
-                    this.startSchedule(server.id);
+                    // Catch up first. A catch-up backup resets the cycle and clears
+                    // the stored due time, so starting the schedule before it would
+                    // have this boot's timers counting down from a time that has
+                    // just been superseded.
                     await this._catchUpIfMissed(server);
+                    await this.startSchedule(server.id);
                 }
             }
         } catch (err) {
@@ -57,57 +83,107 @@ class BackupScheduler {
     }
 
     /**
+     * Read-modify-write the stored due time, awaited.
+     *
+     * Pass null to remove it. Re-reads the record rather than writing back a
+     * caller's copy, so this never reinstates fields that changed in between,
+     * and does nothing at all if the server has since been deleted.
+     */
+    async _persistNextBackupAt(serverId, nextBackupAt) {
+        try {
+            const server = await serversDb.get(`server_${serverId}`);
+            if (!server?.backupSchedule) return;
+            if (nextBackupAt) {
+                server.backupSchedule.nextBackupAt = nextBackupAt.toISOString();
+            } else {
+                delete server.backupSchedule.nextBackupAt;
+            }
+            await serversDb.set(`server_${serverId}`, server);
+        } catch (err) {
+            log('error', `Failed to persist nextBackupAt for ${serverId}: ${err.message}`);
+        }
+    }
+
+    /**
      * If a scheduled backup was missed while Craftbox was offline, run one now.
-     * A backup is "missed" when the last scheduled backup is older than the interval.
+     *
+     * `nextBackupAt` is the schedule's own answer to when the next backup is due,
+     * and the only thing that knows about deferrals — re-saving a schedule pushes
+     * the due time out by a full interval. So a stored time still in the future
+     * means nothing was missed, however old the last backup happens to be.
+     * Measuring from the last backup instead is what used to run a deferred
+     * backup on the old timing the first time Craftbox restarted.
+     *
+     * Only a record with no stored time falls back to that measurement: a
+     * schedule enabled before this field existed, or one that has not yet
+     * completed a cycle.
      */
     async _catchUpIfMissed(server) {
         try {
             const schedule = server.backupSchedule;
             const intervalMs = (schedule.intervalHours || 24) * 60 * 60 * 1000;
+            const dueAt = schedule.nextBackupAt ? new Date(schedule.nextBackupAt).getTime() : NaN;
+            let missedSince;
 
-            const backups = await listBackups(server.id);
-            const lastScheduled = backups.find(b => b.type === 'scheduled');
+            if (!Number.isNaN(dueAt)) {
+                if (dueAt > Date.now()) return;  // still ahead of us — nothing was missed
+                missedSince = `due ${new Date(dueAt).toISOString()}`;
+            } else {
+                const backups = await listBackups(server.id);
+                const lastScheduled = backups.find(b => b.type === 'scheduled');
 
-            if (!lastScheduled) {
-                // No scheduled backup has ever been made — don't force one on first boot
-                return;
-            }
-
-            const timeSinceLast = Date.now() - new Date(lastScheduled.createdAt).getTime();
-            if (timeSinceLast > intervalMs) {
-                if (isBackupInProgress(server.id)) {
-                    log('info', `[${server.name}] Skipping catch-up backup: another backup is already in progress.`);
+                if (!lastScheduled) {
+                    // No scheduled backup has ever been made — don't force one on first boot
                     return;
                 }
-                log('info', `[${server.name}] Missed scheduled backup detected (last: ${lastScheduled.createdAt}). Creating catch-up backup...`);
 
-                // Stop server if running before creating backup
-                const proc = this.serverManager.getProcess(server.id);
-                const wasRunning = proc && proc.state === STATES.RUNNING;
-                if (wasRunning) {
-                    log('info', `[${server.name}] Stopping server for catch-up backup...`);
-                    await this.serverManager.stopServer(server.id, { initiatedBy: 'Backup Scheduler' });
-                    await proc.waitForState(STATES.STOPPED, 60000);
-                }
+                const timeSinceLast = Date.now() - new Date(lastScheduled.createdAt).getTime();
+                if (timeSinceLast <= intervalMs) return;
+                missedSince = `last: ${lastScheduled.createdAt}`;
+            }
 
-                await this.serverManager.setOperationalState(server.id, STATES.BACKING_UP);
-                try {
-                    const backup = await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
-                    await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
-                    logEvent(server.id, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-                    log('info', `[${server.name}] Catch-up backup completed.`);
-                } catch (err) {
-                    log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
-                    logEvent(server.id, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-                } finally {
-                    await this.serverManager.setOperationalState(server.id, STATES.STOPPED);
-                }
+            if (isBackupInProgress(server.id)) {
+                log('info', `[${server.name}] Skipping catch-up backup: another backup is already in progress.`);
+                return;
+            }
+            if (this.serverManager.getState(server) === STATES.PROVISIONING) {
+                log('info', `[${server.name}] Skipping catch-up backup: server is still provisioning.`);
+                return;
+            }
+            log('info', `[${server.name}] Missed scheduled backup detected (${missedSince}). Creating catch-up backup...`);
 
-                // Restart if it was running before
-                if (wasRunning) {
-                    log('info', `[${server.name}] Restarting server after catch-up backup...`);
-                    await this.serverManager.startServer(server.id, { initiatedBy: 'Backup Scheduler' });
-                }
+            // Stop server if running before creating backup
+            const proc = this.serverManager.getProcess(server.id);
+            const wasRunning = proc && proc.state === STATES.RUNNING;
+            if (wasRunning) {
+                log('info', `[${server.name}] Stopping server for catch-up backup...`);
+                await this.serverManager.stopServer(server.id, { initiatedBy: 'Backup Scheduler' });
+                await proc.waitForState(STATES.STOPPED, 60000);
+            }
+
+            await this.serverManager.setOperationalState(server.id, STATES.BACKING_UP);
+            try {
+                const backup = await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
+                await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
+                logEvent(server.id, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+                log('info', `[${server.name}] Catch-up backup completed.`);
+            } catch (err) {
+                log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
+                logEvent(server.id, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+            } finally {
+                await this.serverManager.setOperationalState(server.id, STATES.STOPPED);
+            }
+
+            // The cycle restarts from this backup, so drop the due time it just
+            // satisfied. startSchedule runs straight after and would otherwise
+            // read a time already in the past and fire again on its 1s grace.
+            await this._persistNextBackupAt(server.id, null);
+            if (server.backupSchedule) delete server.backupSchedule.nextBackupAt;
+
+            // Restart if it was running before
+            if (wasRunning) {
+                log('info', `[${server.name}] Restarting server after catch-up backup...`);
+                await this.serverManager.startServer(server.id, { initiatedBy: 'Backup Scheduler' });
             }
         } catch (err) {
             log('error', `[${server.name}] Catch-up backup check failed: ${err.message}`);
@@ -173,12 +249,7 @@ class BackupScheduler {
         entry.nextBackupAt = nextBackupAt;
 
         // Persist nextBackupAt to DB so it survives restarts
-        serversDb.get(`server_${serverId}`).then(server => {
-            if (server?.backupSchedule) {
-                server.backupSchedule.nextBackupAt = nextBackupAt.toISOString();
-                serversDb.set(`server_${serverId}`, server);
-            }
-        }).catch(err => log('error', `Failed to persist nextBackupAt for ${serverId}: ${err.message}`));
+        this._persistNextBackupAt(serverId, nextBackupAt);
 
         // Schedule countdown to start at (delay - countdown) before backup
         const countdownDelay = Math.max(effectiveDelay - countdownMs, 0);
@@ -210,7 +281,15 @@ class BackupScheduler {
     }
 
     /**
-     * Stop the backup schedule for a server.
+     * Stop the backup schedule for a server. Cancels this process's timers only —
+     * the stored due time is left alone deliberately.
+     *
+     * Shutdown runs through here via stopAll, and wiping the due time there is
+     * what made a deferred backup revert to its old timing on the next boot: the
+     * deferral only exists as that stored time, so erasing it left the catch-up
+     * check with nothing to go on. Whoever ends a schedule for real owns clearing
+     * it — the schedule endpoint does so on every save, and import strips any
+     * value carried in from another instance.
      */
     stopSchedule(serverId) {
         const entry = this.timers.get(serverId);
@@ -221,14 +300,6 @@ class BackupScheduler {
             clearTimeout(t);
         }
         this.timers.delete(serverId);
-
-        // Clear persisted nextBackupAt so a stale time isn't used if re-enabled later
-        serversDb.get(`server_${serverId}`).then(server => {
-            if (server?.backupSchedule?.nextBackupAt) {
-                delete server.backupSchedule.nextBackupAt;
-                serversDb.set(`server_${serverId}`, server);
-            }
-        }).catch(err => log('error', `Failed to clear nextBackupAt for ${serverId}: ${err.message}`));
 
         log('info', `Backup schedule stopped for server ${serverId}`);
     }
@@ -297,6 +368,15 @@ class BackupScheduler {
 
         if (isBackupInProgress(serverId)) {
             log('info', `[${server.name}] Skipping scheduled backup: another backup is already in progress.`);
+            return;
+        }
+
+        // A provisioning server has no process yet, so it would otherwise fall
+        // into the "not running, back up directly" branch below and archive a
+        // half-assembled directory. setOperationalState would refuse the
+        // transition anyway; skip cleanly rather than logging a failure.
+        if (this.serverManager.getState(server) === STATES.PROVISIONING) {
+            log('info', `[${server.name}] Skipping scheduled backup: server is still provisioning.`);
             return;
         }
 

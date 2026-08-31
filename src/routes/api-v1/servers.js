@@ -4,10 +4,17 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const StreamZip = require('node-stream-zip');
+const { DownloadReporter, sendFileDownload, sendArchiveDownload } = require('../../utils/download');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 const { serversDb, backupsDb, eventsDb, SERVERS_DIR } = require('../../db');
-const { ensureBackupDir, resolveBackupPath } = require('../../mc/BackupManager');
+const {
+    ensureBackupDir,
+    resolveBackupPath,
+    listBackups,
+    tryAcquireBackupLock,
+    releaseBackupLock
+} = require('../../mc/BackupManager');
 const { getProvider, listProviders } = require('../../mc/serverTypes');
 const { downloadServerJar } = require('../../mc/downloader');
 const { log } = require('../../utils/log');
@@ -19,15 +26,20 @@ const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath, copyDefau
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../../mc/serverProperties');
 const { PROPERTY_META } = require('../../mc/propertyMeta');
 const { getContentType } = require('../../utils/contentType');
-const { copyModEnvMap, setModEnvMap } = require('../../utils/modEnvironment');
-const { isZipFile } = require('../../utils/uploadSafety');
+const { copyModEnvMap, setModEnvMap, getModEnvMap } = require('../../utils/modEnvironment');
+const { isZipFile, cleanupTempFiles } = require('../../utils/uploadSafety');
 const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
-const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
+const { normalizeGroupName, getGroupColor, getStoredGroupColor, setGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR, GROUP_COLOR_REGEX } = require('../../utils/serverGroups');
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
-const { pickPreferredBuild } = require('../../mc/serverTypes/_channels');
+const { pickLatestBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
+const {
+    isEditableFile, listDirectory, safeEntryName, newNameError,
+    readTextWindow, parseReadWindow, MAX_TEXT_BYTES
+} = require('../../utils/fileBrowser');
+const { readConsoleTail } = require('../../utils/consoleLog');
 const { cleanupServerData } = require('../../utils/serverCleanup');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
@@ -144,6 +156,10 @@ async function runWithRestorePoint({ req, res, server, label, operation, apply }
     const initiatedBy = req.user.username;
     const { runBackupJob, tryAcquireBackupLock, releaseBackupLock, formatSize } = require('../../mc/BackupManager');
 
+    if (serverManager.getState(server) === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
+
     if (!tryAcquireBackupLock(id)) {
         return res.status(409).json({ error: 'A backup is already in progress for this server.' });
     }
@@ -210,7 +226,7 @@ async function runWithRestorePoint({ req, res, server, label, operation, apply }
         if (lockOwnedByRoute) releaseBackupLock(id);
         log('error', `Restore-point setup failed for ${id}: ${err.message}`);
         if (!res.headersSent) {
-            res.status(500).json({ error: err.message });
+            res.status(err.status === 409 ? 409 : 500).json({ error: err.message });
         }
     }
 }
@@ -246,15 +262,6 @@ function notifyDashboard(req) {
     });
 }
 
-const TEXT_EXTENSIONS = new Set([
-    '.txt', '.log', '.properties', '.json', '.yml', '.yaml', '.xml',
-    '.cfg', '.conf', '.ini', '.toml', '.csv', '.md', '.sh', '.bat',
-    '.cmd', '.ps1', '.js', '.ts', '.py', '.java', '.html', '.css',
-    '.mcmeta', '.lang', '.sk', '.nbt'
-]);
-function isTextFile(filename) {
-    return TEXT_EXTENSIONS.has(path.extname(filename).toLowerCase());
-}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -483,31 +490,45 @@ router.get('/servers/:id/check-upgrade', async (req, res) => {
         const provider = getProvider(type);
         if (!provider) return res.json({ upgradeAvailable: false });
 
-        if (!provider.getBuilds || type === 'custom') {
+        if (type === 'custom' || (!provider.getBuilds && !provider.getLatestBuild)) {
             return res.json({ upgradeAvailable: false, reason: 'No build tracking for this server type.' });
         }
 
-        const builds = await provider.getBuilds(server.version);
-        if (!builds || builds.length === 0) {
-            return res.json({ upgradeAvailable: false });
+        // Providers with no user-facing build picker (Fabric) expose the newest
+        // build directly instead of a list.
+        let preferred = null;
+        if (provider.getLatestBuild) {
+            preferred = await provider.getLatestBuild(server.version);
+        } else {
+            const builds = await provider.getBuilds(server.version);
+            // The newest build for the version, matching what a fresh install
+            // or an upgrade actually downloads.
+            if (builds && builds.length > 0) preferred = pickLatestBuild(builds);
+        }
+        if (!preferred) {
+            return res.json({ upgradeAvailable: false, reason: 'No builds published for this version.' });
         }
 
-        // getBuilds now includes non-stable channels — prefer the newest
-        // stable build so stable servers aren't offered ALPHA/BETA builds.
-        const preferred = pickPreferredBuild(builds);
         const latestBuild = preferred.build;
         const currentBuild = server.build;
 
+        // A server imported from a .cbx, duplicated, or provisioned before build
+        // tracking existed can have no recorded build. Reporting "no upgrade
+        // available" left it permanently stuck, because upgrading is the only
+        // thing that records a build: upgrade-jar passes a null build to the
+        // provider, which installs the newest and writes it back. So offer the
+        // upgrade rather than refusing it.
         if (currentBuild == null) {
             return res.json({
-                upgradeAvailable: false,
-                latestBuild,
+                upgradeAvailable: true,
                 currentBuild: null,
-                reason: 'No build number recorded for this server.'
+                latestBuild,
+                channel: preferred.channel || null,
+                reason: `No build recorded for this server. Upgrading installs build ${latestBuild} and records it.`
             });
         }
 
-        const upgradeAvailable = latestBuild !== currentBuild && latestBuild > currentBuild;
+        const upgradeAvailable = compareBuilds(latestBuild, currentBuild) > 0;
         res.json({
             upgradeAvailable,
             currentBuild,
@@ -528,8 +549,11 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
     if (!server) return;
 
     const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(server.id);
-    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
+    const liveState = serverManager.getState(server);
+    if (liveState === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
+    if (!['stopped', 'crashed'].includes(liveState)) {
         return res.status(409).json({ error: 'Stop the server before upgrading the jar.' });
     }
 
@@ -641,6 +665,7 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
         if (lockOwnedByRoute) releaseBackupLock(server.id);
         log('error', `Jar upgrade setup failed for ${req.params.id}: ${err.message}`);
         if (!res.headersSent) {
+            if (err.status === 409) return res.status(409).json({ error: err.message });
             res.status(500).json({ error: `Failed to upgrade jar: ${err.message}` });
         }
     }
@@ -738,7 +763,11 @@ router.get('/servers/:id/events', async (req, res) => {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
-        const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+        // Same clamp shape as /console: only a missing/unparseable value takes
+        // the default. There was no lower bound here at all, so limit=-5 reached
+        // getEvents and slice(0, -5) quietly dropped the five newest events.
+        const rawLimit = parseInt(req.query.limit, 10);
+        const limit = Math.min(Math.max(Number.isNaN(rawLimit) ? 50 : rawLimit, 1), 200);
         const types = req.query.types ? req.query.types.split(',') : null;
         const events = await getEvents(server.id, { limit, types });
 
@@ -1534,7 +1563,7 @@ router.post('/servers/:id/start', async (req, res) => {
         logEvent(req.params.id, 'action', 'Server start requested', { initiatedBy: req.user.username }).catch(() => {});
         res.json({ success: true, message: 'Server is starting...' });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
     }
 });
 
@@ -1548,17 +1577,22 @@ router.post('/servers/:id/stop', async (req, res) => {
         logEvent(req.params.id, 'action', 'Server stop requested', { initiatedBy: req.user.username }).catch(() => {});
         res.json({ success: true, message: 'Server is stopping...' });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
     }
 });
 
 // POST /servers/:id/restart
 router.post('/servers/:id/restart', async (req, res) => {
-    if (!await loadServerOr404(req, res)) return;
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
     const serverManager = req.app.get('serverManager');
     const id = req.params.id;
     const initiatedBy = req.user.username;
     const createBackupFirst = req.body?.backup === 'true' || req.body?.backup === true;
+
+    if (serverManager.getState(server) === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
 
     if (!createBackupFirst) {
         try {
@@ -1567,7 +1601,7 @@ router.post('/servers/:id/restart', async (req, res) => {
             logEvent(id, 'action', 'Server restart requested', { initiatedBy }).catch(() => {});
             return res.json({ success: true, message: 'Server is restarting...' });
         } catch (err) {
-            return res.status(400).json({ error: err.message });
+            return res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
         }
     }
 
@@ -1617,7 +1651,7 @@ router.post('/servers/:id/restart', async (req, res) => {
         if (lockOwnedByRoute) releaseBackupLock(id);
         log('error', `Restart-with-backup setup failed for ${id}: ${err.message}`);
         if (!res.headersSent) {
-            res.status(500).json({ error: err.message });
+            res.status(err.status === 409 ? 409 : 500).json({ error: err.message });
         }
     }
 });
@@ -1655,7 +1689,7 @@ router.post('/servers/:id/kill', async (req, res) => {
         logEvent(req.params.id, 'action', 'Server force-killed', { initiatedBy: req.user.username }).catch(() => {});
         res.json({ success: true, message: 'Server force-killed.' });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
     }
 });
 
@@ -1791,17 +1825,35 @@ const importServerHandler = async (req, res) => {
             jarFile: typeof source.jarFile === 'string' && source.jarFile ? source.jarFile : 'server.jar',
             group: groupResult.valid ? groupResult.value : null,
             autoStart: !!source.autoStart,
+            // The archive is a snapshot, so the advertised address comes across
+            // with everything else — a move to a host that answers on a
+            // different name is an edit away, and losing it silently was worse
+            // than carrying one that needs changing. Length-capped to the same
+            // 253 characters the settings field accepts (a full DNS name),
+            // since a manifest is untrusted input and this renders on the
+            // public status page.
+            advertisedIp: typeof source.advertisedIp === 'string' && source.advertisedIp.trim()
+                ? source.advertisedIp.trim().slice(0, 253)
+                : null,
             exitCode: null,
             crashReason: null,
             crashDetected: false,
             lastStarted: null,
             lastStopped: null,
-            advertisedIp: null,
             directory: path.join('data', 'servers', finalId)
         };
         if (importedServer.backupSchedule) delete importedServer.backupSchedule.nextBackupAt;
 
         await serversDb.set(`server_${finalId}`, importedServer);
+
+        // Color the group the archive named, but never repaint one this
+        // instance already has: a group is implicit and shared by every server
+        // in it, so an import must not restyle servers that were here first.
+        if (importedServer.group && GROUP_COLOR_REGEX.test(String(manifest.groupColor || ''))
+            && !(await getStoredGroupColor(importedServer.group))) {
+            await setGroupColor(importedServer.group, manifest.groupColor);
+        }
+
         log('info', `Importing server "${trimmedName}" (${finalId}) from "${req.file.originalname}": `
             + `${Object.keys(zipEntries).length} archive entries`
             + `${zipEntries['backups.json'] ? ', with backups' : ''}`
@@ -2092,6 +2144,11 @@ router.delete('/servers/:id', async (req, res) => {
     const serverManager = req.app.get('serverManager');
     const proc = serverManager?.getProcess(id);
     const liveState = proc ? proc.state : server.state;
+    // A restarting server is momentarily `stopped`; deleting in that window
+    // tears down the directory while a respawn is already queued.
+    if (serverManager?.isRestarting(id)) {
+        return res.status(409).json({ error: 'Server is restarting. Wait for it to come back up.' });
+    }
     if (!['stopped', 'crashed'].includes(liveState)) {
         return res.status(409).json({ error: 'Stop the server before deleting it.' });
     }
@@ -2335,6 +2392,717 @@ router.post('/servers/:id/properties', async (req, res) => {
     res.json({ success: true });
 });
 
+// Where ServerProcess writes the console log for a server.
+function consolePathFor(server) {
+    return path.join(path.resolve(SERVERS_DIR, server.id), 'logs', 'craftbox-console.log');
+}
+
+// Resolve a caller-supplied path against a server's directory.
+// Returns null once a response has been sent — the caller must `return`.
+function resolveServerPath(req, res, server, rawPath) {
+    const serverDir = path.resolve(SERVERS_DIR, server.id);
+    const targetPath = path.resolve(serverDir, rawPath || '');
+    if (!isPathInside(serverDir, targetPath)) {
+        res.status(403).json({ error: 'Access denied.' });
+        return null;
+    }
+    return { serverDir, targetPath };
+}
+
+// GET /servers/:id/files?path= — List a directory inside the server.
+router.get('/servers/:id/files', async (req, res) => {
+    try {
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
+
+        const resolved = resolveServerPath(req, res, server, req.query.path);
+        if (!resolved) return;
+        const { targetPath } = resolved;
+
+        if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isDirectory()) {
+            return res.status(404).json({ error: 'Directory not found.' });
+        }
+
+        res.json({ path: String(req.query.path || ''), files: listDirectory(targetPath) });
+    } catch (err) {
+        log('error', `Failed to list files for ${req.params.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to list files.' });
+    }
+});
+
+// GET /servers/:id/file?path=[&offset=&limit=|&tail=] — Read a text file.
+//
+// Binary files are refused here and must be fetched from /download instead;
+// this mirrors what the file editor will open (see utils/fileBrowser).
+//
+// Unlike /download this works while the server is running, which makes it the
+// way to read a log or an append-only feed a plugin is still writing to. Such
+// a file has no bound worth trusting, so a whole-file read is capped and
+// callers past the cap ask for a byte window instead.
+router.get('/servers/:id/file', async (req, res) => {
+    try {
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
+
+        if (!req.query.path) return res.status(400).json({ error: 'No path specified.' });
+
+        const resolved = resolveServerPath(req, res, server, req.query.path);
+        if (!resolved) return;
+        const { targetPath } = resolved;
+
+        if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+            return res.status(404).json({ error: 'File not found.' });
+        }
+        if (!isEditableFile(targetPath)) {
+            return res.status(400).json({ error: 'This file is not text and cannot be read as text. Use /download instead.' });
+        }
+
+        const readWindow = parseReadWindow(req.query);
+        if (readWindow.error) return res.status(400).json({ error: readWindow.error });
+
+        const stat = fs.statSync(targetPath);
+        if (!readWindow.windowed && stat.size > MAX_TEXT_BYTES) {
+            return res.status(413).json({
+                error: `File is ${formatSize(stat.size)}, over the ${formatSize(MAX_TEXT_BYTES)} whole-file limit. `
+                    + 'Read part of it with ?tail= or ?offset=&limit= (bytes).',
+                size: stat.size,
+                maxBytes: MAX_TEXT_BYTES
+            });
+        }
+
+        const read = readTextWindow(targetPath, readWindow);
+        res.json({
+            file: {
+                name: path.basename(targetPath),
+                path: String(req.query.path),
+                size: read.size,
+                modifiedISO: stat.mtime.toISOString(),
+                offset: read.offset,
+                length: read.length,
+                truncated: read.truncated,
+                content: read.content
+            }
+        });
+    } catch (err) {
+        log('error', `Failed to read file for ${req.params.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to read file.' });
+    }
+});
+
+// GET /servers/:id/download?path= — Stream any single file, text or binary.
+// Requires the server stopped: a running server holds handles on world data and
+// jars, and on Windows reading them fails with EBUSY mid-stream.
+router.get('/servers/:id/download', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+
+    const serverManager = req.app.get('serverManager');
+    const fileName = req.query.path ? path.basename(String(req.query.path)) : 'file';
+    const reporter = new DownloadReporter({
+        req, serverManager, serverId: server.id, label: fileName
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
+    const liveState = serverManager.getState(server);
+    if (liveState === STATES.PROVISIONING) {
+        return reject(409, 'Wait for the server to finish provisioning.');
+    }
+    if (!['stopped', 'crashed'].includes(liveState)) {
+        return reject(409, 'Stop the server before downloading files.');
+    }
+
+    if (!req.query.path) return reject(400, 'No path specified.');
+
+    const resolved = resolveServerPath(req, res, server, req.query.path);
+    if (!resolved) return reporter.failed('Access denied.');
+    const { targetPath } = resolved;
+
+    if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+        return reject(404, 'File not found.');
+    }
+
+    sendFileDownload(res, targetPath, {
+        filename: path.basename(targetPath),
+        reporter,
+        onError: (err) => {
+            if (err.code === 'EBUSY') {
+                reject(409, 'File is currently in use by the server. Try again later or stop the server first.');
+            } else {
+                reject(500, 'Failed to download file.');
+            }
+        }
+    });
+});
+
+// ── File management ─────────────────────────────────────────────────────────
+// Creating things (upload, mkdir) works in any state, matching /edit-file,
+// which already writes into a running server's directory. Delete and rename
+// are gated on a stopped server: they are the destructive pair, and a running
+// server holds open handles on world data and jars.
+
+// No extension filter and no size cap. This is a general file manager, and an
+// authenticated user can already edit any text file and download the whole
+// directory — an allowlist here would be theatre rather than a boundary.
+// Files stream to disk, so size is bounded by disk space, not memory.
+const fileUpload = multer({ dest: os.tmpdir() });
+
+// Returns false once a response has been sent — the caller must `return`.
+function requireStoppedForFiles(req, res, server, verb) {
+    const liveState = req.app.get('serverManager').getState(server);
+    if (liveState === STATES.PROVISIONING) {
+        res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+        return false;
+    }
+    if (!['stopped', 'crashed'].includes(liveState)) {
+        res.status(409).json({ error: `Stop the server before ${verb} files.` });
+        return false;
+    }
+    return true;
+}
+
+// The files a running server holds open: its jar, its world folders, its logs,
+// and the mods/plugins the JVM has loaded. Overwriting one of these mid-session
+// is what corrupts a live server — and on Linux the write SUCCEEDS silently
+// rather than failing with EBUSY the way it does on Windows, so the state has
+// to be checked up front instead of waiting for copyFileSync to throw.
+//
+// Reading server.properties per request is cheap next to the upload itself, and
+// level-name can change under us, so it is resolved fresh rather than cached.
+function heldOpenTargets(server, serverDir) {
+    const level = parseServerProperties(serverDir)['level-name'] || 'world';
+    const dirs = ['logs', level, `${level}_nether`, `${level}_the_end`];
+    const content = getContentType(server.serverType);
+    if (content) dirs.push(content.folder);
+
+    return {
+        files: [path.resolve(serverDir, server.jarFile || 'server.jar')],
+        dirs: dirs.map(d => path.join(serverDir, d)).filter(d => fs.existsSync(d))
+    };
+}
+
+function isHeldOpen(targets, destPath) {
+    const resolved = path.resolve(destPath);
+    return targets.files.includes(resolved)
+        || targets.dirs.some(dir => isPathInside(dir, resolved));
+}
+
+// Craftbox mirrors a few server.properties / eula.txt values in the database,
+// so touching either from the file manager has to re-sync them exactly as
+// /edit-file does, or the panel keeps reporting the old port and EULA state.
+async function syncIfConfigFile(serverId, serverDir, ...targets) {
+    const touched = targets.some(p => p
+        && path.dirname(p) === serverDir
+        && ['server.properties', 'eula.txt'].includes(path.basename(p)));
+    if (touched) await syncServerConfig(serverId);
+}
+
+// Shared by the multipart and DGUP paths, as uploadPluginsHandler is.
+const uploadFilesHandler = async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) {
+        cleanupTempFiles(req.files);
+        return;
+    }
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) {
+        cleanupTempFiles(req.files);
+        return;
+    }
+    const { serverDir, targetPath: targetDir } = resolved;
+
+    if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+        cleanupTempFiles(req.files);
+        return res.status(404).json({ error: 'Directory not found.' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded.' });
+    }
+
+    // Uploading stays allowed while a server runs (see the note above
+    // requireStoppedForFiles) — but replacing a file it currently holds open
+    // does not. New files are unaffected: nothing can be holding a handle on a
+    // name that isn't there yet.
+    const liveState = req.app.get('serverManager').getState(server);
+    const heldOpen = ['stopped', 'crashed'].includes(liveState)
+        ? null
+        : heldOpenTargets(server, serverDir);
+
+    const uploaded = [];
+    const rejected = [];
+    let replaced = 0;
+
+    try {
+        for (const file of req.files) {
+            const safeName = safeEntryName(file.originalname);
+            if (!safeName) {
+                rejected.push({ name: file.originalname, reason: 'invalid filename' });
+                continue;
+            }
+
+            const destPath = path.join(targetDir, safeName);
+            // Catches a name that survived sanitising but resolves outside the
+            // directory anyway — most plausibly an existing symlink at destPath.
+            if (!isPathInside(targetDir, destPath)) {
+                rejected.push({ name: safeName, reason: 'invalid path' });
+                continue;
+            }
+
+            let existing = null;
+            try { existing = fs.statSync(destPath); } catch { /* nothing there yet */ }
+            if (existing && existing.isDirectory()) {
+                rejected.push({ name: safeName, reason: 'a folder with that name already exists' });
+                continue;
+            }
+
+            if (existing && heldOpen && isHeldOpen(heldOpen, destPath)) {
+                rejected.push({ name: safeName, reason: 'file is in use by the server' });
+                continue;
+            }
+
+            try {
+                fs.copyFileSync(file.path, destPath);
+            } catch (err) {
+                // Backstop for anything the check above doesn't know to expect:
+                // on Windows a held-open file fails here rather than silently
+                // winning. One bad file shouldn't sink the batch, so report it
+                // like any other rejection.
+                rejected.push({
+                    name: safeName,
+                    reason: ['EBUSY', 'EPERM', 'EACCES'].includes(err.code)
+                        ? 'file is in use by the server'
+                        : 'could not be written'
+                });
+                continue;
+            }
+
+            if (existing) replaced++;
+            uploaded.push(safeName);
+        }
+    } finally {
+        cleanupTempFiles(req.files);
+    }
+
+    if (uploaded.length > 0) {
+        log('info', `Uploaded ${uploaded.length} file(s) to "${req.body.path || '/'}" `
+            + `on server ${server.name} (${server.id})`);
+        await syncIfConfigFile(server.id, serverDir, ...uploaded.map(n => path.join(targetDir, n)));
+    }
+
+    res.json({ success: true, count: uploaded.length, uploaded, replaced, rejected });
+};
+
+// POST /servers/:id/files/upload — Upload file(s) into a directory.
+// The `path` body field picks the destination (omitted = server root). On the
+// multipart path it must precede the files in the stream, or multer will not
+// have parsed it by the time the handler runs.
+router.post('/servers/:id/files/upload', multerShim(fileUpload.any()), uploadFilesHandler);
+
+// POST /servers/:id/files/upload/{init,chunk,complete,cancel} — DGUP chunked
+// upload for files too large for a single request (e.g. behind Cloudflare
+// Tunnel's 100 MB body cap). complete() runs uploadFilesHandler unchanged.
+router.use('/servers/:id/files/upload', createDgupRouter({
+    routeKey: 'files',
+    field: 'files',
+    fileMode: 'array',
+    maxBytes: Infinity,
+    ext: null,                              // any file type, as above
+    mimetype: 'application/octet-stream',
+    // The destination directory rides on `complete`, not `init` (see the
+    // `fields` option in public/js/dgup.js), so the server's existence is the
+    // only thing there is to preflight here.
+    validate: async (req) => {
+        const server = await serversDb.get(`server_${req.params.id}`);
+        if (!server) return { status: 404, error: 'Server not found.' };
+        return null;
+    }
+}, uploadFilesHandler));
+
+// POST /servers/:id/files/delete — Delete a file, or a directory and its contents.
+router.post('/servers/:id/files/delete', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+    if (!requireStoppedForFiles(req, res, server, 'deleting')) return;
+
+    if (!req.body.path) return res.status(400).json({ error: 'No path specified.' });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { serverDir, targetPath } = resolved;
+
+    if (targetPath === serverDir) {
+        return res.status(400).json({ error: 'The server directory itself cannot be deleted.' });
+    }
+
+    // lstat, not stat: a symlink should be unlinked, not followed and emptied.
+    let stat;
+    try {
+        stat = fs.lstatSync(targetPath);
+    } catch {
+        return res.status(404).json({ error: 'File not found.' });
+    }
+
+    try {
+        if (stat.isDirectory()) {
+            fs.rmSync(targetPath, { recursive: true, force: true });
+        } else {
+            fs.unlinkSync(targetPath);
+        }
+    } catch (err) {
+        if (['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'].includes(err.code)) {
+            return res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
+        }
+        log('error', `Failed to delete ${req.body.path}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to delete file.' });
+    }
+
+    log('info', `Deleted ${stat.isDirectory() ? 'folder' : 'file'} "${req.body.path}" `
+        + `from server ${server.name} (${server.id})`);
+    await syncIfConfigFile(server.id, serverDir, targetPath);
+    res.json({ success: true });
+});
+
+// POST /servers/:id/files/rename — Rename a file or directory in place.
+router.post('/servers/:id/files/rename', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+    if (!requireStoppedForFiles(req, res, server, 'renaming')) return;
+
+    if (!req.body.path) return res.status(400).json({ error: 'No path specified.' });
+
+    const nameError = newNameError(req.body.newName);
+    if (nameError) return res.status(400).json({ error: nameError });
+    const newName = safeEntryName(req.body.newName);
+    if (!newName) return res.status(400).json({ error: 'Invalid name.' });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { serverDir, targetPath } = resolved;
+
+    if (targetPath === serverDir) {
+        return res.status(400).json({ error: 'The server directory itself cannot be renamed.' });
+    }
+    if (!fs.existsSync(targetPath)) return res.status(404).json({ error: 'File not found.' });
+
+    const destPath = path.join(path.dirname(targetPath), newName);
+    if (!isPathInside(serverDir, destPath)) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    // Changing only the case is a legitimate rename, but on a case-insensitive
+    // filesystem the destination "already exists" — it is the source.
+    const caseOnly = destPath.toLowerCase() === targetPath.toLowerCase();
+    if (!caseOnly && fs.existsSync(destPath)) {
+        return res.status(409).json({ error: 'Something with that name already exists here.' });
+    }
+
+    try {
+        fs.renameSync(targetPath, destPath);
+    } catch (err) {
+        if (['EBUSY', 'EPERM', 'EACCES'].includes(err.code)) {
+            return res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
+        }
+        log('error', `Failed to rename ${req.body.path}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to rename file.' });
+    }
+
+    log('info', `Renamed "${req.body.path}" to "${newName}" on server ${server.name} (${server.id})`);
+    await syncIfConfigFile(server.id, serverDir, targetPath, destPath);
+    res.json({ success: true, name: newName });
+});
+
+// POST /servers/:id/files/mkdir — Create a directory.
+router.post('/servers/:id/files/mkdir', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+
+    const nameError = newNameError(req.body.name);
+    if (nameError) return res.status(400).json({ error: nameError });
+    const name = safeEntryName(req.body.name);
+    if (!name) return res.status(400).json({ error: 'Invalid folder name.' });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { targetPath: parentDir } = resolved;
+
+    if (!fs.existsSync(parentDir) || !fs.statSync(parentDir).isDirectory()) {
+        return res.status(404).json({ error: 'Directory not found.' });
+    }
+
+    const destPath = path.join(parentDir, name);
+    if (!isPathInside(parentDir, destPath)) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+    if (fs.existsSync(destPath)) {
+        return res.status(409).json({ error: 'Something with that name already exists here.' });
+    }
+
+    try {
+        fs.mkdirSync(destPath);
+    } catch (err) {
+        log('error', `Failed to create folder ${name}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to create folder.' });
+    }
+
+    log('info', `Created folder "${name}" in "${req.body.path || '/'}" `
+        + `on server ${server.name} (${server.id})`);
+    res.json({ success: true, name });
+});
+
+// POST /servers/:id/files/mkfile — Create an empty file.
+//
+// Ungated like mkdir: a name that isn't on disk yet cannot be one the running
+// server is holding open. No extension check either — the file manager already
+// takes any file by upload, and the panel decides editable-vs-downloadable when
+// it lists the directory.
+router.post('/servers/:id/files/mkfile', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+
+    const nameError = newNameError(req.body.name);
+    if (nameError) return res.status(400).json({ error: nameError });
+    const name = safeEntryName(req.body.name);
+    if (!name) return res.status(400).json({ error: 'Invalid file name.' });
+
+    const resolved = resolveServerPath(req, res, server, req.body.path);
+    if (!resolved) return;
+    const { serverDir, targetPath: parentDir } = resolved;
+
+    if (!fs.existsSync(parentDir) || !fs.statSync(parentDir).isDirectory()) {
+        return res.status(404).json({ error: 'Directory not found.' });
+    }
+
+    const destPath = path.join(parentDir, name);
+    if (!isPathInside(parentDir, destPath)) {
+        return res.status(403).json({ error: 'Access denied.' });
+    }
+    if (fs.existsSync(destPath)) {
+        return res.status(409).json({ error: 'Something with that name already exists here.' });
+    }
+
+    try {
+        // 'wx' rather than a plain write: creating a file must never truncate
+        // an existing one, including one that appeared since the check above.
+        fs.writeFileSync(destPath, '', { flag: 'wx' });
+    } catch (err) {
+        if (err.code === 'EEXIST') {
+            return res.status(409).json({ error: 'Something with that name already exists here.' });
+        }
+        log('error', `Failed to create file ${name}: ${err.message}`);
+        return res.status(500).json({ error: 'Failed to create file.' });
+    }
+
+    log('info', `Created file "${name}" in "${req.body.path || '/'}" `
+        + `on server ${server.name} (${server.id})`);
+    // An empty server.properties / eula.txt created in the root has to re-sync
+    // the mirrored database fields, exactly as uploading or deleting one does.
+    await syncIfConfigFile(server.id, serverDir, destPath);
+    res.json({ success: true, name });
+});
+
+// GET /servers/:id/console?limit=&source= — Read recent console output.
+//
+// The WebSocket is the live feed but rejects bearer tokens, so this is how an
+// API-key client reads the console. Two sources, because they differ:
+//   file   — <serverDir>/logs/craftbox-console.log. Durable and timestamped;
+//            survives a panel restart. The default.
+//   memory — the live process buffer. Shorter, untimestamped, lost whenever the
+//            process object is rebuilt, but it holds the few `[Craftbox] ...`
+//            lines emitted after the log stream closes on exit.
+// `auto` (the default) prefers the file and falls back to memory when a server
+// has never been started on this install.
+router.get('/servers/:id/console', async (req, res) => {
+    try {
+        const server = await loadServerOr404(req, res);
+        if (!server) return;
+
+        // `|| 200` here would have turned an explicit limit=0 into the default
+        // instead of clamping it to 1, so only a missing/unparseable value
+        // falls back — every parsed number goes through the clamp.
+        const rawLimit = parseInt(req.query.limit, 10);
+        const limit = Math.min(Math.max(Number.isNaN(rawLimit) ? 200 : rawLimit, 1), 1000);
+        const source = String(req.query.source || 'auto').toLowerCase();
+        if (!['auto', 'file', 'memory'].includes(source)) {
+            return res.status(400).json({ error: 'source must be one of: auto, file, memory.' });
+        }
+
+        const proc = req.app.get('serverManager')?.getProcess(server.id);
+        const logPath = consolePathFor(server);
+        const hasLog = fs.existsSync(logPath);
+
+        // Memory when asked for it, or when auto has nothing on disk to read.
+        if (source === 'memory' || (source === 'auto' && !hasLog)) {
+            const buffered = proc?.lastLines || [];
+            return res.json({
+                source: 'memory',
+                truncated: buffered.length > limit,
+                lines: buffered.slice(-limit).map(line => ({ timestamp: null, line }))
+            });
+        }
+
+        // source === 'file' with nothing written yet is an empty log, not an error.
+        if (!hasLog) return res.json({ source: 'file', truncated: false, lines: [] });
+
+        const { lines, truncated } = readConsoleTail(logPath, limit);
+        res.json({ source: 'file', truncated, lines });
+    } catch (err) {
+        log('error', `Failed to read console for ${req.params.id}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to read console output.' });
+    }
+});
+
+// GET /servers/:id/export — Server transfer archive (.cbx): server files and
+// Craftbox settings always, backups and event history when requested.
+// Importable on another instance via POST /servers/import.
+router.get('/servers/:id/export', async (req, res) => {
+    const server = await loadServerOr404(req, res);
+    if (!server) return;
+
+    const serverManager = req.app.get('serverManager');
+    const liveState = serverManager.getState(server);
+    if (liveState === STATES.PROVISIONING) {
+        return res.status(409).json({ error: 'Wait for the server to finish provisioning.' });
+    }
+    if (!['stopped', 'crashed'].includes(liveState)) {
+        return res.status(409).json({ error: 'Stop the server before exporting.' });
+    }
+
+    const serverDir = path.join(SERVERS_DIR, server.id);
+    if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Server directory not found.' });
+
+    const includeBackups = req.query.backups === 'true';
+    const includeEvents = req.query.events === 'true';
+    const startAfter = req.query.start === 'true';
+    const initiatedBy = req.user?.username;
+    const reporter = new DownloadReporter({
+        req, serverManager, serverId: server.id, label: 'Server export'
+    });
+
+    // Hold the backup lock while the archive is packed so a scheduled backup
+    // can't write a partial zip into it. Released the moment packing ends —
+    // the client's download no longer keeps a scheduled backup waiting.
+    let lockHeld = false;
+    if (includeBackups) {
+        if (!tryAcquireBackupLock(server.id)) {
+            const busy = 'A backup is currently in progress. Try again when it completes.';
+            reporter.failed(busy);
+            return res.status(409).json({ error: busy });
+        }
+        lockHeld = true;
+    }
+    const releaseLock = () => {
+        if (lockHeld) {
+            releaseBackupLock(server.id);
+            lockHeld = false;
+        }
+    };
+
+    // Optional restart once the archive has fully streamed — by then every
+    // server file has been read and packed, so starting the server can no
+    // longer corrupt the export.
+    let startRequested = false;
+    const startServerAfterExport = () => {
+        if (!startAfter || startRequested || !serverManager) return;
+        startRequested = true;
+        serverManager.startServer(server.id, { initiatedBy }).catch((err) => {
+            log('error', `Failed to start server after export: ${err.message}`);
+        });
+    };
+
+    try {
+        const backups = includeBackups ? await listBackups(server.id) : [];
+        let events = [];
+        if (includeEvents) {
+            const allEvents = await eventsDb.all();
+            events = allEvents
+                .map(row => row.value)
+                .filter(e => e.serverId === server.id)
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        }
+        const modEnv = await getModEnvMap(server.id);
+
+        const manifest = {
+            format: 'craftbox-server-export',
+            formatVersion: 1,
+            exportedAt: new Date().toISOString(),
+            craftboxVersion: require('../../../package.json').version,
+            server,
+            // A group's color lives in its own record keyed by name, not on the
+            // server, so the archive has to carry it separately or the group
+            // arrives on the far side wearing the default. A new manifest field
+            // needs no formatVersion bump: older importers ignore keys they do
+            // not know, and only unexpected *files* are rejected on import.
+            groupColor: await getStoredGroupColor(server.group),
+            includes: { backups: includeBackups, events: includeEvents },
+            backupCount: backups.length,
+            eventCount: events.length
+        };
+
+        const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+        // Sized before packing so a doomed export fails with a legible 507
+        // rather than filling the staging disk, and so the progress report has
+        // a denominator to count towards.
+        let estimatedBytes = getDirectorySize(serverDir);
+        if (includeBackups) {
+            estimatedBytes += backups.reduce((sum, b) => sum + (Number(b.size) || 0), 0);
+        }
+
+        log('info', `Exporting server "${server.name}" (${server.id}) — backups: ${includeBackups} (${backups.length}), events: ${includeEvents} (${events.length}), startAfter: ${startAfter}`);
+
+        // A .cbx transfer archive is a zip container with a Craftbox manifest at
+        // its root. The dedicated media type stops browsers from "correcting"
+        // the extension back to .zip on download.
+        const sent = await sendArchiveDownload(req, res, {
+            filename: `${safeName}.cbx`,
+            contentType: 'application/x-craftbox-export+zip',
+            estimatedBytes,
+            reporter,
+            describe: `Export of "${server.name}" (${server.id})`,
+            onPacked: releaseLock,
+            build(archive) {
+                archive.append(JSON.stringify(manifest, null, 2), { name: 'craftbox-manifest.json' });
+                archive.append(JSON.stringify(modEnv, null, 2), { name: 'modenv.json' });
+                archive.directory(serverDir, 'server');
+
+                if (includeBackups) {
+                    archive.append(JSON.stringify(backups, null, 2), { name: 'backups.json' });
+                    for (const b of backups) {
+                        try {
+                            const zipPath = resolveBackupPath(server.id, b.filename);
+                            if (fs.existsSync(zipPath)) {
+                                archive.file(zipPath, { name: `backups/${b.filename}` });
+                            }
+                        } catch { /* skip backups with invalid filenames */ }
+                    }
+                }
+                if (includeEvents) {
+                    archive.append(JSON.stringify(events, null, 2), { name: 'events.json' });
+                }
+            }
+        });
+        releaseLock();
+
+        // Only a delivered archive counts as an export: an abandoned download
+        // leaves the server stopped, exactly as it was before the click.
+        if (res.writableFinished) {
+            log('info', `Export of "${server.name}" (${server.id}) completed — ${formatSize(sent)} sent`);
+            startServerAfterExport();
+        }
+    } catch (err) {
+        releaseLock();
+        log('error', `Export failed for ${server.name}: ${err.message}`);
+        reporter.failed(err.message);
+        if (!res.headersSent) {
+            res.status(err.status || 500).json({ error: err.status === 507 ? err.message : 'Export failed.' });
+        }
+    }
+});
+
 // POST /servers/:id/edit-file — Save a text file in the server directory
 router.post('/servers/:id/edit-file', async (req, res) => {
     const id = req.params.id;
@@ -2353,8 +3121,8 @@ router.post('/servers/:id/edit-file', async (req, res) => {
         return res.status(403).json({ error: 'Access denied.' });
     }
 
-    if (!isTextFile(path.basename(targetPath))) {
-        return res.status(400).json({ error: 'This file type cannot be edited.' });
+    if (!isEditableFile(targetPath)) {
+        return res.status(400).json({ error: 'This file is not text and cannot be edited.' });
     }
 
     try {

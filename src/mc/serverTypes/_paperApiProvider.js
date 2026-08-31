@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { log } = require('../../utils/log');
 const { verifyChecksum } = require('./_verifyChecksum');
-const { classifyMcId, pickPreferredBuild } = require('./_channels');
+const { classifyMcId, pickLatestBuild, compareBuilds } = require('./_channels');
 
 /**
  * Factory that creates a provider for any PaperMC API v3 project
@@ -95,21 +95,25 @@ function createPaperApiProvider({ project, id, name, description, icon, logo }) 
                 throw new Error(`Unexpected ${name} builds response format.`);
             }
 
+            // Newest-first. This used to just `.reverse()` the array on the
+            // assumption that Fill hands back oldest-first; Fill now returns
+            // newest-first, so reversing put the OLDEST build at the head and
+            // every auto-selected jar and upgrade check read from the wrong
+            // end of the list. Sort on the build number and the answer no
+            // longer depends on upstream ordering at all.
             return data
                 .map(b => ({ build: b.id, channel: b.channel }))
-                .reverse(); // newest-first
+                .sort((a, b) => compareBuilds(b.build, a.build));
         },
 
         async downloadJar(version, build, destPath) {
-            // Auto-select the newest stable build if none specified; versions
-            // that only ship non-stable builds (experimental) fall back to the
-            // newest build of any channel.
+            // Auto-select the newest published build if none specified.
             if (!build) {
                 const builds = await this.getBuilds(version);
                 if (!builds || builds.length === 0) {
                     throw new Error(`No builds available for ${name} ${version}.`);
                 }
-                build = pickPreferredBuild(builds).build;
+                build = pickLatestBuild(builds).build;
             }
 
             // Fetch build details to get the direct download URL

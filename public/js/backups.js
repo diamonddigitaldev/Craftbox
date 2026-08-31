@@ -58,11 +58,8 @@
     document.addEventListener('craftbox:operation', handleOperation);
 
     function resetBackupButton() {
-        var btn = document.getElementById('confirm-backup-btn');
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = needsStop ? 'Stop & Backup' : 'Create Backup';
-        }
+        if (confirmBackupBtn) confirmBackupBtn.disabled = false;
+        refreshBackupButton();
     }
     function resetRestoreButton() {
         var btn = document.getElementById('confirm-restore-btn');
@@ -77,10 +74,25 @@
     var createBackupBtn = document.getElementById('create-backup-btn');
     var backupForm = document.getElementById('backup-form');
     var backupNameInput = document.getElementById('backupName');
-    var backupStartAfterInput = document.getElementById('backupStartAfter');
     var startAfterBackupCheckbox = document.getElementById('startAfterBackup');
-    var stopFirstInput = document.getElementById('backupStopFirst');
-    var needsStop = stopFirstInput && stopFirstInput.value === 'true';
+    var confirmBackupBtn = document.getElementById('confirm-backup-btn');
+
+    // Whether a backup has to stop the server first depends on the state at the
+    // moment you press the button, not the state the page was rendered with.
+    function needsStopNow() {
+        return !isServerStopped();
+    }
+
+    // Keep the confirm button honest as the state changes underneath the page.
+    function refreshBackupButton() {
+        if (!confirmBackupBtn) return;
+        var stop = needsStopNow();
+        confirmBackupBtn.classList.toggle('btn-warning', stop);
+        confirmBackupBtn.classList.toggle('btn-success', !stop);
+        confirmBackupBtn.textContent = stop ? 'Stop & Backup' : 'Create Backup';
+    }
+    document.addEventListener('craftbox:stategates', refreshBackupButton);
+    refreshBackupButton();
 
     if (createBackupBtn) {
         createBackupBtn.addEventListener('click', function () {
@@ -97,11 +109,6 @@
         });
     }
 
-    if (startAfterBackupCheckbox && backupStartAfterInput) {
-        startAfterBackupCheckbox.addEventListener('change', function () {
-            backupStartAfterInput.value = startAfterBackupCheckbox.checked ? 'true' : 'false';
-        });
-    }
 
     if (backupForm) {
         backupForm.addEventListener('submit', async function (e) {
@@ -114,7 +121,8 @@
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating...';
             }
             createBackupModal.hide();
-            var overlayTitle = needsStop ? 'Stopping server & creating backup...' : 'Creating backup...';
+            var stopFirst = needsStopNow();
+            var overlayTitle = stopFirst ? 'Stopping server & creating backup...' : 'Creating backup...';
             showOverlay(overlayTitle, 'Compressing server files. This may take a moment.');
 
             var name = backupNameInput ? backupNameInput.value.trim() : 'Manual Backup';
@@ -122,8 +130,10 @@
                 method: 'POST',
                 body: {
                     name: name || 'Manual Backup',
-                    stopFirst: stopFirstInput ? stopFirstInput.value : 'false',
-                    startAfter: backupStartAfterInput ? backupStartAfterInput.value : 'false'
+                    stopFirst: stopFirst ? 'true' : 'false',
+                    // Only meaningful when we're stopping it ourselves.
+                    startAfter: (stopFirst && startAfterBackupCheckbox && startAfterBackupCheckbox.checked)
+                        ? 'true' : 'false'
                 }
             });
             if (!res.ok) {

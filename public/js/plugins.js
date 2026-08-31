@@ -52,15 +52,11 @@
             var newValue = sel.value;
             sel.disabled = true;
             try {
-                var res = await fetch('/api/v1/servers/' + serverId + '/plugins/environment', {
+                var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/environment', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrf
-                    },
-                    body: JSON.stringify({ filename: filename, environment: newValue })
+                    body: { filename: filename, environment: newValue }
                 });
-                var data = await res.json();
+                var data = res.data || {};
                 if (res.ok && data.success) {
                     var row = sel.closest('tr[data-filename]');
                     if (row) row.setAttribute('data-env', newValue);
@@ -100,6 +96,7 @@
 
         var uploaded = [];
         var rejected = [];
+        var replaced = 0;
         var failure = null;
 
         try {
@@ -110,15 +107,15 @@
                 for (var i = 0; i < jarFiles.length; i++) {
                     formData.append('files', jarFiles[i]);
                 }
-                var res = await fetch('/api/v1/servers/' + serverId + '/plugins/upload', {
+                var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/upload', {
                     method: 'POST',
-                    headers: { 'X-CSRF-Token': csrf },
                     body: formData
                 });
-                var data = await res.json();
+                var data = res.data || {};
                 if (res.ok && data.success) {
                     uploaded = data.uploaded || [];
                     rejected = rejected.concat(data.rejected || []);
+                    replaced += data.replaced || 0;
                 } else {
                     failure = (data && data.error) || 'Upload failed.';
                 }
@@ -141,6 +138,7 @@
                     if (result.ok && result.data && result.data.success) {
                         uploaded = uploaded.concat(result.data.uploaded || []);
                         rejected = rejected.concat(result.data.rejected || []);
+                        replaced += result.data.replaced || 0;
                     } else {
                         failure = (result.data && result.data.error) || 'Upload failed.';
                         break;
@@ -154,6 +152,7 @@
         var uploadedCount = uploaded.length;
         var rejectedCount = rejected.length;
         var noun = uploadedCount === 1 ? contentSingular : contentLabel;
+        var replacedNote = replaced > 0 ? ', ' + replaced + ' replaced' : '';
 
         if (failure && uploadedCount > 0) {
             // Some files landed before the failure — reload to show them.
@@ -175,33 +174,44 @@
             hideOverlay();
         } else if (rejectedCount > 0) {
             // Partial success — reload to show what landed, with a warning toast.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded, ' + rejectedCount + ' rejected.', 'warning');
+            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote
+                + ', ' + rejectedCount + ' rejected.', 'warning');
             window.location.reload();
         } else {
             // Clean success path.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded.', 'success');
+            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote + '.', 'success');
             window.location.reload();
         }
+    }
+
+    // Upload needs both a stopped server AND a file selection, so it can't use
+    // data-enable-when (which knows only about state). Re-derive it here and on
+    // every state change instead.
+    function refreshUploadBtn() {
+        if (!uploadBtn) return;
+        var stopped = isServerStopped();
+        uploadBtn.disabled = !stopped || !fileInput || fileInput.files.length === 0;
+        uploadBtn.title = stopped ? '' : 'Stop the server to upload';
     }
 
     if (fileInput && uploadBtn) {
         guardFileInput(fileInput, ['.jar'], 'Only .jar files can be uploaded.');
 
-        fileInput.addEventListener('change', function () {
-            uploadBtn.disabled = fileInput.files.length === 0;
-        });
+        fileInput.addEventListener('change', refreshUploadBtn);
 
         uploadBtn.addEventListener('click', function () {
-            if (fileInput.files.length === 0) return;
+            if (!isServerStopped() || fileInput.files.length === 0) return;
             uploadFiles(fileInput.files);
         });
     }
 
+    document.addEventListener('craftbox:stategates', refreshUploadBtn);
+    refreshUploadBtn();
+
     // ── Drag & Drop ──
 
-    // Always prevent default drop behavior so Chrome doesn't open files in a new tab
-    document.addEventListener('dragover', function (e) { e.preventDefault(); });
-    document.addEventListener('drop', function (e) { e.preventDefault(); });
+    // Cancelling the browser's own handling of a dropped file is app.js's job
+    // now (see "Stray file drops"), for every page rather than just this one.
 
     var dropOverlay = document.getElementById('drop-overlay');
     if (dropOverlay) {
@@ -209,7 +219,9 @@
 
         document.addEventListener('dragenter', function (e) {
             e.preventDefault();
-            if (isOverlayVisible()) return;
+            // Dropping only uploads while the server is stopped, so don't invite
+            // it otherwise. Checked live rather than at render time.
+            if (isOverlayVisible() || !isServerStopped()) return;
             dragCounter++;
             if (dragCounter === 1) {
                 dropOverlay.classList.remove('d-none');
@@ -233,9 +245,21 @@
             dropOverlay.classList.add('d-none');
             dropOverlay.classList.remove('d-flex');
 
-            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-                uploadFiles(e.dataTransfer.files);
+            if (!isServerStopped()) {
+                showToast('Stop the server before uploading ' + contentLabel + '.', 'danger');
+                return;
             }
+            // Synchronously, before the drop event's item list is emptied.
+            var dropped = readDroppedItems(e.dataTransfer);
+            if (dropped.files.length === 0 && dropped.folders.length > 0) {
+                showToast(folderDropMessage(dropped.folders,
+                    'Drag the .jar files themselves in instead.'), 'danger');
+                return;
+            }
+            // A folder dropped alongside jars needs no message of its own: it is
+            // ignored exactly as any other non-jar in the drop already is, and
+            // uploadFiles reports the batch it kept.
+            if (dropped.files.length > 0) uploadFiles(dropped.files);
         });
     }
 
@@ -265,16 +289,12 @@
                 confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
 
                 try {
-                    var res = await fetch('/api/v1/servers/' + serverId + '/plugins/delete', {
+                    var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/delete', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': csrf
-                        },
-                        body: JSON.stringify({ filename: pendingDeleteFilename })
+                        body: { filename: pendingDeleteFilename }
                     });
 
-                    var data = await res.json();
+                    var data = res.data || {};
                     if (res.ok && data.success) {
                         bsDeleteModal.hide();
                         flashToast(contentSingularCap + ' deleted.', 'success');
@@ -313,16 +333,12 @@
                 showOverlay('Deleting all ' + uploadLabel + '...', 'Please wait while all files are removed.');
 
                 try {
-                    var res = await fetch('/api/v1/servers/' + serverId + '/plugins/delete-all', {
+                    var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/delete-all', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': csrf
-                        },
-                        body: JSON.stringify({})
+                        body: {}
                     });
 
-                    var data = await res.json();
+                    var data = res.data || {};
                     if (res.ok && data.success) {
                         flashToast('All ' + contentLabel + ' deleted.', 'success');
                         window.location.reload();

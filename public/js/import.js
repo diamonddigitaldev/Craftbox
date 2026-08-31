@@ -21,8 +21,8 @@
 
     function resetModal() {
         uploading = false;
+        setControlsLocked(modalEl, false);
         fileInput.value = '';
-        fileInput.disabled = false;
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = confirmBtnHtml;
         progressWrap.classList.add('d-none');
@@ -48,15 +48,16 @@
         uploading = true;
         currentUpload = new AbortController();
 
-        confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Importing...';
-        fileInput.disabled = true;
+        // Freeze the modal for the duration of the transfer — Cancel and the
+        // header X stay live so the upload can still be aborted.
+        setControlsLocked(modalEl, true);
         progressWrap.classList.remove('d-none');
 
         function fail(message) {
             showToast(message || 'Import failed.', 'danger');
             uploading = false;
-            fileInput.disabled = false;
+            setControlsLocked(modalEl, false);
             confirmBtn.innerHTML = confirmBtnHtml;
             confirmBtn.disabled = !fileInput.files.length;
             progressWrap.classList.add('d-none');
@@ -111,9 +112,8 @@
 
     // ── Drag & Drop (mirrors the plugins page JAR drop) ──
 
-    // Always prevent default drop behavior so Chrome doesn't open files in a new tab
-    document.addEventListener('dragover', function (e) { e.preventDefault(); });
-    document.addEventListener('drop', function (e) { e.preventDefault(); });
+    // Cancelling the browser's own handling of a dropped file is app.js's job
+    // now (see "Stray file drops"), for every page rather than just this one.
 
     // Load a dropped file into the picker so the rest of the modal — the Import
     // button's enabled state, the filename shown next to "Choose File" — behaves
@@ -149,14 +149,17 @@
             e.stopPropagation();
             if (uploading) return;
 
-            var files = e.dataTransfer ? e.dataTransfer.files : null;
-            if (!files || files.length === 0) return;
+            // Synchronously, before the drop event's item list is emptied.
+            var dropped = readDroppedItems(e.dataTransfer);
+            if (dropped.files.length === 0 && dropped.folders.length === 0) return;
 
-            var file = Array.prototype.find.call(files, function (f) {
+            var file = dropped.files.find(function (f) {
                 return f.name.toLowerCase().endsWith('.cbx');
             });
             if (!file) {
-                showToast('Drop a .cbx transfer archive to import.', 'danger');
+                showToast(dropped.folders.length > 0
+                    ? folderDropMessage(dropped.folders, 'Drop the .cbx transfer archive itself.')
+                    : 'Drop a .cbx transfer archive to import.', 'danger');
                 return;
             }
             setPickedFile(file);
@@ -201,10 +204,12 @@
         document.addEventListener('drop', function (e) {
             if (isOverlayVisible() || uploading || mrpackUploading || isModalOpen()) return;
             hideDropOverlay();
-            if (!e.dataTransfer || e.dataTransfer.files.length === 0) return;
+            // Synchronously, before the drop event's item list is emptied.
+            var dropped = readDroppedItems(e.dataTransfer);
+            if (dropped.files.length === 0 && dropped.folders.length === 0) return;
 
             // .mrpack -> create a new server from the modpack; .cbx -> import
-            var mrpackFile = Array.prototype.find.call(e.dataTransfer.files, function (f) {
+            var mrpackFile = dropped.files.find(function (f) {
                 return f.name.toLowerCase().endsWith('.mrpack');
             });
             if (mrpackFile) {
@@ -212,11 +217,15 @@
                 return;
             }
 
-            var archiveFile = Array.prototype.find.call(e.dataTransfer.files, function (f) {
+            var archiveFile = dropped.files.find(function (f) {
                 return f.name.toLowerCase().endsWith('.cbx');
             });
             if (!archiveFile) {
-                showToast('Drop a .cbx transfer archive to import, or a .mrpack modpack to create a server.', 'danger');
+                showToast(dropped.folders.length > 0
+                    ? folderDropMessage(dropped.folders,
+                        'Drop the .cbx transfer archive or .mrpack modpack itself.')
+                    : 'Drop a .cbx transfer archive to import, or a .mrpack modpack to create a server.',
+                'danger');
                 return;
             }
 
@@ -250,6 +259,7 @@
         if (!mrpackModalEl || !mrpackForm) return;
         mrpackDroppedFile = file;
         mrpackUploading = false;
+        setControlsLocked(mrpackModalEl, false);
         mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
         mrpackProgressWrap.classList.add('d-none');
         mrpackProgressBar.style.width = '0%';
@@ -278,9 +288,11 @@
 
             mrpackUploading = true;
             mrpackUpload = new AbortController();
-            mrpackConfirmBtn.disabled = true;
             mrpackConfirmBtn.innerHTML =
                 '<span class="spinner-border spinner-border-sm" role="status"></span> Creating...';
+            // The field values were snapshotted into `fields` below, so leaving
+            // the inputs editable during the upload would silently discard edits.
+            setControlsLocked(mrpackModalEl, true);
             mrpackProgressWrap.classList.remove('d-none');
 
             uploadFile('/api/v1/servers/from-mrpack', mrpackDroppedFile, {
@@ -300,12 +312,14 @@
                 mrpackUploading = false;
                 if (res.aborted) {
                     showToast('Upload cancelled.', 'info');
+                    setControlsLocked(mrpackModalEl, false);
                     mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
                     mrpackForm.dispatchEvent(new Event('input'));
                     return;
                 }
                 if (res.status !== 201) {
                     showToast((res.data && (res.data.message || res.data.error)) || 'Failed to create server from modpack.', 'danger');
+                    setControlsLocked(mrpackModalEl, false);
                     mrpackConfirmBtn.innerHTML = mrpackConfirmHtml;
                     mrpackProgressWrap.classList.add('d-none');
                     mrpackProgressBar.style.width = '0%';

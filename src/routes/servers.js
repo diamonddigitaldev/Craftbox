@@ -1,12 +1,13 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const contentDisposition = require('content-disposition');
 const router = express.Router();
+const { DownloadReporter, sendFileDownload, sendArchiveDownload } = require('../utils/download');
 const ensureAuth = require('../middleware/ensureAuth');
-const { serversDb, eventsDb, SERVERS_DIR } = require('../db');
-const { listBackups, resolveBackupPath, tryAcquireBackupLock, releaseBackupLock } = require('../mc/BackupManager');
-const { getModEnvMap } = require('../utils/modEnvironment');
+const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
+const { isEditableFile, listDirectory, MAX_TEXT_BYTES } = require('../utils/fileBrowser');
+const { formatSize, getDirectorySize } = require('../utils/resourceStats');
+const { serversDb, SERVERS_DIR } = require('../db');
 const { parseServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { log } = require('../utils/log');
@@ -80,19 +81,11 @@ async function getServerWithState(req) {
     return server;
 }
 
-// ── Helper: format file size ──
-function formatSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + units[i];
-}
-
 // ═══════════════════════════════════════════
 // Edit Server Settings (view only — mutations in /api/v1)
 // ═══════════════════════════════════════════
 
-router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
+router.get('/servers/:id/edit', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {
@@ -122,7 +115,7 @@ router.get('/servers/:id/edit', ensureAuth, async (req, res) => {
 // Server Properties Editor (view only — mutations in /api/v1)
 // ═══════════════════════════════════════════
 
-router.get('/servers/:id/properties', ensureAuth, async (req, res) => {
+router.get('/servers/:id/properties', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {
@@ -151,17 +144,6 @@ router.get('/servers/:id/properties', ensureAuth, async (req, res) => {
 // File Browser & Editor (views + binary downloads — mutations in /api/v1)
 // ═══════════════════════════════════════════
 
-const TEXT_EXTENSIONS = new Set([
-    '.txt', '.log', '.properties', '.json', '.yml', '.yaml', '.xml',
-    '.cfg', '.conf', '.ini', '.toml', '.csv', '.md', '.sh', '.bat',
-    '.cmd', '.ps1', '.js', '.ts', '.py', '.java', '.html', '.css',
-    '.mcmeta', '.lang', '.sk', '.nbt'
-]);
-
-function isTextFile(filename) {
-    return TEXT_EXTENSIONS.has(path.extname(filename).toLowerCase());
-}
-
 async function handleFiles(req, res, subpath) {
     const server = await getServerWithState(req);
     if (!server) {
@@ -185,24 +167,7 @@ async function handleFiles(req, res, subpath) {
         });
     }
 
-    const entries = fs.readdirSync(targetPath, { withFileTypes: true });
-    const files = entries.map(entry => {
-        const entryPath = path.join(targetPath, entry.name);
-        let stat;
-        try { stat = fs.statSync(entryPath); } catch { return null; }
-        return {
-            name: entry.name,
-            isDirectory: entry.isDirectory(),
-            size: stat.size,
-            sizeFormatted: formatSize(stat.size),
-            modified: stat.mtime,
-            modifiedISO: stat.mtime.toISOString(),
-            editable: !entry.isDirectory() && isTextFile(entry.name)
-        };
-    }).filter(Boolean).sort((a, b) => {
-        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-        return a.name.localeCompare(b.name);
-    });
+    const files = listDirectory(targetPath);
 
     const breadcrumbs = subpath ? subpath.split('/').filter(Boolean) : [];
     const parentPath = breadcrumbs.length > 1 ? breadcrumbs.slice(0, -1).join('/') : '';
@@ -222,216 +187,101 @@ async function handleFiles(req, res, subpath) {
     delete req.session.flash;
 }
 
-router.get('/servers/:id/files', ensureAuth, (req, res) => handleFiles(req, res, ''));
-router.get('/servers/:id/files/*subpath', ensureAuth, (req, res) => {
+router.get('/servers/:id/files', ensureAuth, blockWhileProvisioning, (req, res) => handleFiles(req, res, ''));
+router.get('/servers/:id/files/*subpath', ensureAuth, blockWhileProvisioning, (req, res) => {
     const sub = Array.isArray(req.params.subpath) ? req.params.subpath.join('/') : req.params.subpath;
     handleFiles(req, res, sub);
 });
 
 // Individual file download (binary — stays here, browser-driven)
-router.get('/servers/:id/download', ensureAuth, async (req, res) => {
+router.get('/servers/:id/download', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Not found' });
 
     const serverManager = req.app.get('serverManager');
+    const filePath = req.query.path;
+    const reporter = new DownloadReporter({
+        req,
+        serverManager,
+        serverId: server.id,
+        label: filePath ? path.basename(String(filePath)) : 'File'
+    });
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
+
     const proc = serverManager?.getProcess(server.id);
     if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-        req.session.flash = { error: 'Stop the server before downloading files.' };
-        return res.redirect(`/servers/${server.id}/files`);
+        // The panel starts this in a hidden iframe, so a redirect-and-flash
+        // never surfaces; the reporter is what the user actually sees.
+        return reject(409, 'Stop the server before downloading files.');
     }
 
-    const filePath = req.query.path;
-    if (!filePath) return res.status(400).json({ error: 'No path specified' });
+    if (!filePath) return reject(400, 'No path specified');
 
     const serverDir = path.resolve(SERVERS_DIR, server.id);
     const targetPath = path.resolve(serverDir, filePath);
 
-    if (!isPathInside(serverDir, targetPath)) return res.status(403).json({ error: 'Access denied' });
+    if (!isPathInside(serverDir, targetPath)) return reject(403, 'Access denied');
     if (!fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
-        return res.status(404).json({ error: 'File not found' });
+        return reject(404, 'File not found');
     }
 
-    const fileName = path.basename(targetPath);
-    res.setHeader('Content-Disposition', contentDisposition(fileName));
-    res.setHeader('Content-Type', 'application/octet-stream');
-
-    const stream = fs.createReadStream(targetPath);
-    stream.on('error', (err) => {
-        if (!res.headersSent) {
+    sendFileDownload(res, targetPath, {
+        filename: path.basename(targetPath),
+        reporter,
+        onError: (err) => {
             if (err.code === 'EBUSY') {
-                res.status(409).json({ error: 'File is currently in use by the server. Try again later or stop the server first.' });
+                reject(409, 'File is currently in use by the server. Try again later or stop the server first.');
             } else {
-                res.status(500).json({ error: 'Failed to download file.' });
+                reject(500, 'Failed to download file.');
             }
         }
     });
-    stream.pipe(res);
 });
 
 // Full server directory download as .zip (binary — stays here)
-router.get('/servers/:id/download-zip', ensureAuth, async (req, res) => {
+router.get('/servers/:id/download-zip', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Not found' });
 
     const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(server.id);
-    if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-        req.session.flash = { error: 'Stop the server before downloading.' };
-        return res.redirect(`/servers/${server.id}/files`);
-    }
-
-    const serverDir = path.join(SERVERS_DIR, server.id);
-    if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Directory not found' });
-
-    const archiver = require('archiver');
-    const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', contentDisposition(`${safeName}.zip`));
-
-    const archive = archiver('zip', { zlib: { level: 5 } });
-    archive.on('error', (err) => {
-        log('error', `Archive error for ${server.name}: ${err.message}`);
-        if (!res.headersSent) res.status(500).json({ error: 'Archive failed' });
+    const reporter = new DownloadReporter({
+        req, serverManager, serverId: server.id, label: 'Server files'
     });
-    archive.pipe(res);
-    archive.directory(serverDir, false);
-    archive.finalize();
-});
+    const reject = (status, error) => {
+        reporter.failed(error);
+        res.status(status).json({ error });
+    };
 
-// Server transfer export — server files + Craftbox settings always, backups and
-// event history when requested. Importable on another Craftbox instance via
-// POST /api/v1/servers/import. (binary download — stays here)
-router.get('/servers/:id/export', ensureAuth, async (req, res) => {
-    const server = await serversDb.get(`server_${req.params.id}`);
-    if (!server) return res.status(404).json({ error: 'Not found' });
-
-    const serverManager = req.app.get('serverManager');
     const proc = serverManager?.getProcess(server.id);
     if (proc && !['stopped', 'crashed'].includes(proc.state)) {
-        req.session.flash = { error: 'Stop the server before exporting.' };
-        return res.redirect(`/servers/${server.id}/edit`);
+        return reject(409, 'Stop the server before downloading.');
     }
 
     const serverDir = path.join(SERVERS_DIR, server.id);
-    if (!fs.existsSync(serverDir)) return res.status(404).json({ error: 'Directory not found' });
+    if (!fs.existsSync(serverDir)) return reject(404, 'Directory not found');
 
-    const includeBackups = req.query.backups === 'true';
-    const includeEvents = req.query.events === 'true';
-    const startAfter = req.query.start === 'true';
-    const initiatedBy = req.user?.username;
-
-    // Hold the backup lock while streaming so a scheduled backup can't write a
-    // partial zip into the archive mid-export.
-    let lockHeld = false;
-    if (includeBackups) {
-        if (!tryAcquireBackupLock(server.id)) {
-            req.session.flash = { error: 'A backup is currently in progress. Try again when it completes.' };
-            return res.redirect(`/servers/${server.id}/edit`);
-        }
-        lockHeld = true;
-    }
-    const releaseLock = () => {
-        if (lockHeld) {
-            releaseBackupLock(server.id);
-            lockHeld = false;
-        }
-    };
-
-    // Optional restart once the archive has fully streamed — by then every
-    // server file has been read, so starting the server can no longer corrupt
-    // the export.
-    let startRequested = false;
-    const startServerAfterExport = () => {
-        if (!startAfter || startRequested || !serverManager) return;
-        startRequested = true;
-        serverManager.startServer(server.id, { initiatedBy }).catch((err) => {
-            log('error', `Failed to start server after export: ${err.message}`);
-        });
-    };
-
+    const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     try {
-        const backups = includeBackups ? await listBackups(server.id) : [];
-        let events = [];
-        if (includeEvents) {
-            const allEvents = await eventsDb.all();
-            events = allEvents
-                .map(row => row.value)
-                .filter(e => e.serverId === server.id)
-                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        }
-        const modEnv = await getModEnvMap(server.id);
-
-        const manifest = {
-            format: 'craftbox-server-export',
-            formatVersion: 1,
-            exportedAt: new Date().toISOString(),
-            craftboxVersion: require('../../package.json').version,
-            server,
-            includes: { backups: includeBackups, events: includeEvents },
-            backupCount: backups.length,
-            eventCount: events.length
-        };
-
-        const archiver = require('archiver');
-        const safeName = server.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-        // A .cbx transfer archive is a zip container with a Craftbox manifest at
-        // its root. The dedicated media type stops browsers from "correcting"
-        // the extension back to .zip on download.
-        res.setHeader('Content-Type', 'application/x-craftbox-export+zip');
-        res.setHeader('Content-Disposition', contentDisposition(`${safeName}.cbx`));
-
-        const archive = archiver('zip', { zlib: { level: 5 } });
-        archive.on('error', (err) => {
-            log('error', `Export archive error for ${server.name}: ${err.message}`);
-            releaseLock();
-            if (!res.headersSent) res.status(500).json({ error: 'Archive failed' });
+        await sendArchiveDownload(req, res, {
+            filename: `${safeName}.zip`,
+            estimatedBytes: getDirectorySize(serverDir),
+            reporter,
+            describe: `Files download of "${server.name}" (${server.id})`,
+            build: (archive) => archive.directory(serverDir, false)
         });
-        res.on('close', releaseLock);
-        archive.on('end', releaseLock);
-        res.on('finish', startServerAfterExport);
-        // 'finish' = the full archive reached the client; 'close' without it
-        // means the download was abandoned mid-stream.
-        res.on('finish', () => {
-            log('info', `Export of "${server.name}" (${server.id}) completed — ${formatSize(archive.pointer())} sent`);
-        });
-        res.on('close', () => {
-            if (!res.writableFinished) {
-                log('warn', `Export of "${server.name}" (${server.id}) aborted by client after ${formatSize(archive.pointer())}`);
-            }
-        });
-
-        archive.pipe(res);
-        archive.append(JSON.stringify(manifest, null, 2), { name: 'craftbox-manifest.json' });
-        archive.append(JSON.stringify(modEnv, null, 2), { name: 'modenv.json' });
-        archive.directory(serverDir, 'server');
-
-        if (includeBackups) {
-            archive.append(JSON.stringify(backups, null, 2), { name: 'backups.json' });
-            for (const b of backups) {
-                try {
-                    const zipPath = resolveBackupPath(server.id, b.filename);
-                    if (fs.existsSync(zipPath)) {
-                        archive.file(zipPath, { name: `backups/${b.filename}` });
-                    }
-                } catch { /* skip backups with invalid filenames */ }
-            }
-        }
-        if (includeEvents) {
-            archive.append(JSON.stringify(events, null, 2), { name: 'events.json' });
-        }
-
-        log('info', `Exporting server "${server.name}" (${server.id}) — backups: ${includeBackups} (${backups.length}), events: ${includeEvents} (${events.length}), startAfter: ${startAfter}`);
-        archive.finalize();
     } catch (err) {
-        releaseLock();
-        log('error', `Export failed for ${server.name}: ${err.message}`);
-        if (!res.headersSent) res.status(500).json({ error: 'Export failed' });
+        log('error', `Archive error for ${server.name}: ${err.message}`);
+        reporter.failed(err.message);
+        if (!res.headersSent) {
+            res.status(err.status || 500).json({ error: err.status === 507 ? err.message : 'Archive failed' });
+        }
     }
 });
 
-router.get('/servers/:id/edit-file', ensureAuth, async (req, res) => {
+router.get('/servers/:id/edit-file', ensureAuth, blockWhileProvisioning, async (req, res) => {
     const server = await getServerWithState(req);
     if (!server) {
         return res.status(404).render('errors/404', {
@@ -457,9 +307,22 @@ router.get('/servers/:id/edit-file', ensureAuth, async (req, res) => {
         });
     }
 
-    if (!isTextFile(path.basename(targetPath))) {
+    if (!isEditableFile(targetPath)) {
         return res.status(400).render('errors/404', {
-            title: 'Not Editable', navbar: true, user: req.user, message: 'This file type cannot be edited.'
+            title: 'Not Editable', navbar: true, user: req.user, message: 'This file is not text and cannot be edited.'
+        });
+    }
+
+    // The editor posts back the whole textarea, so it must never open a partial
+    // file — saving one would truncate the rest away. Oversized files are
+    // refused here and read in windows through the API instead.
+    const size = fs.statSync(targetPath).size;
+    if (size > MAX_TEXT_BYTES) {
+        return res.status(413).render('errors/404', {
+            title: 'Too Large',
+            navbar: true,
+            user: req.user,
+            message: `This file is ${formatSize(size)}, over the ${formatSize(MAX_TEXT_BYTES)} editor limit. Download it to read the whole thing.`
         });
     }
 

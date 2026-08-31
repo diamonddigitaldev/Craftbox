@@ -1,6 +1,6 @@
 const ServerProcess = require('./ServerProcess');
 const { serversDb } = require('../db');
-const { canPerformAction } = require('./stateMachine');
+const { canPerformAction, canTransition } = require('./stateMachine');
 const { syncServerConfig } = require('./syncServerConfig');
 const { log } = require('../utils/log');
 
@@ -14,6 +14,23 @@ class ServerManager {
      */
     getProcess(serverId) {
         return this.processes.get(serverId) || null;
+    }
+
+    /**
+     * The authoritative state for a server record: the live process state when
+     * one exists, otherwise the persisted one.
+     *
+     * Guards written as `proc && proc.state` silently pass when there is no
+     * ServerProcess — and processes are created lazily, only on start or on a
+     * WebSocket subscribe, so a server being provisioned in the background
+     * usually has none. That is exactly the case those guards most need to
+     * catch, so read the state through here instead.
+     * @param {{ id: string, state: string }} server
+     * @returns {string}
+     */
+    getState(server) {
+        const proc = this.getProcess(server.id);
+        return proc ? proc.state : server.state;
     }
 
     /**
@@ -39,6 +56,29 @@ class ServerManager {
      * state so that restored or edited config values (memory, javaArgs,
      * version, serverType, etc.) take effect on the next start.
      */
+    /**
+     * True while a server is between the exit of its old process and the start
+     * of its replacement during a restart.
+     *
+     * A restart routes through `stopped`, so for roughly two seconds every
+     * state check says the server is stopped and every power action looks
+     * legal. Acting in that window rebuilds the process out from under the
+     * pending respawn, which then starts a second JVM on the same port and in
+     * the same directory. Treat it as a state conflict instead.
+     * @param {string} serverId
+     */
+    isRestarting(serverId) {
+        return this.getProcess(serverId)?._restarting === true;
+    }
+
+    /** Throw a 409-tagged error if a restart is mid-flight. */
+    _assertNotRestarting(serverId) {
+        if (!this.isRestarting(serverId)) return;
+        const err = new Error('Server is restarting. Wait for it to come back up.');
+        err.status = 409;
+        throw err;
+    }
+
     async _ensureProcess(serverId) {
         let proc = this.processes.get(serverId);
 
@@ -78,6 +118,9 @@ class ServerManager {
      * @param {{ initiatedBy?: string }} [opts]
      */
     async startServer(serverId, opts = {}) {
+        // Before _ensureProcess: a restarting server reads as `stopped`, so the
+        // rebuild branch would fire and orphan the pending respawn timer.
+        this._assertNotRestarting(serverId);
         const proc = await this._ensureProcess(serverId);
 
         if (!canPerformAction(proc.state, 'start')) {
@@ -94,6 +137,7 @@ class ServerManager {
      * @param {{ initiatedBy?: string }} [opts]
      */
     async stopServer(serverId, opts = {}) {
+        this._assertNotRestarting(serverId);
         const proc = this.getProcess(serverId);
         if (!proc) throw new Error('Server is not running.');
 
@@ -111,6 +155,7 @@ class ServerManager {
      * @param {{ initiatedBy?: string }} [opts]
      */
     async restartServer(serverId, opts = {}) {
+        this._assertNotRestarting(serverId);
         const proc = this.getProcess(serverId);
         if (!proc) throw new Error('Server is not running.');
 
@@ -128,6 +173,7 @@ class ServerManager {
      * @param {{ initiatedBy?: string }} [opts]
      */
     async killServer(serverId, opts = {}) {
+        this._assertNotRestarting(serverId);
         const proc = this.getProcess(serverId);
         if (!proc) throw new Error('Server is not running.');
 
@@ -165,6 +211,33 @@ class ServerManager {
         const server = await serversDb.get(`server_${serverId}`);
         if (!server) throw new Error('Server not found.');
 
+        // A restarting server reads as `stopped` for a couple of seconds, which
+        // would otherwise let a backup or jar upgrade claim it — and then be
+        // overwritten when the respawn lands. Crash reporting still gets through,
+        // since a restart that dies on the way back up must be recordable.
+        if (this.isRestarting(serverId) && newState !== STATES.CRASHED) {
+            const err = new Error('Server is restarting. Wait for it to come back up.');
+            err.status = 409;
+            throw err;
+        }
+
+        // Honour the transition table. This used to write any allowed target
+        // state unconditionally, which meant every backup/restore/jar-upgrade
+        // flow bypassed the state machine entirely — a provisioning server
+        // could be moved straight to backing_up and then reported as stopped
+        // while its directory was still being assembled.
+        // Re-asserting the current state stays a no-op: several failure paths
+        // set stopped defensively without knowing whether it is already set.
+        const current = this.getState(server);
+        if (current !== newState && !canTransition(current, newState)) {
+            // Tagged 409 so routes report a state conflict rather than a 500 —
+            // this fires when two operations race, which is the caller's
+            // problem to retry, not a server fault.
+            const err = new Error(`Cannot move server from ${current} to ${newState}.`);
+            err.status = 409;
+            throw err;
+        }
+
         server.state = newState;
         if (newState === STATES.CRASHED && opts.crashReason) {
             server.crashReason = opts.crashReason;
@@ -191,8 +264,8 @@ class ServerManager {
      * Only authenticated subscribers receive these (the broadcast filter in
      * ServerProcess generates no publicMsg for unknown types).
      * @param {string} serverId
-     * @param {'backup'|'restore'|'jar-upgrade'|'settings-save'|'create'|'duplicate'|'import'|'modpack-install'} operation
-     * @param {'complete'|'failed'|'progress'} status
+     * @param {'backup'|'restore'|'jar-upgrade'|'settings-save'|'create'|'duplicate'|'import'|'modpack-install'|'download'} operation
+     * @param {'complete'|'failed'|'progress'|'cancelled'} status
      * @param {object|string} payloadOrError - error message on failed, payload object otherwise
      */
     broadcastOperation(serverId, operation, status, payloadOrError) {

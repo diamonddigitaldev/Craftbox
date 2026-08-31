@@ -2,37 +2,37 @@
 
 <%- include('../partials/serverNav', { server, active: 'plugins' }) %>
 
-<% const _serverStopped = ['stopped', 'crashed'].includes(server.state); %>
+<%
+// Controls here need the server stopped. The markup is rendered once and gated
+// declaratively (data-enable-when / data-hide-when, see applyStateGates in
+// app.js) so it tracks live state instead of freezing at render time.
+const _serverStopped = ['stopped', 'crashed'].includes(server.state);
+const _gate = 'stopped crashed';
+%>
 
 <!-- CSRF token for JS fetch calls -->
 <input type="hidden" id="csrf-token" value="<%= csrfToken %>">
 
-<% if (!_serverStopped) { %>
-<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3<%= _serverStopped ? ' d-none' : '' %>" data-hide-when="<%= _gate %>">
     <span class="material-icons-outlined">warning</span>
     <div>The server must be stopped before installing or deleting <%= contentType.label.toLowerCase() %>.</div>
 </div>
-<% } %>
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <h6 class="text-body-secondary mb-0"><%= files.length %> <%= contentType.label.toLowerCase() %> installed</h6>
     <% if (files.length > 0) { %>
     <div class="d-flex gap-2">
-        <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1">
+        <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1"
+           data-download="Mods and plugins">
             <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
             Download All
         </a>
-        <% if (_serverStopped) { %>
-        <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" id="delete-all-btn">
+        <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" id="delete-all-btn"
+            data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to delete" data-enabled-title=""
+            <%- _serverStopped ? '' : 'disabled title="Stop the server to delete"' %>>
             <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span>
             Delete All
         </button>
-        <% } else { %>
-        <button class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" disabled title="Stop the server to delete">
-            <span class="material-icons-outlined" style="font-size: 1rem;">delete_sweep</span>
-            Delete All
-        </button>
-        <% } %>
     </div>
     <% } %>
 </div>
@@ -59,32 +59,24 @@
 
 <!-- Upload -->
 <div class="d-flex gap-2 mb-3">
-    <% if (_serverStopped) { %>
     <input type="file" class="form-control form-control-sm" id="file-input"
-        accept=".jar" multiple style="max-width: 400px;">
+        accept=".jar" multiple style="max-width: 400px;"
+        data-enable-when="<%= _gate %>" <%= _serverStopped ? '' : 'disabled' %>>
+    <%# Upload stays disabled until files are picked, so plugins.js owns its
+        enabled state and consults isServerStopped() — no data-enable-when here. %>
     <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
-        id="upload-btn" data-label="<%= contentType.label.toLowerCase() %>" disabled>
+        id="upload-btn" data-label="<%= contentType.label.toLowerCase() %>" disabled
+        <%- _serverStopped ? '' : 'title="Stop the server to upload"' %>>
         <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
         Upload
     </button>
     <button type="button" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
-        id="modrinth-browse-btn">
+        id="modrinth-browse-btn"
+        data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to install" data-enabled-title=""
+        <%- _serverStopped ? '' : 'disabled title="Stop the server to install"' %>>
         <span class="material-icons-outlined" style="font-size: 1rem;">travel_explore</span>
         Browse Modrinth
     </button>
-    <% } else { %>
-    <input type="file" class="form-control form-control-sm" disabled style="max-width: 400px;">
-    <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
-        disabled title="Stop the server to upload">
-        <span class="material-icons-outlined" style="font-size: 1rem;">upload</span>
-        Upload
-    </button>
-    <button class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 flex-shrink-0"
-        disabled title="Stop the server to install">
-        <span class="material-icons-outlined" style="font-size: 1rem;">travel_explore</span>
-        Browse Modrinth
-    </button>
-    <% } %>
 </div>
 
 <!-- File listing -->
@@ -116,6 +108,9 @@
                     <td>
                         <select class="form-select form-select-sm env-select"
                                 data-filename="<%= file.name %>"
+                                data-enable-when="<%= _gate %>"
+                                data-enabled-title="Change environment"
+                                data-disabled-title="Stop the server to change"
                                 <%= _serverStopped ? '' : 'disabled' %>
                                 title="<%= _serverStopped ? 'Change environment' : 'Stop the server to change' %>">
                             <option value="both"   <%= file.environment === 'both'   ? 'selected' : '' %>>Client and Server</option>
@@ -128,22 +123,21 @@
                         <div class="d-inline-flex gap-1">
                             <a href="/servers/<%= server.id %>/plugins/download?file=<%= encodeURIComponent(file.name) %>"
                                class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center"
-                               style="width: 32px; height: 32px; padding: 0;" title="Download">
+                               style="width: 32px; height: 32px; padding: 0;" title="Download"
+                               data-download="<%= file.name %>">
                                 <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
                             </a>
-                            <% if (_serverStopped) { %>
                             <button type="button"
                                 class="btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center delete-btn"
-                                style="width: 32px; height: 32px; padding: 0;" title="Delete"
-                                data-filename="<%= file.name %>">
+                                style="width: 32px; height: 32px; padding: 0;"
+                                data-filename="<%= file.name %>"
+                                data-enable-when="<%= _gate %>"
+                                data-enabled-title="Delete"
+                                data-disabled-title="Stop the server to delete"
+                                <%= _serverStopped ? '' : 'disabled' %>
+                                title="<%= _serverStopped ? 'Delete' : 'Stop the server to delete' %>">
                                 <span class="material-icons-outlined" style="font-size: 1rem;">delete</span>
                             </button>
-                            <% } else { %>
-                            <button class="btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center"
-                                style="width: 32px; height: 32px; padding: 0;" disabled title="Stop the server to delete">
-                                <span class="material-icons-outlined" style="font-size: 1rem;">delete</span>
-                            </button>
-                            <% } %>
                         </div>
                     </td>
                 </tr>
@@ -158,7 +152,7 @@
     </div>
 </div>
 
-<% if (_serverStopped) { %>
+<%# Always rendered; plugins.js only reveals it while the server is stopped. %>
 <!-- Drop zone overlay (hidden until drag) -->
 <div id="drop-overlay" class="d-none position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
     style="z-index: 1050; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: none;">
@@ -167,7 +161,6 @@
         <h4 class="text-white mt-2">Drop .jar files to upload...</h4>
     </div>
 </div>
-<% } %>
 
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
