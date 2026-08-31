@@ -32,7 +32,7 @@ const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
-const { normalizeGroupName, getGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR } = require('../../utils/serverGroups');
+const { normalizeGroupName, getGroupColor, getStoredGroupColor, setGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR, GROUP_COLOR_REGEX } = require('../../utils/serverGroups');
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
 const { pickLatestBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
 const {
@@ -1825,17 +1825,35 @@ const importServerHandler = async (req, res) => {
             jarFile: typeof source.jarFile === 'string' && source.jarFile ? source.jarFile : 'server.jar',
             group: groupResult.valid ? groupResult.value : null,
             autoStart: !!source.autoStart,
+            // The archive is a snapshot, so the advertised address comes across
+            // with everything else — a move to a host that answers on a
+            // different name is an edit away, and losing it silently was worse
+            // than carrying one that needs changing. Length-capped to the same
+            // 253 characters the settings field accepts (a full DNS name),
+            // since a manifest is untrusted input and this renders on the
+            // public status page.
+            advertisedIp: typeof source.advertisedIp === 'string' && source.advertisedIp.trim()
+                ? source.advertisedIp.trim().slice(0, 253)
+                : null,
             exitCode: null,
             crashReason: null,
             crashDetected: false,
             lastStarted: null,
             lastStopped: null,
-            advertisedIp: null,
             directory: path.join('data', 'servers', finalId)
         };
         if (importedServer.backupSchedule) delete importedServer.backupSchedule.nextBackupAt;
 
         await serversDb.set(`server_${finalId}`, importedServer);
+
+        // Color the group the archive named, but never repaint one this
+        // instance already has: a group is implicit and shared by every server
+        // in it, so an import must not restyle servers that were here first.
+        if (importedServer.group && GROUP_COLOR_REGEX.test(String(manifest.groupColor || ''))
+            && !(await getStoredGroupColor(importedServer.group))) {
+            await setGroupColor(importedServer.group, manifest.groupColor);
+        }
+
         log('info', `Importing server "${trimmedName}" (${finalId}) from "${req.file.originalname}": `
             + `${Object.keys(zipEntries).length} archive entries`
             + `${zipEntries['backups.json'] ? ', with backups' : ''}`
@@ -3013,6 +3031,12 @@ router.get('/servers/:id/export', async (req, res) => {
             exportedAt: new Date().toISOString(),
             craftboxVersion: require('../../../package.json').version,
             server,
+            // A group's color lives in its own record keyed by name, not on the
+            // server, so the archive has to carry it separately or the group
+            // arrives on the far side wearing the default. A new manifest field
+            // needs no formatVersion bump: older importers ignore keys they do
+            // not know, and only unexpected *files* are rejected on import.
+            groupColor: await getStoredGroupColor(server.group),
             includes: { backups: includeBackups, events: includeEvents },
             backupCount: backups.length,
             eventCount: events.length

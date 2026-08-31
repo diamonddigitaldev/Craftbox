@@ -249,7 +249,7 @@ Move a server — files, Craftbox settings, and optionally backups and event his
 Archive layout (`formatVersion` 1):
 
 ```
-craftbox-manifest.json   manifest + full server config (always)
+craftbox-manifest.json   manifest + full server config + group color (always)
 modenv.json              mod enable/disable environment map (always)
 server/                  full server directory (always)
 backups.json             backup metadata records (optional)
@@ -266,7 +266,8 @@ Returns `201 {"success": true, "server": {...}, "warnings": [...]}`; extraction 
 Import behavior:
 
 - The source server UUID is kept when free on the target instance, otherwise a new UUID is generated. Backup and event records always get fresh IDs.
-- All settings (including `autoStart` and the dashboard group) are preserved; runtime state is reset (`exitCode`, `crashReason`, timestamps) and `advertisedIp` is cleared (host-specific). The server stays stopped after import until started.
+- All settings are preserved, `advertisedIp` included — the archive is a snapshot of the server as it was, so an address that does not apply on the new host is an edit away rather than something to remember. Only runtime state is reset (`exitCode`, `crashReason`, timestamps); the server stays stopped after import until started.
+- The dashboard group comes across by name, and its color travels in the manifest alongside it. A group that already exists on the target instance keeps the color chosen there — an import never restyles servers that were already in it.
 - A port collision with an existing server does not block the import; a warning is returned instead.
 
 
