@@ -34,7 +34,7 @@
         "better-sqlite3": "^13.0.1",
         "bootstrap": "^5.3.8",
         "chart.js": "^4.5.1",
-        "content-disposition": "^1.0.1",
+        "content-disposition": "^3.0.0",
         "ejs": "^6.0.1",
         "express": "^5.2.1",
         "express-rate-limit": "^8.6.0",
