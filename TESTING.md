@@ -43,35 +43,35 @@ action; if `window.x` is still `1` afterwards, it did not.
 
 On the Paper server, **Files** tab, server stopped.
 
-- [ ] Click **New Folder**, name it `Test Folder`, Create. The modal closes,
+- [x] Click **New Folder**, name it `Test Folder`, Create. The modal closes,
       a success toast appears, and the folder row appears in the table
       without the page reloading. Folders are still listed first.
-- [ ] Click **New Text File**, accept `notes.txt` (the caret sits before
+- [x] Click **New Text File**, accept `notes.txt` (the caret sits before
       `.txt`), Create. Same: toast, new row, no reload. The new row has an
       Edit button (it is a text file) and a Download button.
-- [ ] Pick two files with **Choose files** and click **Upload**. The overlay
+- [x] Pick two files with **Choose files** and click **Upload**. The overlay
       shows, then clears; the rows appear; the toast reads "2 files
       uploaded."; the file picker is emptied and Upload is disabled again.
-- [ ] Upload one of the same files again → toast reads "1 file uploaded, 1
+- [x] Upload one of the same files again → toast reads "1 file uploaded, 1
       replaced." and the row's size/modified update rather than duplicating.
-- [ ] Drag-drop a file onto the page → same behaviour as the picker.
-- [ ] Click the **Rename** button on `notes.txt`, change it to `renamed.txt`,
+- [x] Drag-drop a file onto the page → same behaviour as the picker.
+- [x] Click the **Rename** button on `notes.txt`, change it to `renamed.txt`,
       Enter. The modal closes, the row's name, Edit link and Download link all
       point at the new name, no reload.
-- [ ] Rename it to the same name → the modal just closes, nothing changes.
-- [ ] Click **Delete** on the folder. The modal says "Delete Folder" and
+- [x] Rename it to the same name → the modal just closes, nothing changes.
+- [x] Click **Delete** on the folder. The modal says "Delete Folder" and
       warns about contents. Confirm → row gone, toast "Folder deleted.", no
       reload.
-- [ ] Delete every file in a sub-folder until it is empty → the "This
+- [x] Delete every file in a sub-folder until it is empty → the "This
       directory is empty." row appears in place and the search bar hides.
-- [ ] Create a file in that empty folder → the empty row hides and the search
+- [x] Create a file in that empty folder → the empty row hides and the search
       bar comes back.
-- [ ] **Start the server.** The Rename/Delete/Download buttons on every row
+- [x] **Start the server.** The Rename/Delete/Download buttons on every row
       disable with a tooltip, including rows that were added by the steps
       above (not just the ones the page loaded with). Create a folder while
       running (allowed): its row's buttons come out disabled too.
-- [ ] **Stop the server.** All of them enable again.
-- [ ] Open a text file in the editor, change it, Save, then go back to the
+- [x] **Stop the server.** All of them enable again.
+- [x] Open a text file in the editor, change it, Save, then go back to the
       Files tab — this is a real navigation, so a reload is expected here.
       The point of the check is the next one.
 
@@ -79,119 +79,119 @@ On the Paper server, **Files** tab, server stopped.
 
 Two tabs, both on the **same directory** of the same server.
 
-- [ ] Upload a file in tab 1 → within a second the row appears in tab 2, with
+- [x] Upload a file in tab 1 → within a second the row appears in tab 2, with
       no toast in tab 2 and no reload.
-- [ ] Delete it in tab 2 → it disappears from tab 1.
-- [ ] Tab 1 on the server root, tab 2 inside `plugins/`. Upload to the root
+- [x] Delete it in tab 2 → it disappears from tab 1.
+- [x] Tab 1 on the server root, tab 2 inside `plugins/`. Upload to the root
       in tab 1 → tab 2 is untouched (it is a different listing).
-- [ ] Tab 2 inside a folder, tab 1 on the root. **Delete that folder** in
+- [x] Tab 2 inside a folder, tab 1 on the root. **Delete that folder** in
       tab 1 → tab 2 steps up to the parent directory on its own with a warning
       toast naming the folder that no longer exists.
-- [ ] Rename that folder instead of deleting it → same: tab 2 steps up.
-- [ ] Edit and save a text file in the editor in tab 1 while tab 2 shows
+- [x] Rename that folder instead of deleting it → same: tab 2 steps up.
+- [x] Edit and save a text file in the editor in tab 1 while tab 2 shows
       its directory → tab 2's size/modified for that file update.
 
 ## A3. Plugins / Mods page — redraw in place
 
 On the Paper server, **Plugins** tab, server stopped, nothing installed yet.
 
-- [ ] The page shows "0 plugins installed", no Download All / Delete All, no
+- [x] The page shows "0 plugins installed", no Download All / Delete All, no
       search bar, and the "No plugins installed" row.
-- [ ] Upload three `.jar` files. Rows appear; the heading reads "3 plugins
+- [x] Upload three `.jar` files. Rows appear; the heading reads "3 plugins
       installed"; Download All, Delete All and the search bar appear — no
       reload.
-- [ ] Delete one → "2 plugins installed", the Delete All modal (open it) says
+- [x] Delete one → "2 plugins installed", the Delete All modal (open it) says
       "all **2** plugins".
-- [ ] Delete all but one → the heading reads "1 plugin installed" (singular).
-- [ ] **Delete All** → overlay, then the empty state: "0 plugins installed",
+- [x] Delete all but one → the heading reads "1 plugin installed" (singular).
+- [x] **Delete All** → overlay, then the empty state: "0 plugins installed",
       bulk actions and search bar hidden, empty row shown, toast "All plugins
       deleted." — no reload.
-- [ ] **Browse Modrinth**, install any plugin (Chunky, ViaVersion, …). The
+- [x] **Browse Modrinth**, install any plugin (Chunky, ViaVersion, …). The
       button flips to "Installed" and — with the modal still open — the table
       behind it already lists the new jar and the heading says "1 plugin
       installed". Close the modal: nothing reloads, the list is as it was.
-- [ ] Install a plugin that has required dependencies (e.g. one that pulls
+- [x] Install a plugin that has required dependencies (e.g. one that pulls
       in a library) → every installed file appears in the table.
 
 On the Fabric server, **Mods** tab:
 
-- [ ] Upload two `.jar` mods. The Environment dropdown on each is "Client and
+- [x] Upload two `.jar` mods. The Environment dropdown on each is "Client and
       Server".
-- [ ] Change one to "Client Only" → toast "Mod environment updated.", the
+- [x] Change one to "Client Only" → toast "Mod environment updated.", the
       dropdown keeps its value.
-- [ ] Set the **Filter** to "Client Only" → only that mod shows. Upload
+- [x] Set the **Filter** to "Client Only" → only that mod shows. Upload
       another jar → the new mod (which is Client and Server) stays hidden by
       the filter, the filtered mod stays visible, no reload.
-- [ ] Filter back to "All Environments"; every row shows and the changed mod
+- [x] Filter back to "All Environments"; every row shows and the changed mod
       still reads "Client Only" (it survived the redraw).
-- [ ] **Start the server**: the environment dropdowns and Delete buttons
+- [x] **Start the server**: the environment dropdowns and Delete buttons
       disable, including on rows added since the page loaded. Stop it: they
       enable.
 
 ## A4. Plugins page — other tabs
 
-- [ ] Two tabs on the Plugins tab. Upload in one → appears in the other.
+- [x] Two tabs on the Plugins tab. Upload in one → appears in the other.
       Delete in the other → disappears from the first.
-- [ ] Install from Modrinth in tab 1 → tab 2's table gains the jar.
+- [x] Install from Modrinth in tab 1 → tab 2's table gains the jar.
 
 ## A5. Backups page
 
 On either server, **Backups** tab.
 
-- [ ] With no backups, the card shows "Backups (0)" and the empty state.
-- [ ] **Create Backup** (server stopped) → overlay, then toast "Backup
+- [x] With no backups, the card shows "Backups (0)" and the empty state.
+- [x] **Create Backup** (server stopped) → overlay, then toast "Backup
       created successfully.", the row appears, the header reads "Backups
       (1)" — with no space inside the brackets — and the empty state is
       gone. No reload.
-- [ ] Create one with the server **running** ("Stop & Backup") → same
+- [x] Create one with the server **running** ("Stop & Backup") → same
       outcome, plus the server restarts if you left the box ticked.
-- [ ] **Delete** a backup → overlay, row gone, count down by one, toast. No
+- [x] **Delete** a backup → overlay, row gone, count down by one, toast. No
       reload. Delete the last one → the empty state returns.
-- [ ] **Restore** a backup (untick "Start server after restore") → overlay,
+- [x] **Restore** a backup (untick "Start server after restore") → overlay,
       toast "Backup restored successfully.", list unchanged, no reload.
-- [ ] Set **Retention** to keep 1 backup, then create two backups. After the
+- [x] Set **Retention** to keep 1 backup, then create two backups. After the
       second completes, the list shows exactly one (the older one was pruned
       and the list caught it) without a reload.
-- [ ] Open the Restore modal with the server **running** → it warns the
+- [x] Open the Restore modal with the server **running** → it warns the
       server will be stopped. Stop the server from another tab while the
       modal is open → the warning disappears live.
-- [ ] Enable **Scheduled backups** with a 1-hour interval — you do not have
+- [x] Enable **Scheduled backups** with a 1-hour interval — you do not have
       to wait for it. Instead, from another tab, save the schedule again to
       confirm nothing on this page breaks, then disable it.
-- [ ] Two tabs on the Backups tab: create a backup in tab 1 → the row
+- [x] Two tabs on the Backups tab: create a backup in tab 1 → the row
       appears in tab 2 **without** a "created successfully" toast there (the
       toast is only for the tab that started it). Delete in tab 2 → gone in
       tab 1.
-- [ ] Reload the page **while** a backup is running (start a large one and
+- [x] Reload the page **while** a backup is running (start a large one and
       hit F5): the overlay comes up on load and is released, with the toast,
       when the backup finishes.
 
 ## A6. Templates, API keys, event log
 
-- [ ] **Templates** (`/templates`): with two saved, delete one → row goes,
+- [x] **Templates** (`/templates`): with two saved, delete one → row goes,
       toast, no reload. Delete the other → the "No templates yet" empty
       state appears in place, no reload.
-- [ ] **Account → API Keys**: with none, the empty state shows. New Key →
+- [x] **Account → API Keys**: with none, the empty state shows. New Key →
       the "copy it now" modal opens and the key is **already in the table
       behind it**. "I've saved it" closes the modal with no reload. Delete
       the key → overlay, row gone, empty state back, no reload.
-- [ ] **Events**: Clear Events → overlay, modal closes, empty state shows,
+- [x] **Events**: Clear Events → overlay, modal closes, empty state shows,
       count badge 0, toast "Events cleared.", no reload. Start the server →
       new rows appear live as before.
 
 ## B. Search filters persist
 
-- [ ] Files: type `world` in the search box, then upload a file whose name
+- [x] Files: type `world` in the search box, then upload a file whose name
       does not contain it → the list redraws and the new file is **not**
       shown; the search box still says `world`.
-- [ ] Files: with a search active, delete the only matching file → "No files
+- [x] Files: with a search active, delete the only matching file → "No files
       match your search." appears (not the "directory is empty" row, since
       the folder is not empty).
-- [ ] Clear the search → everything shows, in the original folders-first
+- [x] Clear the search → everything shows, in the original folders-first
       order.
-- [ ] Plugins: search + environment filter both set; delete a mod, upload a
+- [x] Plugins: search + environment filter both set; delete a mod, upload a
       mod, change an environment → both filters are still applied after each.
-- [ ] Any list: with a search active, make a change from **another tab** →
+- [x] Any list: with a search active, make a change from **another tab** →
       the redraw keeps this tab's search.
 
 ## C. Closest-match search
@@ -199,46 +199,46 @@ On either server, **Backups** tab.
 Files page, with a server that has the usual `world`, `world_nether`,
 `world_the_end`, `server.properties`, `eula.txt`, `logs`, `plugins`:
 
-- [ ] `world` → world, world_nether, world_the_end, in that order (exact
+- [x] `world` → world, world_nether, world_the_end, in that order (exact
       first, then prefixes); nothing else.
-- [ ] `srv prop` → server.properties (two tokens, both matched).
-- [ ] `sp` → server.properties and server-icon.png (initials).
-- [ ] `proprties` → server.properties (one typo).
-- [ ] `eula` → eula.txt; `zzz` → the "No files match your search." row.
-- [ ] Type a query, then clear it → the rows go back to folders-first,
+- [x] `srv prop` → server.properties (two tokens, both matched).
+- [x] `sp` → server.properties and server-icon.png (initials).
+- [x] `proprties` → server.properties (one typo).
+- [x] `eula` → eula.txt; `zzz` → the "No files match your search." row.
+- [x] Type a query, then clear it → the rows go back to folders-first,
       alphabetical.
 
 Plugins page with `EssentialsX.jar`, `WorldEdit.jar`, `LuckPerms.jar` (or
 whatever three you have — substitute):
 
-- [ ] `we` → WorldEdit (initials of camelCase words).
-- [ ] `essentails` → EssentialsX (typo).
-- [ ] `edit world` → WorldEdit (tokens in either order).
-- [ ] `lp` → LuckPerms.
+- [x] `we` → WorldEdit (initials of camelCase words).
+- [x] `essentails` → EssentialsX (typo).
+- [x] `edit world` → WorldEdit (tokens in either order).
+- [x] `lp` → LuckPerms.
 
 Version picker (Create Server → Browse versions, Vanilla):
 
-- [ ] `1214` → 1.21.4 (digits in order); `1.21.1` → 1.21.11, 1.21.10, 1.21.1
+- [x] `1214` → 1.21.4 (digits in order); `1.21.1` → 1.21.11, 1.21.10, 1.21.1
       and **not** 1.21.4 (no typo matching on versions).
-- [ ] `snap` (with the channel on "All") → only snapshot ids; results stay
+- [x] `snap` (with the channel on "All") → only snapshot ids; results stay
       newest-first.
 
 Group picker (Create Server → Group, with a couple of groups existing):
 
-- [ ] Typing the first letters of each word of a group name (`sw` for
+- [x] Typing the first letters of each word of a group name (`sw` for
       "Survival Worlds") offers it; a typo (`survivl`) still offers it; the
       list keeps its alphabetical order.
 
 ## D. Dependencies
 
-- [ ] Download a single file from the Files tab → the browser saves it under
+- [x] Download a single file from the Files tab → the browser saves it under
       its own name.
-- [ ] Download a file whose name has a space and a non-ASCII character in it
+- [x] Download a file whose name has a space and a non-ASCII character in it
       (rename one to `héllo wörld.txt` first) → the browser saves it with
       that exact name.
-- [ ] Download a backup and a server export (`.cbx`) → correct names.
-- [ ] Five failed logins in a row → the sixth is rate limited with the usual
+- [x] Download a backup and a server export (`.cbx`) → correct names.
+- [x] Five failed logins in a row → the sixth is rate limited with the usual
       "too many attempts" response (express-rate-limit).
-- [ ] Upload a file through the Files tab that is larger than 100 MB (goes
+- [x] Upload a file through the Files tab that is larger than 100 MB (goes
       through the chunked path) and one that is small (plain multipart) →
       both land (multer).
