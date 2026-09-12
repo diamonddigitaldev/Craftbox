@@ -93,7 +93,11 @@ function listModFiles(contentDir) {
         return [];
     }
 
-    const results = [];
+    // Keyed by display name, because a jar and its `.disabled` twin can both
+    // be on disk — from a hand-managed mods folder, or a file dropped in
+    // through the file manager. That is one mod, not two, so collapse the pair
+    // onto the enabled file rather than listing the same name twice.
+    const byDisplayName = new Map();
     for (const entry of entries) {
         if (entry.isDirectory()) continue;
         const name = entry.name;
@@ -111,10 +115,14 @@ function listModFiles(contentDir) {
             continue;
         }
 
+        // Keep what we already have unless this is the enabled half of a pair.
+        const existing = byDisplayName.get(displayName);
+        if (existing && !(existing.isDisabled && !isDisabled)) continue;
+
         let stat;
         try { stat = fs.statSync(path.join(contentDir, name)); } catch { continue; }
 
-        results.push({
+        byDisplayName.set(displayName, {
             displayName,
             onDiskName: name,
             isDisabled,
@@ -122,7 +130,8 @@ function listModFiles(contentDir) {
             modified: stat.mtime
         });
     }
-    return results.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return Array.from(byDisplayName.values())
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 async function reconcileModFiles(serverId, serverDir, serverType) {

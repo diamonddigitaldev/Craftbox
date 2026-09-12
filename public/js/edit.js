@@ -24,6 +24,12 @@ function _formToBody(form) {
     var backupCheck = document.getElementById('saveBackup');
     var SAVE_BTN_HTML = '<span class="material-icons-outlined" style="font-size: 1.2rem;">save</span> Save Changes';
 
+    // Assign Group sits alone on the last row of Advanced Options, so it gets
+    // centred the same way the create form centres a lone column. Once is
+    // enough here: which columns render is decided server-side (custom JAR URL
+    // vs version and port), and nothing hides one after load.
+    centerLoneRowItems(form);
+
     form.addEventListener('submit', async function (e) {
         e.preventDefault();
         if (!form.reportValidity()) return;
@@ -390,11 +396,9 @@ function _formToBody(form) {
 
     function showRestartModal() {
         var modalEl = document.getElementById('restartModal');
-        if (modalEl) {
-            var state = modalEl.dataset.serverState;
-            if (state !== 'stopped' && state !== 'crashed') {
-                new bootstrap.Modal(modalEl).show();
-            }
+        // Live state — a server that has since stopped needs no restart prompt.
+        if (modalEl && !isServerStopped()) {
+            new bootstrap.Modal(modalEl).show();
         }
     }
 
@@ -490,8 +494,8 @@ function _formToBody(form) {
         fileInput.value = '';
     });
 
-    document.addEventListener('dragover', function (e) { e.preventDefault(); });
-    document.addEventListener('drop', function (e) { e.preventDefault(); });
+    // Cancelling the browser's own handling of a dropped file is app.js's job
+    // now (see "Stray file drops"), for every page rather than just this one.
 
     dropArea.addEventListener('dragover', function (e) {
         e.preventDefault();
@@ -511,8 +515,17 @@ function _formToBody(form) {
         if (uploading) return;
         dropArea.style.borderColor = '';
         dropArea.style.boxShadow = '';
-        var file = e.dataTransfer.files[0];
-        if (file) uploadIcon(file);
+        // Synchronously, before the drop event's item list is emptied. The icon
+        // area reports its own errors in the status line under it, so a folder
+        // is answered there rather than with a toast, like the PNG check is.
+        var dropped = readDroppedItems(e.dataTransfer);
+        if (dropped.files.length === 0) {
+            if (dropped.folders.length > 0) {
+                showStatus('danger', folderDropMessage(dropped.folders, 'Drop the PNG file itself.'));
+            }
+            return;
+        }
+        uploadIcon(dropped.files[0]);
     });
 
     deleteBtn.addEventListener('click', async function (e) {
@@ -560,7 +573,7 @@ function _formToBody(form) {
     var serverId = form.dataset.serverId;
 
     async function submitDuplicate() {
-        var btn = form.querySelector('button[type="submit"]') || document.getElementById('duplicate-running-btn');
+        var btn = document.getElementById('duplicate-btn');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Duplicating...';
@@ -579,24 +592,25 @@ function _formToBody(form) {
         window.location.href = newId ? '/servers/' + newId : '/dashboard';
     }
 
-    // Direct submit (server already stopped)
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        if (!form.reportValidity()) return;
-        submitDuplicate();
-    });
-
-    // Stop-then-duplicate modal flow
-    var dupRunningBtn = document.getElementById('duplicate-running-btn');
-    if (dupRunningBtn) {
-        var modal = new bootstrap.Modal(document.getElementById('stopDuplicateModal'));
+    var modalEl = document.getElementById('stopDuplicateModal');
+    if (modalEl) {
+        var modal = new bootstrap.Modal(modalEl);
         var confirmBtn = document.getElementById('confirm-stop-duplicate-btn');
         var startAfterCheckbox = document.getElementById('dupStartAfter');
 
-        dupRunningBtn.addEventListener('click', function () {
+        // Duplicate directly when the server is already down, otherwise offer to
+        // stop it first. Decided here rather than by rendering two different
+        // buttons, so it follows the live state.
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
             if (!form.reportValidity()) return;
+            if (isServerStopped()) {
+                submitDuplicate();
+                return;
+            }
             modal.show();
         });
+
         startAfterCheckbox.addEventListener('change', function () {
             document.getElementById('dup-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
         });
@@ -615,7 +629,7 @@ function _formToBody(form) {
     if (!form) return;
 
     async function submitTemplate() {
-        var btn = form.querySelector('button[type="submit"]') || document.getElementById('template-running-btn');
+        var btn = document.getElementById('template-btn');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
@@ -633,22 +647,24 @@ function _formToBody(form) {
         window.location.href = '/templates';
     }
 
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        if (!form.reportValidity()) return;
-        submitTemplate();
-    });
-
-    var tmplRunningBtn = document.getElementById('template-running-btn');
-    if (tmplRunningBtn) {
-        var modal = new bootstrap.Modal(document.getElementById('stopTemplateModal'));
+    var modalEl = document.getElementById('stopTemplateModal');
+    if (modalEl) {
+        var modal = new bootstrap.Modal(modalEl);
         var confirmBtn = document.getElementById('confirm-stop-template-btn');
         var startAfterCheckbox = document.getElementById('tmplStartAfter');
 
-        tmplRunningBtn.addEventListener('click', function () {
+        // Same shape as duplicate: save straight away when already stopped,
+        // otherwise offer to stop first. Live state, not render-time state.
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
             if (!form.reportValidity()) return;
+            if (isServerStopped()) {
+                submitTemplate();
+                return;
+            }
             modal.show();
         });
+
         startAfterCheckbox.addEventListener('change', function () {
             document.getElementById('tmpl-start-after').value = startAfterCheckbox.checked ? 'true' : 'false';
         });
@@ -671,14 +687,16 @@ function _formToBody(form) {
     function exportUrl(startAfter) {
         var backups = document.getElementById('export-backups').checked ? 'true' : 'false';
         var events = document.getElementById('export-events').checked ? 'true' : 'false';
-        var url = '/servers/' + serverId + '/export?backups=' + backups + '&events=' + events;
+        var url = '/api/v1/servers/' + serverId + '/export?backups=' + backups + '&events=' + events;
         if (startAfter) url += '&start=true';
         return url;
     }
 
+    // CraftboxDownload keeps the request off the top-level document, so a 409
+    // or a packing failure lands in a toast instead of replacing this page with
+    // a JSON error body, and reports packing progress and the final outcome.
     function startDownload(startAfter) {
-        showToast('Export download starting...', 'info');
-        window.location.href = exportUrl(startAfter);
+        CraftboxDownload.start(exportUrl(startAfter), 'Server export');
     }
 
     async function stopThenExport() {
@@ -724,7 +742,9 @@ function _formToBody(form) {
     });
 
     exportBtn.addEventListener('click', function () {
-        if (exportBtn.dataset.serverStopped === 'true') {
+        // Read the live state, not the value baked in at render time — the
+        // server may have stopped or started since the page loaded.
+        if (isServerStopped()) {
             startDownload(false);
         } else {
             new bootstrap.Modal(stopExportModalEl).show();
@@ -769,8 +789,8 @@ function _formToBody(form) {
         resultDiv.classList.add('d-none');
 
         try {
-            const res = await fetch('/api/v1/servers/' + serverId + '/check-upgrade');
-            const data = await res.json();
+            const res = await apiFetch('/api/v1/servers/' + serverId + '/check-upgrade');
+            const data = res.data || {};
 
             if (!res.ok) {
                 showResult('danger', data.error || 'Failed to check for upgrades.');
@@ -778,8 +798,11 @@ function _formToBody(form) {
             }
 
             if (data.upgradeAvailable) {
-                showResult('warning',
-                    'Upgrade available: build #' + data.currentBuild + ' → #' + data.latestBuild);
+                // A server with no recorded build (imported, duplicated) sends a
+                // reason explaining that upgrading is what records one — there is
+                // no "from" build to name in the usual message.
+                showResult('warning', data.reason ||
+                    ('Upgrade available: build #' + data.currentBuild + ' → #' + data.latestBuild));
                 showUpgradeButton();
             } else if (data.reason) {
                 showResult('secondary', data.reason);

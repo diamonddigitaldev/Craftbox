@@ -2,67 +2,191 @@
 (function () {
     var serverId = window.location.pathname.split('/')[2];
 
+    // ── Listing ──
+    // The rows are rendered by the view on first load and by buildRow below
+    // whenever a backup lands or leaves, from the same listing the API returns.
+    // Keep the two in step with views/servers/backups.ejs.
+
+    var tbody = document.getElementById('backups-tbody');
+    var tableWrap = document.getElementById('backups-table');
+    var emptyState = document.getElementById('backups-empty');
+    var countEl = document.getElementById('backup-count');
+
+    // A 32px square icon button/link, as the view lays them out.
+    function squareControl(tag, classes, iconName, title) {
+        var el = document.createElement(tag);
+        el.className = classes + ' btn-sm d-inline-flex align-items-center justify-content-center';
+        el.style.cssText = 'width: 32px; height: 32px; padding: 0;';
+        el.title = title;
+        if (tag === 'button') el.type = 'button';
+        var icon = document.createElement('span');
+        icon.className = 'material-icons-outlined';
+        icon.style.fontSize = '1rem';
+        icon.textContent = iconName;
+        el.appendChild(icon);
+        return el;
+    }
+
+    function buildRow(backup) {
+        var scheduled = backup.type === 'scheduled';
+        var tr = document.createElement('tr');
+        tr.dataset.backupId = backup.id;
+
+        var iconTd = document.createElement('td');
+        iconTd.className = 'text-center';
+        var icon = document.createElement('span');
+        icon.className = 'material-icons-outlined text-body-secondary align-middle';
+        icon.style.fontSize = '1.2rem';
+        icon.textContent = scheduled ? 'schedule' : 'backup';
+        iconTd.appendChild(icon);
+        tr.appendChild(iconTd);
+
+        var nameTd = document.createElement('td');
+        nameTd.textContent = backup.name;
+        tr.appendChild(nameTd);
+
+        var sizeTd = document.createElement('td');
+        sizeTd.className = 'text-body-secondary small';
+        sizeTd.textContent = backup.sizeFormatted;
+        tr.appendChild(sizeTd);
+
+        var dateTd = document.createElement('td');
+        dateTd.className = 'text-body-secondary small';
+        var date = document.createElement('span');
+        date.className = 'format-date';
+        date.dataset.iso = backup.createdAt;
+        date.textContent = formatDate(backup.createdAt);
+        dateTd.appendChild(date);
+        tr.appendChild(dateTd);
+
+        var typeTd = document.createElement('td');
+        var badge = document.createElement('span');
+        badge.className = 'badge bg-' + (scheduled ? 'info' : 'secondary');
+        badge.textContent = backup.type;
+        typeTd.appendChild(badge);
+        tr.appendChild(typeTd);
+
+        var actionsTd = document.createElement('td');
+        actionsTd.className = 'text-end';
+        var group = document.createElement('div');
+        group.className = 'd-inline-flex gap-1';
+
+        var download = squareControl('a', 'btn btn-outline-secondary', 'download', 'Download');
+        download.href = '/api/v1/servers/' + serverId + '/backups/' + backup.id + '/download';
+        download.dataset.download = 'Backup archive';
+        group.appendChild(download);
+
+        var restore = squareControl('button', 'btn btn-outline-primary restore-btn', 'restore', 'Restore');
+        restore.dataset.backupId = backup.id;
+        restore.dataset.backupName = backup.name;
+        group.appendChild(restore);
+
+        var del = squareControl('button', 'btn btn-outline-danger delete-btn', 'delete', 'Delete');
+        del.dataset.backupId = backup.id;
+        del.dataset.backupName = backup.name;
+        group.appendChild(del);
+
+        actionsTd.appendChild(group);
+        tr.appendChild(actionsTd);
+        return tr;
+    }
+
+    function renderRows(backups) {
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        backups.forEach(function (backup) { tbody.appendChild(buildRow(backup)); });
+        if (countEl) countEl.textContent = String(backups.length);
+        if (emptyState) emptyState.classList.toggle('d-none', backups.length > 0);
+        if (tableWrap) tableWrap.classList.toggle('d-none', backups.length === 0);
+    }
+
+    // Refetch and redraw. Sequenced so a slow response can never paint over a
+    // newer one.
+    var refreshSeq = 0;
+    async function refreshList() {
+        if (!tbody) return;
+        var seq = ++refreshSeq;
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/backups');
+        if (seq !== refreshSeq) return;
+        if (!res.ok || !res.data) {
+            showToast((res.data && res.data.error) || 'Could not refresh the backup list.', 'danger');
+            return;
+        }
+        renderRows(res.data.backups || []);
+    }
+
+    // A backup was deleted from another tab. Own deletes are skipped — the
+    // handler that made them already refreshed. Creation arrives as the backup
+    // operation below, whoever (or whatever schedule) started it.
+    document.addEventListener('craftbox:content-changed', function (e) {
+        var msg = e.detail || {};
+        if (msg.scope !== 'backups') return;
+        if (msg.origin && msg.origin === window.CRAFTBOX_CLIENT_ID) return;
+        refreshList();
+    });
+
     // ── Page-load resilience: if state is backing_up or restoring, show the
     // overlay so a user reloading mid-operation sees the right thing.
     var navHeader = document.getElementById('server-nav-header');
     var initialState = navHeader ? navHeader.dataset.state : '';
+    // Which operation this tab is waiting on — the one it started, or the one
+    // it loaded in the middle of. Only that one gets an outcome toast; a backup
+    // made by a schedule or by another tab just shows up in the list.
+    var awaiting = null;
     if (initialState === 'backing_up') {
+        awaiting = 'backup';
         showOverlay('Creating backup...', 'Compressing server files. This may take a moment.');
     } else if (initialState === 'restoring') {
+        awaiting = 'restore';
         showOverlay('Restoring backup...', 'Extracting backup files. This may take a moment.');
     }
 
     // ── Async operation completion via WebSocket ──
     // serverState.js maintains the WebSocket subscription on this page and
-    // dispatches `craftbox:operation` events for backup/restore/jar-upgrade
-    // outcomes. We listen here to drive the overlay + toasts after firing
-    // long operations.
+    // dispatches `craftbox:operation` events for backup/restore outcomes —
+    // every backup job reports here, manual, restore-point and scheduled
+    // alike. The list is refreshed on each; the overlay and toasts are only
+    // for the operation this tab is waiting on.
     function handleOperation(e) {
         var msg = e.detail || {};
         if (msg.serverId !== serverId) return;
+        if (msg.operation !== 'backup' && msg.operation !== 'restore') return;
+        if (msg.status !== 'complete' && msg.status !== 'failed') return;
+
+        var mine = awaiting === msg.operation;
+        if (mine) {
+            awaiting = null;
+            hideOverlay();
+        }
 
         if (msg.operation === 'backup') {
+            // Retention runs as part of every backup, so the list can have lost
+            // rows as well as gained one.
+            refreshList();
+            if (!mine) return;
             if (msg.status === 'complete') {
-                hideOverlay();
                 var warning = msg.payload && msg.payload.warning;
-                // flashToast (not showToast) — the immediate reload below
-                // would wipe a regular toast before it became visible.
-                if (warning) {
-                    flashToast(warning, 'warning');
-                } else {
-                    flashToast('Backup created successfully.', 'success');
-                }
-                window.location.reload();
-            } else if (msg.status === 'failed') {
-                hideOverlay();
+                showToast(warning || 'Backup created successfully.', warning ? 'warning' : 'success');
+            } else {
                 showToast('Backup failed: ' + (msg.error || 'unknown error'), 'danger');
-                resetBackupButton();
             }
-        } else if (msg.operation === 'restore') {
+            resetBackupButton();
+        } else {
+            if (!mine) return;
             if (msg.status === 'complete') {
-                hideOverlay();
                 var rWarning = msg.payload && msg.payload.warning;
-                if (rWarning) {
-                    flashToast(rWarning, 'warning');
-                } else {
-                    flashToast('Backup restored successfully.', 'success');
-                }
-                window.location.reload();
-            } else if (msg.status === 'failed') {
-                hideOverlay();
+                showToast(rWarning || 'Backup restored successfully.', rWarning ? 'warning' : 'success');
+            } else {
                 showToast('Restore failed: ' + (msg.error || 'unknown error'), 'danger');
-                resetRestoreButton();
             }
+            resetRestoreButton();
         }
     }
     document.addEventListener('craftbox:operation', handleOperation);
 
     function resetBackupButton() {
-        var btn = document.getElementById('confirm-backup-btn');
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = needsStop ? 'Stop & Backup' : 'Create Backup';
-        }
+        if (confirmBackupBtn) confirmBackupBtn.disabled = false;
+        refreshBackupButton();
     }
     function resetRestoreButton() {
         var btn = document.getElementById('confirm-restore-btn');
@@ -77,10 +201,25 @@
     var createBackupBtn = document.getElementById('create-backup-btn');
     var backupForm = document.getElementById('backup-form');
     var backupNameInput = document.getElementById('backupName');
-    var backupStartAfterInput = document.getElementById('backupStartAfter');
     var startAfterBackupCheckbox = document.getElementById('startAfterBackup');
-    var stopFirstInput = document.getElementById('backupStopFirst');
-    var needsStop = stopFirstInput && stopFirstInput.value === 'true';
+    var confirmBackupBtn = document.getElementById('confirm-backup-btn');
+
+    // Whether a backup has to stop the server first depends on the state at the
+    // moment you press the button, not the state the page was rendered with.
+    function needsStopNow() {
+        return !isServerStopped();
+    }
+
+    // Keep the confirm button honest as the state changes underneath the page.
+    function refreshBackupButton() {
+        if (!confirmBackupBtn) return;
+        var stop = needsStopNow();
+        confirmBackupBtn.classList.toggle('btn-warning', stop);
+        confirmBackupBtn.classList.toggle('btn-success', !stop);
+        confirmBackupBtn.textContent = stop ? 'Stop & Backup' : 'Create Backup';
+    }
+    document.addEventListener('craftbox:stategates', refreshBackupButton);
+    refreshBackupButton();
 
     if (createBackupBtn) {
         createBackupBtn.addEventListener('click', function () {
@@ -97,11 +236,6 @@
         });
     }
 
-    if (startAfterBackupCheckbox && backupStartAfterInput) {
-        startAfterBackupCheckbox.addEventListener('change', function () {
-            backupStartAfterInput.value = startAfterBackupCheckbox.checked ? 'true' : 'false';
-        });
-    }
 
     if (backupForm) {
         backupForm.addEventListener('submit', async function (e) {
@@ -114,7 +248,9 @@
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating...';
             }
             createBackupModal.hide();
-            var overlayTitle = needsStop ? 'Stopping server & creating backup...' : 'Creating backup...';
+            var stopFirst = needsStopNow();
+            var overlayTitle = stopFirst ? 'Stopping server & creating backup...' : 'Creating backup...';
+            awaiting = 'backup';
             showOverlay(overlayTitle, 'Compressing server files. This may take a moment.');
 
             var name = backupNameInput ? backupNameInput.value.trim() : 'Manual Backup';
@@ -122,11 +258,14 @@
                 method: 'POST',
                 body: {
                     name: name || 'Manual Backup',
-                    stopFirst: stopFirstInput ? stopFirstInput.value : 'false',
-                    startAfter: backupStartAfterInput ? backupStartAfterInput.value : 'false'
+                    stopFirst: stopFirst ? 'true' : 'false',
+                    // Only meaningful when we're stopping it ourselves.
+                    startAfter: (stopFirst && startAfterBackupCheckbox && startAfterBackupCheckbox.checked)
+                        ? 'true' : 'false'
                 }
             });
             if (!res.ok) {
+                awaiting = null;
                 hideOverlay();
                 showToast((res.data && (res.data.message || res.data.error)) || 'Backup failed.', 'danger');
                 resetBackupButton();
@@ -144,14 +283,17 @@
     var startAfterInput = document.getElementById('startAfterInput');
     var pendingRestoreId = null;
 
-    document.querySelectorAll('.restore-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+    // Row buttons are bound once, on the table, so rows drawn later work too.
+    if (tbody) {
+        tbody.addEventListener('click', function (e) {
+            var btn = e.target.closest('.restore-btn');
+            if (!btn) return;
             pendingRestoreId = btn.dataset.backupId;
             if (startAfterCheckbox) startAfterCheckbox.checked = true;
             if (startAfterInput) startAfterInput.value = 'true';
             restoreModal.show();
         });
-    });
+    }
 
     if (startAfterCheckbox) {
         startAfterCheckbox.addEventListener('change', function () {
@@ -169,6 +311,7 @@
                 confirmRestoreBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restoring...';
             }
             restoreModal.hide();
+            awaiting = 'restore';
             showOverlay('Restoring backup...', 'Extracting backup files. This may take a moment.');
 
             var res = await apiFetch('/api/v1/servers/' + serverId + '/backups/' + pendingRestoreId + '/restore', {
@@ -178,6 +321,7 @@
                 }
             });
             if (!res.ok) {
+                awaiting = null;
                 hideOverlay();
                 showToast((res.data && (res.data.message || res.data.error)) || 'Restore failed.', 'danger');
                 resetRestoreButton();
@@ -194,13 +338,15 @@
     var deleteNameSpan = document.getElementById('delete-backup-name');
     var pendingDeleteId = null;
 
-    document.querySelectorAll('.delete-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+    if (tbody) {
+        tbody.addEventListener('click', function (e) {
+            var btn = e.target.closest('.delete-btn');
+            if (!btn) return;
             pendingDeleteId = btn.dataset.backupId;
             if (deleteNameSpan) deleteNameSpan.textContent = btn.dataset.backupName || '';
             deleteModal.show();
         });
-    });
+    }
 
     if (deleteForm) {
         deleteForm.addEventListener('submit', async function (e) {
@@ -217,14 +363,14 @@
             var res = await apiFetch('/api/v1/servers/' + serverId + '/backups/' + pendingDeleteId, {
                 method: 'DELETE'
             });
+            if (res.ok) await refreshList();
+            hideOverlay();
+            if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
             if (!res.ok) {
-                hideOverlay();
                 showToast((res.data && (res.data.message || res.data.error)) || 'Delete failed.', 'danger');
-                if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
                 return;
             }
-            flashToast('Backup deleted.', 'success');
-            window.location.reload();
+            showToast('Backup deleted.', 'success');
         });
     }
 

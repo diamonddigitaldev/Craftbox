@@ -2,8 +2,26 @@ const { v4: uuidv4 } = require('uuid');
 const { eventsDb } = require('../db');
 const { log } = require('./log');
 
+// Set once at boot by src/server.js. Kept as an injected function rather than a
+// direct ServerManager import so this module stays free of the process layer
+// (which requires this one — importing both ways would be circular).
+let broadcaster = null;
+
 /**
- * Log a structured event for a server.
+ * Register the sink that pushes newly logged events to WebSocket subscribers.
+ * @param {(serverId: string, event: object) => void} fn
+ */
+function setEventBroadcaster(fn) {
+    broadcaster = fn;
+}
+
+/**
+ * Log a structured event for a server, then push it to anyone watching.
+ *
+ * Broadcasting from here rather than from each call site is what makes the
+ * event log live for *every* event type — backups, jar upgrades and user
+ * actions are all logged through this function, and previously none of them
+ * reached a socket.
  */
 async function logEvent(serverId, type, message, extra = {}) {
     const event = {
@@ -18,6 +36,15 @@ async function logEvent(serverId, type, message, extra = {}) {
         await eventsDb.set(`event_${event.id}`, event);
     } catch (err) {
         log('error', `Failed to log event: ${err.message}`);
+    }
+
+    // After the write, so a client that reacts by refetching sees this event.
+    if (broadcaster) {
+        try {
+            broadcaster(serverId, event);
+        } catch (err) {
+            log('warn', `Failed to broadcast event: ${err.message}`);
+        }
     }
     return event;
 }
@@ -76,4 +103,4 @@ async function deleteServerEvents(serverId) {
     }
 }
 
-module.exports = { logEvent, getEvents, pruneEvents, deleteServerEvents };
+module.exports = { logEvent, setEventBroadcaster, getEvents, pruneEvents, deleteServerEvents };
