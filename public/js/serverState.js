@@ -57,6 +57,11 @@
             if (msg.type === 'events_cleared' && msg.serverId === serverId) {
                 document.dispatchEvent(new CustomEvent('craftbox:events-cleared', { detail: msg }));
             }
+            // A listing of this server changed (files, plugins, backups) — the
+            // page showing it refetches rather than waiting for a reload.
+            if (msg.type === 'content-changed' && msg.serverId === serverId) {
+                document.dispatchEvent(new CustomEvent('craftbox:content-changed', { detail: msg }));
+            }
         };
 
         ws.onclose = function () {

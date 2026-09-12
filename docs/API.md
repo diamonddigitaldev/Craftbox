@@ -49,6 +49,10 @@ Errors return an appropriate HTTP status with a JSON body:
 
 Common statuses: `400` invalid input, `401` unauthenticated, `403` CSRF failure / session required, `404` not found (unknown `/api/*` paths also return `404 {"error":"not_found"}`), `409` invalid state for the operation (e.g. server running), `500` internal error.
 
+### Identifying your own changes
+
+Mutations are announced to every open panel page over the WebSocket (`content-changed`, `dashboard-changed` — see [WebSocket protocol](#websocket-protocol)). A client that also holds a socket can send an opaque `X-Client-Id` header (up to 64 characters) with its requests; the same value comes back as `origin` on the broadcasts those requests cause, which is how the panel's own pages tell their own changes from someone else's. Optional, and ignored by clients that never listen.
+
 ### Asynchronous operations
 
 Long-running operations respond immediately and finish in the background:
@@ -460,8 +464,10 @@ The server pings every 30 seconds and drops sockets that miss a pong.
 | `state` | `{serverId, state, lastStarted, exitCode, crashReason}` | Lifecycle change |
 | `players` | `{serverId, players, count}` | Join/leave updates |
 | `event` | `{serverId, eventType, message, createdAt}` | Public sockets only receive started/stopped/crashed/restarted |
-| `operation` | `{serverId, operation, status, payload?, error?}` | Progress/completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-upgrade`, `settings-save`, `create`, `duplicate`, `import`, `modpack-install`, `download`; `status` ∈ `complete`, `failed`, `progress`, `cancelled`. `progress` is emitted by `modpack-install` with `payload {phase, done?, total?}` (see [Modrinth](#modrinth)) and by `download` (see below). A restore-point save emits `backup` first, then `settings-save` |
+| `operation` | `{serverId, operation, status, payload?, error?}` | Progress/completion of async REST calls. `operation` ∈ `backup`, `restore`, `jar-upgrade`, `settings-save`, `create`, `duplicate`, `import`, `modpack-install`, `download`; `status` ∈ `complete`, `failed`, `progress`, `cancelled`. `progress` is emitted by `modpack-install` with `payload {phase, done?, total?}` (see [Modrinth](#modrinth)) and by `download` (see below). A restore-point save emits `backup` first, then `settings-save`. Scheduled backups report here too: `backup` with `payload.scheduled: true` on completion, or `failed` |
 | `events_cleared` | `{serverId}` | Event log was cleared |
+| `content-changed` | `{serverId, scope, path?, origin?}` | One of the server's listings changed and is worth refetching. `scope` ∈ `files` (`path` is the affected directory relative to the server root, `""` for the root), `plugins`, `backups`. Emitted after every mutation under [Files](#files) and [Plugins & mods](#plugins--mods), a Modrinth install, and a backup delete — a backup being *created* is already reported as the `backup` operation above, scheduled ones included. `origin` echoes the mutating request's `X-Client-Id` header, if it sent one, so a client can recognise its own change |
+| `dashboard-changed` | `{origin?}` | The server list or grouping changed (create, delete, import, duplicate, rename, regroup, group color). Sent to every authenticated socket regardless of subscriptions, since a new server has nothing to subscribe to yet. `origin` as above |
 | `pong` / `error` | — | Heartbeat reply / protocol errors |
 
 > **`operation: "download"` reports how a download went.** A browser download is invisible to the page that started it, so any download endpoint under a server reports its own outcome here — including the ones that are plain links rather than API calls. Add `?dl=<token>` (any opaque string, up to 64 characters) to the download URL and the token comes back in every message about it, which is how a client matches an outcome to the request it made. Without the token nothing is emitted; API clients read the HTTP status instead.

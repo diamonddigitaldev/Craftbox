@@ -56,6 +56,93 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ═══════════════════════════════════════════
+    // API Keys — Listing
+    // ═══════════════════════════════════════════
+    // Rendered by the view on first load and by buildRow below on every change
+    // after that, from the same listing the API returns. Keep the two in step
+    // with views/account.ejs.
+
+    var keysTbody = document.getElementById('apikeys-tbody');
+    var keysTable = document.getElementById('apikeys-table');
+    var keysEmpty = document.getElementById('apikeys-empty');
+
+    function buildKeyRow(key) {
+        var tr = document.createElement('tr');
+        tr.dataset.keyId = key.id;
+
+        var nameTd = document.createElement('td');
+        nameTd.textContent = key.name;
+        tr.appendChild(nameTd);
+
+        var prefixTd = document.createElement('td');
+        prefixTd.className = 'text-body-secondary small';
+        var code = document.createElement('code');
+        code.textContent = key.prefix + '\u2026';
+        prefixTd.appendChild(code);
+        tr.appendChild(prefixTd);
+
+        var createdTd = document.createElement('td');
+        createdTd.className = 'text-body-secondary small';
+        var created = document.createElement('span');
+        created.className = 'format-date';
+        created.dataset.iso = key.createdAt;
+        created.textContent = formatDate(key.createdAt);
+        createdTd.appendChild(created);
+        tr.appendChild(createdTd);
+
+        var usedTd = document.createElement('td');
+        usedTd.className = 'text-body-secondary small';
+        if (key.lastUsedAt) {
+            var used = document.createElement('span');
+            used.className = 'format-date';
+            used.dataset.iso = key.lastUsedAt;
+            used.textContent = formatDate(key.lastUsedAt);
+            usedTd.appendChild(used);
+        } else {
+            usedTd.textContent = 'Never';
+        }
+        tr.appendChild(usedTd);
+
+        var actionsTd = document.createElement('td');
+        actionsTd.className = 'text-end';
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center delete-key-btn';
+        del.style.cssText = 'width: 32px; height: 32px; padding: 0;';
+        del.title = 'Delete';
+        del.dataset.keyId = key.id;
+        del.dataset.keyName = key.name;
+        del.dataset.keyPrefix = key.prefix;
+        del.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">delete</span>';
+        actionsTd.appendChild(del);
+        tr.appendChild(actionsTd);
+        return tr;
+    }
+
+    function renderKeys(keys) {
+        if (!keysTbody) return;
+        keysTbody.innerHTML = '';
+        keys.forEach(function (key) { keysTbody.appendChild(buildKeyRow(key)); });
+        if (keysEmpty) keysEmpty.classList.toggle('d-none', keys.length > 0);
+        if (keysTable) keysTable.classList.toggle('d-none', keys.length === 0);
+    }
+
+    // Refetch and redraw. Sequenced so a slow response can never paint over a
+    // newer one.
+    var keysRefreshSeq = 0;
+    async function refreshKeys() {
+        if (!keysTbody) return;
+        var seq = ++keysRefreshSeq;
+        var res = await apiFetch('/api/v1/account/apikeys');
+        if (seq !== keysRefreshSeq) return;
+        if (!res.ok || !res.data) {
+            showToast((res.data && (res.data.message || res.data.error)) || 'Could not refresh the API key list.', 'danger');
+            return;
+        }
+        renderKeys(res.data.keys || []);
+    }
+
+    // ═══════════════════════════════════════════
     // API Keys — Create
     // ═══════════════════════════════════════════
 
@@ -119,6 +206,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 confirmCreateBtn.disabled = false;
                 document.getElementById('generatedKeyValue').value = data.key;
                 showKeyModal.show();
+                // Listed behind the modal straight away, so nothing changes
+                // underfoot when it closes.
+                refreshKeys();
             } catch (err) {
                 hideOverlay();
                 confirmCreateBtn.disabled = false;
@@ -146,12 +236,12 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // "I've saved it" closes the show-key modal and reloads so the new key appears in the table
+    // "I've saved it" closes the show-key modal; the table already has the
+    // new key by then.
     var savedKeyBtn = document.getElementById('saved-key-btn');
     if (savedKeyBtn) {
         savedKeyBtn.addEventListener('click', function () {
             showKeyModal.hide();
-            window.location.reload();
         });
     }
 
@@ -161,14 +251,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var pendingDeleteId = null;
 
-    document.querySelectorAll('.delete-key-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+    // Bound once, on the table, so rows drawn later work too.
+    if (keysTbody) {
+        keysTbody.addEventListener('click', function (e) {
+            var btn = e.target.closest('.delete-key-btn');
+            if (!btn) return;
             pendingDeleteId = btn.getAttribute('data-key-id');
             document.getElementById('deleteKeyName').textContent = btn.getAttribute('data-key-name') || '';
             document.getElementById('deleteKeyPrefix').textContent = btn.getAttribute('data-key-prefix') || '';
             deleteKeyModal.show();
         });
-    });
+    }
 
     var confirmDeleteBtn = document.getElementById('confirm-delete-key-btn');
     if (confirmDeleteBtn) {
@@ -192,8 +285,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
-                flashToast('API key deleted.', 'success');
-                window.location.reload();
+                await refreshKeys();
+                hideOverlay();
+                confirmDeleteBtn.disabled = false;
+                showToast('API key deleted.', 'success');
             } catch (err) {
                 hideOverlay();
                 confirmDeleteBtn.disabled = false;

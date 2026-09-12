@@ -18,10 +18,12 @@ const _gate = 'stopped crashed';
     <div>The server must be stopped before installing or deleting <%= contentType.label.toLowerCase() %>.</div>
 </div>
 
+<%# The count, the bulk actions and the search bar all follow the listing,
+    which plugins.js redraws in place as files land and leave — so they are
+    always rendered and only hidden while there is nothing to act on. %>
 <div class="d-flex align-items-center justify-content-between mb-3">
-    <h6 class="text-body-secondary mb-0"><%= files.length %> <%= contentType.label.toLowerCase() %> installed</h6>
-    <% if (files.length > 0) { %>
-    <div class="d-flex gap-2">
+    <h6 class="text-body-secondary mb-0" id="installed-count"><%= files.length %> <%= files.length === 1 ? contentType.label.toLowerCase().slice(0, -1) : contentType.label.toLowerCase() %> installed</h6>
+    <div class="d-flex gap-2<%= files.length > 0 ? '' : ' d-none' %>" id="list-actions">
         <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1"
            data-download="Mods and plugins">
             <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
@@ -34,14 +36,12 @@ const _gate = 'stopped crashed';
             Delete All
         </button>
     </div>
-    <% } %>
 </div>
 
-<% if (files.length > 0) { %>
-<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3<%= files.length > 0 ? '' : ' d-none' %>" id="search-bar">
     <div class="input-group input-group-sm" style="max-width: 350px;">
         <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
-        <input type="text" class="form-control" id="search-input" placeholder="Search <%= contentType.label.toLowerCase() %>...">
+        <input type="text" class="form-control" id="search-input" placeholder="Search <%= contentType.label.toLowerCase() %>..." autocomplete="off">
     </div>
     <% if (contentType.label === 'Mods') { %>
     <div class="d-flex align-items-center gap-2">
@@ -55,7 +55,6 @@ const _gate = 'stopped crashed';
     </div>
     <% } %>
 </div>
-<% } %>
 
 <!-- Upload -->
 <div class="d-flex gap-2 mb-3">
@@ -80,6 +79,10 @@ const _gate = 'stopped crashed';
 </div>
 
 <!-- File listing -->
+<%# The rows below are re-rendered in place by plugins.js after every change
+    (and when another tab changes the folder), from the same listing
+    GET /api/v1/servers/:id/plugins returns. buildRow there mirrors the row
+    markup here — keep the two in step. %>
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
@@ -95,7 +98,8 @@ const _gate = 'stopped crashed';
                     <th style="width: 90px;"></th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="plugins-tbody" data-gate="<%= _gate %>" data-icon="<%= contentType.icon %>"
+                   data-mods="<%= contentType.label === 'Mods' ? 'true' : 'false' %>">
                 <% files.forEach(function(file) { %>
                 <tr data-filename="<%= file.name %>" data-env="<%= file.environment %>">
                     <td>
@@ -142,11 +146,12 @@ const _gate = 'stopped crashed';
                     </td>
                 </tr>
                 <% }) %>
-                <% if (files.length === 0) { %>
-                <tr>
+                <tr id="plugins-empty" class="<%= files.length === 0 ? '' : 'd-none' %>">
                     <td colspan="<%= contentType.label === 'Mods' ? 6 : 5 %>" class="text-center text-body-secondary py-4">No <%= contentType.label.toLowerCase() %> installed. Upload some <code>.jar</code> files!</td>
                 </tr>
-                <% } %>
+                <tr id="plugins-no-match" class="d-none">
+                    <td colspan="<%= contentType.label === 'Mods' ? 6 : 5 %>" class="text-center text-body-secondary py-4">No <%= contentType.label.toLowerCase() %> match your search.</td>
+                </tr>
             </tbody>
         </table>
     </div>
@@ -196,7 +201,7 @@ const _gate = 'stopped crashed';
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                Permanently delete all <strong><%= files.length %></strong> <%= contentType.label.toLowerCase() %>? This cannot be undone.
+                Permanently delete all <strong id="delete-all-count"><%= files.length %></strong> <%= contentType.label.toLowerCase() %>? This cannot be undone.
             </div>
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>

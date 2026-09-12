@@ -36,17 +36,213 @@
         return null;
     }
 
-    // ── Search / Filter ──
+    // ── Listing ──
+    // The rows are rendered by the view on first load and by buildRow below on
+    // every change after that, from the same listing the API returns. Keep the
+    // two in step with views/servers/files.ejs.
 
+    var tbody = document.getElementById('files-tbody');
+    var emptyRow = document.getElementById('files-empty');
+    var noMatchRow = document.getElementById('files-no-match');
+    var searchBar = document.getElementById('search-bar');
     var searchInput = document.getElementById('search-input');
+    var gate = (tbody && tbody.dataset.gate) || 'stopped crashed';
+    var parentPath = (tbody && tbody.dataset.parentPath) || '';
+
+    function iconCell(name) {
+        var td = document.createElement('td');
+        var icon = document.createElement('span');
+        icon.className = 'material-icons-outlined text-body-secondary';
+        icon.style.fontSize = '1.2rem';
+        icon.textContent = name;
+        td.appendChild(icon);
+        return td;
+    }
+
+    // A 32px square icon button/link, as the view lays them out.
+    function squareControl(tag, classes, iconName) {
+        var el = document.createElement(tag);
+        el.className = classes + ' btn-sm d-inline-flex align-items-center justify-content-center';
+        el.style.cssText = 'width: 32px; height: 32px; padding: 0;';
+        if (tag === 'button') el.type = 'button';
+        var icon = document.createElement('span');
+        icon.className = 'material-icons-outlined';
+        icon.style.fontSize = '1rem';
+        icon.textContent = iconName;
+        el.appendChild(icon);
+        return el;
+    }
+
+    // Controls that need the server stopped carry the same gate attributes the
+    // view gives them; applyStateGates() (app.js) then sets disabled/title from
+    // the live state once the row is in the document.
+    function gateControl(el, enabledTitle, disabledTitle) {
+        el.dataset.enableWhen = gate;
+        el.dataset.enabledTitle = enabledTitle;
+        el.dataset.disabledTitle = disabledTitle;
+    }
+
+    function buildRow(file) {
+        var relPath = (currentPath ? currentPath + '/' : '') + file.name;
+        var tr = document.createElement('tr');
+        tr.dataset.filename = file.name;
+        tr.dataset.path = relPath;
+        tr.dataset.directory = String(!!file.isDirectory);
+
+        tr.appendChild(iconCell(file.isDirectory ? 'folder' : 'description'));
+
+        var nameTd = document.createElement('td');
+        if (file.isDirectory) {
+            var link = document.createElement('a');
+            link.href = '/servers/' + serverId + '/files/' + relPath;
+            link.className = 'text-decoration-none';
+            link.textContent = file.name + '/';
+            nameTd.appendChild(link);
+        } else {
+            nameTd.textContent = file.name;
+        }
+        tr.appendChild(nameTd);
+
+        var sizeTd = document.createElement('td');
+        sizeTd.className = 'text-body-secondary small';
+        sizeTd.textContent = file.isDirectory ? '—' : file.sizeFormatted;
+        tr.appendChild(sizeTd);
+
+        var dateTd = document.createElement('td');
+        dateTd.className = 'text-body-secondary small';
+        var date = document.createElement('span');
+        date.className = 'format-date';
+        date.dataset.iso = file.modifiedISO;
+        date.textContent = formatDate(file.modifiedISO);
+        dateTd.appendChild(date);
+        tr.appendChild(dateTd);
+
+        var actionsTd = document.createElement('td');
+        actionsTd.className = 'text-end';
+        var group = document.createElement('div');
+        group.className = 'd-inline-flex gap-1';
+
+        if (!file.isDirectory) {
+            if (file.editable) {
+                var edit = squareControl('a', 'btn btn-outline-primary', 'edit');
+                edit.href = '/servers/' + serverId + '/edit-file?path=' + encodeURIComponent(relPath);
+                edit.title = 'Edit';
+                group.appendChild(edit);
+            }
+            var download = squareControl('a', 'btn btn-outline-secondary', 'download');
+            download.href = '/servers/' + serverId + '/download?path=' + encodeURIComponent(relPath);
+            download.dataset.download = file.name;
+            gateControl(download, 'Download', 'Stop server to download');
+            group.appendChild(download);
+        }
+
+        var rename = squareControl('button', 'btn btn-outline-secondary rename-btn', 'drive_file_rename_outline');
+        gateControl(rename, 'Rename', 'Stop the server to rename');
+        group.appendChild(rename);
+
+        var del = squareControl('button', 'btn btn-outline-danger delete-btn', 'delete');
+        gateControl(del, 'Delete', 'Stop the server to delete');
+        group.appendChild(del);
+
+        actionsTd.appendChild(group);
+        tr.appendChild(actionsTd);
+        return tr;
+    }
+
+    // The rows in listing order (folders first, then by name — the API's order),
+    // so the search can put them back after ranking them.
+    var listedRows = [];
+
+    function renderRows(files) {
+        if (!tbody) return;
+        listedRows.forEach(function (row) { row.remove(); });
+        listedRows = files.map(buildRow);
+        // The "..", empty and no-match rows are the view's; entry rows go
+        // between the first and the other two.
+        listedRows.forEach(function (row) { tbody.insertBefore(row, emptyRow); });
+
+        if (searchBar) searchBar.classList.toggle('d-none', files.length === 0);
+        if (emptyRow) emptyRow.classList.toggle('d-none', files.length > 0);
+
+        // New controls take the live gate, not the one the page loaded with.
+        applyStateGates();
+        applySearch();
+    }
+
+    // Rows the view rendered are the initial listing.
+    if (tbody) {
+        listedRows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-filename]'));
+    }
+
+    // Refetch the directory and redraw. Sequenced so a slow response can never
+    // paint over a newer one, and a directory that has since gone (deleted or
+    // renamed from another tab) sends the page up a level rather than leaving
+    // it on a listing that no longer exists.
+    var refreshSeq = 0;
+    async function refreshList() {
+        if (!tbody) return;
+        var seq = ++refreshSeq;
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/files?path=' + encodeURIComponent(currentPath));
+        if (seq !== refreshSeq) return;
+        if (res.status === 404 && currentPath) {
+            flashToast('The folder "' + currentPath + '" no longer exists.', 'warning');
+            window.location.href = '/servers/' + serverId + '/files' + (parentPath ? '/' + parentPath : '');
+            return;
+        }
+        if (!res.ok || !res.data) {
+            showToast((res.data && res.data.error) || 'Could not refresh the file list.', 'danger');
+            return;
+        }
+        renderRows(res.data.files || []);
+    }
+
+    // Another tab (or the file editor) changed this directory. Own changes are
+    // skipped — the handler that made them already refreshed. A short debounce
+    // folds a burst into one fetch.
+    //
+    // A change in an ancestor directory counts too: the only way this
+    // directory can be deleted or renamed is from the listing that contains
+    // it, and the refetch is what notices it has gone.
+    function concernsThisDirectory(changedPath) {
+        if (typeof changedPath !== 'string') return false;
+        if (changedPath === currentPath) return true;
+        return changedPath === '' || currentPath.indexOf(changedPath + '/') === 0;
+    }
+
+    var remoteRefreshTimer = null;
+    document.addEventListener('craftbox:content-changed', function (e) {
+        var msg = e.detail || {};
+        if (msg.scope !== 'files' || !concernsThisDirectory(msg.path)) return;
+        if (msg.origin && msg.origin === window.CRAFTBOX_CLIENT_ID) return;
+        clearTimeout(remoteRefreshTimer);
+        remoteRefreshTimer = setTimeout(refreshList, 300);
+    });
+
+    // ── Search / Filter ──
+    // The query lives here rather than only in the input, so a redraw after an
+    // upload or delete filters the new rows exactly as the old ones were.
+
+    var searchQuery = '';
+
+    function applySearch() {
+        var query = searchQuery.trim().toLowerCase();
+        var shown = 0;
+        listedRows.forEach(function (row) {
+            var match = !query || row.dataset.filename.toLowerCase().indexOf(query) !== -1;
+            row.classList.toggle('d-none', !match);
+            if (match) shown++;
+        });
+        if (noMatchRow) noMatchRow.classList.toggle('d-none', shown > 0 || listedRows.length === 0);
+    }
+
     if (searchInput) {
         searchInput.addEventListener('input', function () {
-            var query = searchInput.value.toLowerCase();
-            document.querySelectorAll('table tbody tr[data-filename]').forEach(function (row) {
-                var name = row.getAttribute('data-filename').toLowerCase();
-                row.style.display = (!query || name.includes(query)) ? '' : 'none';
-            });
+            searchQuery = searchInput.value;
+            applySearch();
         });
+        // A browser restoring the page can hand the input its old value back.
+        searchQuery = searchInput.value;
+        if (searchQuery) applySearch();
     }
 
     // ── Upload ──
@@ -126,33 +322,31 @@
         var noun = uploadedCount === 1 ? 'file' : 'files';
         var replacedNote = replaced > 0 ? ', ' + replaced + ' replaced' : '';
 
-        function unlock() {
-            if (uploadBtn) uploadBtn.disabled = false;
-            if (fileInput) fileInput.disabled = false;
-            hideOverlay();
+        // Anything that landed is shown before the outcome is announced, so
+        // the toast never describes rows the table has yet to catch up with.
+        if (uploadedCount > 0) {
+            // The selection is spent: leaving it in the picker would offer the
+            // same files for a second upload.
+            if (fileInput) fileInput.value = '';
+            await refreshList();
         }
+        if (uploadBtn) uploadBtn.disabled = !fileInput || fileInput.files.length === 0;
+        if (fileInput) fileInput.disabled = false;
+        hideOverlay();
 
         if (failure && uploadedCount > 0) {
-            // Some files landed before the failure — reload to show them.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded, then: ' + failure, 'warning');
-            window.location.reload();
+            showToast(uploadedCount + ' ' + noun + ' uploaded, then: ' + failure, 'warning');
         } else if (failure) {
             showToast(failure, 'danger');
-            unlock();
         } else if (uploadedCount === 0) {
-            // Nothing made it through — show a danger toast and stay put.
             showToast(rejectedCount === 1
                 ? 'File rejected: ' + ((rejected[0] && rejected[0].reason) || 'unknown reason') + '.'
                 : 'No files uploaded — all ' + rejectedCount + ' were rejected.', 'danger');
-            unlock();
         } else if (rejectedCount > 0) {
-            // Partial success — reload to show what landed, with a warning toast.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote
+            showToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote
                 + ', ' + rejectedCount + ' rejected.', 'warning');
-            window.location.reload();
         } else {
-            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote + '.', 'success');
-            window.location.reload();
+            showToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote + '.', 'success');
         }
     }
 
@@ -221,6 +415,17 @@
         });
     }
 
+    // Row buttons are bound once, on the table, so rows drawn later work too.
+    function entryFor(btn) {
+        var row = btn.closest('tr[data-path]');
+        if (!row) return null;
+        return {
+            path: row.dataset.path,
+            name: row.dataset.filename,
+            isDirectory: row.dataset.directory === 'true'
+        };
+    }
+
     // ── Delete ──
 
     var deleteModal = document.getElementById('deleteModal');
@@ -229,30 +434,25 @@
     var confirmDeleteBtn = document.getElementById('confirm-delete-btn');
     var pendingDelete = null;
 
-    if (deleteModal) {
+    if (deleteModal && tbody) {
         var bsDeleteModal = new bootstrap.Modal(deleteModal);
 
-        document.querySelectorAll('.delete-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var row = btn.closest('tr[data-path]');
-                if (!row) return;
-                pendingDelete = {
-                    path: row.getAttribute('data-path'),
-                    name: row.getAttribute('data-filename'),
-                    isDirectory: row.getAttribute('data-directory') === 'true'
-                };
+        tbody.addEventListener('click', function (e) {
+            var btn = e.target.closest('.delete-btn');
+            if (!btn || btn.disabled) return;
+            pendingDelete = entryFor(btn);
+            if (!pendingDelete) return;
 
-                deleteTitleEl.textContent = pendingDelete.isDirectory ? 'Delete Folder' : 'Delete File';
-                deleteBodyEl.textContent = pendingDelete.isDirectory
-                    ? 'Permanently delete the folder '
-                    : 'Permanently delete ';
-                nameText(deleteBodyEl, pendingDelete.name);
-                deleteBodyEl.appendChild(document.createTextNode(pendingDelete.isDirectory
-                    ? ' and everything inside it? This cannot be undone.'
-                    : '? This cannot be undone.'));
+            deleteTitleEl.textContent = pendingDelete.isDirectory ? 'Delete Folder' : 'Delete File';
+            deleteBodyEl.textContent = pendingDelete.isDirectory
+                ? 'Permanently delete the folder '
+                : 'Permanently delete ';
+            nameText(deleteBodyEl, pendingDelete.name);
+            deleteBodyEl.appendChild(document.createTextNode(pendingDelete.isDirectory
+                ? ' and everything inside it? This cannot be undone.'
+                : '? This cannot be undone.'));
 
-                bsDeleteModal.show();
-            });
+            bsDeleteModal.show();
         });
 
         if (confirmDeleteBtn) {
@@ -261,6 +461,11 @@
 
                 confirmDeleteBtn.disabled = true;
                 confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Deleting...';
+
+                function done() {
+                    confirmDeleteBtn.disabled = false;
+                    confirmDeleteBtn.textContent = 'Delete';
+                }
 
                 try {
                     var res = await apiFetch('/api/v1/servers/' + serverId + '/files/delete', {
@@ -271,18 +476,15 @@
                     var data = res.data || {};
                     if (res.ok && data.success) {
                         bsDeleteModal.hide();
-                        flashToast((pendingDelete.isDirectory ? 'Folder' : 'File') + ' deleted.', 'success');
-                        window.location.reload();
+                        await refreshList();
+                        showToast((pendingDelete.isDirectory ? 'Folder' : 'File') + ' deleted.', 'success');
                     } else {
                         showToast(data.error || 'Delete failed.', 'danger');
-                        confirmDeleteBtn.disabled = false;
-                        confirmDeleteBtn.textContent = 'Delete';
                     }
                 } catch {
                     showToast('Delete failed. Please try again.', 'danger');
-                    confirmDeleteBtn.disabled = false;
-                    confirmDeleteBtn.textContent = 'Delete';
                 }
+                done();
             });
         }
     }
@@ -295,7 +497,7 @@
     var confirmRenameBtn = document.getElementById('confirm-rename-btn');
     var pendingRename = null;
 
-    if (renameModal) {
+    if (renameModal && tbody) {
         var bsRenameModal = new bootstrap.Modal(renameModal);
 
         // Renaming to the current name is a no-op the modal handles by just
@@ -306,20 +508,15 @@
 
         renameInput.addEventListener('input', updateRenameConfirm);
 
-        document.querySelectorAll('.rename-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var row = btn.closest('tr[data-path]');
-                if (!row) return;
-                pendingRename = {
-                    path: row.getAttribute('data-path'),
-                    name: row.getAttribute('data-filename'),
-                    isDirectory: row.getAttribute('data-directory') === 'true'
-                };
-                renameTitleEl.textContent = pendingRename.isDirectory ? 'Rename Folder' : 'Rename File';
-                renameInput.value = pendingRename.name;
-                updateRenameConfirm();
-                bsRenameModal.show();
-            });
+        tbody.addEventListener('click', function (e) {
+            var btn = e.target.closest('.rename-btn');
+            if (!btn || btn.disabled) return;
+            pendingRename = entryFor(btn);
+            if (!pendingRename) return;
+            renameTitleEl.textContent = pendingRename.isDirectory ? 'Rename Folder' : 'Rename File';
+            renameInput.value = pendingRename.name;
+            updateRenameConfirm();
+            bsRenameModal.show();
         });
 
         // Focus only lands once the modal is actually visible.
@@ -365,18 +562,16 @@
                     var data = res.data || {};
                     if (res.ok && data.success) {
                         bsRenameModal.hide();
-                        flashToast('Renamed to "' + data.name + '".', 'success');
-                        window.location.reload();
+                        await refreshList();
+                        showToast('Renamed to "' + data.name + '".', 'success');
                     } else {
                         showToast(data.error || 'Rename failed.', 'danger');
-                        confirmRenameBtn.textContent = 'Rename';
-                        updateRenameConfirm();
                     }
                 } catch {
                     showToast('Rename failed. Please try again.', 'danger');
-                    confirmRenameBtn.textContent = 'Rename';
-                    updateRenameConfirm();
                 }
+                confirmRenameBtn.textContent = 'Rename';
+                updateRenameConfirm();
             });
         }
     }
@@ -438,8 +633,6 @@
 
             function failed(message) {
                 showToast(message, 'danger');
-                confirmBtn.textContent = 'Create';
-                updateConfirm();
             }
 
             try {
@@ -451,14 +644,16 @@
                 var data = res.data || {};
                 if (res.ok && data.success) {
                     bsModal.hide();
-                    flashToast(opts.label + ' "' + data.name + '" created in ' + locationLabel + '.', 'success');
-                    window.location.reload();
+                    await refreshList();
+                    showToast(opts.label + ' "' + data.name + '" created in ' + locationLabel + '.', 'success');
                 } else {
                     failed(data.error || 'Could not create the ' + opts.noun + '.');
                 }
             } catch {
                 failed('Could not create the ' + opts.noun + '. Please try again.');
             }
+            confirmBtn.textContent = 'Create';
+            updateConfirm();
         });
     }
 

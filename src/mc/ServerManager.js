@@ -278,6 +278,20 @@ class ServerManager {
     }
 
     /**
+     * Tell a server's subscribers that one of its listings changed, so a page
+     * showing it can refetch instead of waiting for a reload. Sent after the
+     * change has landed on disk / in the DB, never before.
+     * @param {string} serverId
+     * @param {'files'|'plugins'|'backups'} scope - which listing changed
+     * @param {object} [extra] - scope detail (`path` for files, `origin` client id)
+     */
+    broadcastContentChanged(serverId, scope, extra = {}) {
+        const proc = this.getProcess(serverId);
+        if (!proc) return;
+        proc.broadcast({ type: 'content-changed', serverId, scope, ...extra });
+    }
+
+    /**
      * Remove a ServerProcess from the registry (for server deletion).
      */
     removeProcess(serverId) {

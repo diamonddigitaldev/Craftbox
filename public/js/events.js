@@ -158,14 +158,18 @@
             });
         });
 
-        // The log was wiped elsewhere (or in another tab) — reflect it here.
-        document.addEventListener('craftbox:events-cleared', function () {
-            tbody.innerHTML = '';
-            if (eventsCard) eventsCard.classList.add('d-none');
-            if (emptyCard) emptyCard.classList.remove('d-none');
-            if (clearFormEl) clearFormEl.classList.add('d-none');
-            if (countBadge) countBadge.textContent = '0';
-        });
+        document.addEventListener('craftbox:events-cleared', showCleared);
+    }
+
+    // The log was wiped — here or in another tab. Idempotent, so the clear
+    // button's own call and the broadcast that follows it can both run.
+    function showCleared() {
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (eventsCard) eventsCard.classList.add('d-none');
+        if (emptyCard) emptyCard.classList.remove('d-none');
+        if (clearFormEl) clearFormEl.classList.add('d-none');
+        if (countBadge) countBadge.textContent = '0';
     }
 
     // Clear events: modal confirmation + overlay
@@ -186,15 +190,15 @@
 
             var serverId = clearForm.dataset.serverId;
             var res = await apiFetch('/api/v1/servers/' + serverId + '/events/clear', { method: 'POST', body: {} });
+            hideOverlay();
+            btn.disabled = false;
+            btn.textContent = 'Clear Events';
             if (!res.ok) {
-                hideOverlay();
                 showToast((res.data && (res.data.message || res.data.error)) || 'Failed to clear events.', 'danger');
-                btn.disabled = false;
-                btn.textContent = 'Clear Events';
                 return;
             }
-            flashToast('Events cleared.', 'success');
-            window.location.reload();
+            showCleared();
+            showToast('Events cleared.', 'success');
         });
     }
 })();

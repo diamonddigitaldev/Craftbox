@@ -12,8 +12,10 @@
 <div class="row justify-content-center">
     <div class="col-lg-10 col-xl-8">
 
-        <% if (templates && templates.length > 0) { %>
-            <div class="card">
+        <%# Both rendered; templates.js swaps to the empty state when the last
+            row is deleted, so the page never has to reload to show it. %>
+        <% const _hasTemplates = templates && templates.length > 0; %>
+            <div class="card<%= _hasTemplates ? '' : ' d-none' %>" id="templates-card">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0 align-middle">
                         <thead>
@@ -28,7 +30,7 @@
                             </tr>
                         </thead>
                         <tbody id="templates-table">
-                            <% templates.forEach(function(t) { %>
+                            <% (templates || []).forEach(function(t) { %>
                                 <tr data-template-id="<%= t.id %>">
                                     <td class="fw-semibold"><%= t.name %></td>
                                     <td>
@@ -53,13 +55,11 @@
                     </table>
                 </div>
             </div>
-        <% } else { %>
-            <div class="text-center py-5">
+            <div class="text-center py-5<%= _hasTemplates ? ' d-none' : '' %>" id="templates-empty">
                 <span class="material-icons-outlined text-body-secondary mb-3" style="font-size: 4rem;">bookmark_border</span>
                 <h5 class="text-body-secondary">No templates yet</h5>
                 <p class="text-body-secondary mb-0">Save a template from any server's settings page.</p>
             </div>
-        <% } %>
     </div>
 </div>
 

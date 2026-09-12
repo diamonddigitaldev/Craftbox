@@ -69,14 +69,14 @@ const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
     </a>
 </div>
 
-<% if (files.length > 0) { %>
-<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+<%# Always rendered: files.js shows it whenever the listing is non-empty, which
+    changes as uploads and deletes land without a reload. %>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3<%= files.length > 0 ? '' : ' d-none' %>" id="search-bar">
     <div class="input-group input-group-sm" style="max-width: 350px;">
         <span class="input-group-text"><span class="material-icons-outlined" style="font-size: 1rem;">search</span></span>
-        <input type="text" class="form-control" id="search-input" placeholder="Search this folder...">
+        <input type="text" class="form-control" id="search-input" placeholder="Search this folder..." autocomplete="off">
     </div>
 </div>
-<% } %>
 
 <%# Uploading and creating folders are allowed while the server runs, so neither
     control is state-gated — only rename and delete below are. %>
@@ -105,6 +105,10 @@ const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
 </div>
 
 <!-- File listing -->
+<%# The entry rows below are re-rendered in place by files.js after every
+    change (and when another tab changes this directory), from the same
+    listing GET /api/v1/servers/:id/files returns. buildRow there mirrors the
+    row markup here — keep the two in step. %>
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
@@ -117,9 +121,9 @@ const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
                     <th style="width: 160px;"></th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="files-tbody" data-gate="<%= _gate %>" data-parent-path="<%= parentPath %>">
                 <% if (breadcrumbs.length > 0) { %>
-                <tr>
+                <tr data-parent-row>
                     <td>
                         <span class="material-icons-outlined text-body-secondary" style="font-size: 1.2rem;">arrow_upward</span>
                     </td>
@@ -190,11 +194,12 @@ const _destLabel = currentPath ? `"${currentPath}"` : 'the server root';
                     </td>
                 </tr>
                 <% }) %>
-                <% if (files.length === 0) { %>
-                <tr>
+                <tr id="files-empty" class="<%= files.length === 0 ? '' : 'd-none' %>">
                     <td colspan="5" class="text-center text-body-secondary py-4">This directory is empty.</td>
                 </tr>
-                <% } %>
+                <tr id="files-no-match" class="d-none">
+                    <td colspan="5" class="text-center text-body-secondary py-4">No files match your search.</td>
+                </tr>
             </tbody>
         </table>
     </div>

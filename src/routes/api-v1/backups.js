@@ -18,6 +18,7 @@ const {
 } = require('../../mc/BackupManager');
 const { STATES } = require('../../mc/stateMachine');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
+const { notifyContentChanged } = require('../../utils/liveUpdates');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -277,6 +278,7 @@ router.delete('/servers/:id/backups/:backupId', async (req, res) => {
     try {
         await deleteBackup(server.id, req.params.backupId);
         logEvent(server.id, 'backup_delete', 'Backup deleted', { initiatedBy: req.user.username }).catch(() => {});
+        notifyContentChanged(req, server.id, 'backups');
         res.json({ success: true });
     } catch (err) {
         log('error', `Backup delete failed: ${err.message}`);

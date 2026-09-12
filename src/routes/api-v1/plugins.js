@@ -20,6 +20,7 @@ const { isPathInside } = require('../../utils/pathSafety');
 const { formatSize } = require('../../utils/resourceStats');
 const { cleanupTempFiles, isZipFile } = require('../../utils/uploadSafety');
 const { createDgupRouter, multerShim } = require('../../middleware/dgup');
+const { notifyContentChanged } = require('../../utils/liveUpdates');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -126,6 +127,7 @@ const uploadPluginsHandler = async (req, res) => {
 
     if (uploaded.length > 0) {
         log('info', `Uploaded ${uploaded.length} ${contentType.label.toLowerCase()} to server ${server.name} (${server.id}): ${uploaded.join(', ')}`);
+        notifyContentChanged(req, server.id, 'plugins');
     }
     if (rejected.length > 0) {
         log('warn', `Rejected ${rejected.length} upload(s) to server ${server.name} (${server.id}): ${rejected.map(r => `${r.name} (${r.reason})`).join(', ')}`);
@@ -265,6 +267,7 @@ router.post('/servers/:id/plugins/delete', async (req, res) => {
             await clearModEnv(server.id, safeName);
         }
         log('info', `Deleted ${contentType.label.toLowerCase().slice(0, -1)} "${safeName}" from server ${server.name} (${server.id})`);
+        notifyContentChanged(req, server.id, 'plugins');
         res.json({ success: true });
     } catch (err) {
         log('error', `Failed to delete ${safeName}: ${err.message}`);
@@ -312,6 +315,7 @@ router.post('/servers/:id/plugins/delete-all', async (req, res) => {
     }
 
     log('info', `Deleted all ${deleted} ${contentType.label.toLowerCase()} from server ${server.name} (${server.id})`);
+    if (deleted > 0) notifyContentChanged(req, server.id, 'plugins');
     res.json({ success: true, count: deleted });
 });
 
@@ -357,6 +361,7 @@ router.post('/servers/:id/plugins/environment', async (req, res) => {
     try {
         await setModEnv(server.id, safeName, environment, contentDir);
         log('info', `Set mod "${safeName}" environment to ${environment} on server ${server.name} (${server.id})`);
+        notifyContentChanged(req, server.id, 'plugins');
         res.json({ success: true });
     } catch (err) {
         log('error', `Failed to set mod environment for ${safeName}: ${err.message}`);

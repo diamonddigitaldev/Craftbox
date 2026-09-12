@@ -5,37 +5,6 @@
     var serverId = window.location.pathname.split('/')[2];
     var csrf = document.getElementById('csrf-token')?.value || '';
 
-    // ── Search / Filter ──
-
-    var searchQuery = '';
-    var envFilter = '';
-
-    function applyFilters() {
-        document.querySelectorAll('table tbody tr[data-filename]').forEach(function (row) {
-            var name = row.getAttribute('data-filename').toLowerCase();
-            var env = row.getAttribute('data-env') || 'both';
-            var matchSearch = !searchQuery || name.includes(searchQuery);
-            var matchEnv = !envFilter || env === envFilter;
-            row.style.display = (matchSearch && matchEnv) ? '' : 'none';
-        });
-    }
-
-    var searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', function () {
-            searchQuery = searchInput.value.toLowerCase();
-            applyFilters();
-        });
-    }
-
-    var envFilterSelect = document.getElementById('env-filter');
-    if (envFilterSelect) {
-        envFilterSelect.addEventListener('change', function () {
-            envFilter = envFilterSelect.value;
-            applyFilters();
-        });
-    }
-
     // ── Mod / Plugin terminology (sourced from upload-btn data-label, set by views/servers/plugins.ejs) ──
 
     var uploadBtn = document.getElementById('upload-btn');
@@ -43,13 +12,223 @@
     var contentSingular = contentLabel === 'mods' ? 'mod' : 'plugin';
     var contentSingularCap = contentSingular.charAt(0).toUpperCase() + contentSingular.slice(1);
 
-    // ── Environment change ──
+    // ── Listing ──
+    // The rows are rendered by the view on first load and by buildRow below on
+    // every change after that, from the same listing the API returns. Keep the
+    // two in step with views/servers/plugins.ejs.
 
-    document.querySelectorAll('.env-select').forEach(function (sel) {
-        var previousValue = sel.value;
-        sel.addEventListener('change', async function () {
-            var filename = sel.getAttribute('data-filename');
+    var tbody = document.getElementById('plugins-tbody');
+    var emptyRow = document.getElementById('plugins-empty');
+    var noMatchRow = document.getElementById('plugins-no-match');
+    var searchBar = document.getElementById('search-bar');
+    var searchInput = document.getElementById('search-input');
+    var envFilterSelect = document.getElementById('env-filter');
+    var installedCountEl = document.getElementById('installed-count');
+    var listActions = document.getElementById('list-actions');
+    var deleteAllCountEl = document.getElementById('delete-all-count');
+    var gate = (tbody && tbody.dataset.gate) || 'stopped crashed';
+    var rowIcon = (tbody && tbody.dataset.icon) || 'extension';
+    var isMods = !!tbody && tbody.dataset.mods === 'true';
+
+    var ENV_OPTIONS = [
+        { value: 'both', label: 'Client and Server' },
+        { value: 'client', label: 'Client Only' },
+        { value: 'server', label: 'Server Only' }
+    ];
+
+    function buildRow(file) {
+        var tr = document.createElement('tr');
+        tr.dataset.filename = file.name;
+        tr.dataset.env = file.environment || 'both';
+
+        var iconTd = document.createElement('td');
+        var icon = document.createElement('span');
+        icon.className = 'material-icons-outlined text-body-secondary';
+        icon.style.fontSize = '1.2rem';
+        icon.textContent = rowIcon;
+        iconTd.appendChild(icon);
+        tr.appendChild(iconTd);
+
+        var nameTd = document.createElement('td');
+        nameTd.textContent = file.name;
+        tr.appendChild(nameTd);
+
+        var sizeTd = document.createElement('td');
+        sizeTd.className = 'text-body-secondary small';
+        sizeTd.textContent = file.sizeFormatted;
+        tr.appendChild(sizeTd);
+
+        var dateTd = document.createElement('td');
+        dateTd.className = 'text-body-secondary small';
+        var date = document.createElement('span');
+        date.className = 'format-date';
+        date.dataset.iso = file.modifiedISO;
+        date.textContent = formatDate(file.modifiedISO);
+        dateTd.appendChild(date);
+        tr.appendChild(dateTd);
+
+        if (isMods) {
+            var envTd = document.createElement('td');
+            var select = document.createElement('select');
+            select.className = 'form-select form-select-sm env-select';
+            select.dataset.filename = file.name;
+            select.dataset.enableWhen = gate;
+            select.dataset.enabledTitle = 'Change environment';
+            select.dataset.disabledTitle = 'Stop the server to change';
+            ENV_OPTIONS.forEach(function (opt) {
+                var option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.label;
+                // defaultSelected writes the attribute, as the view's markup has it.
+                option.defaultSelected = opt.value === tr.dataset.env;
+                select.appendChild(option);
+            });
+            envTd.appendChild(select);
+            tr.appendChild(envTd);
+        }
+
+        var actionsTd = document.createElement('td');
+        actionsTd.className = 'text-center';
+        var group = document.createElement('div');
+        group.className = 'd-inline-flex gap-1';
+
+        var download = document.createElement('a');
+        download.href = '/servers/' + serverId + '/plugins/download?file=' + encodeURIComponent(file.name);
+        download.className = 'btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center';
+        download.style.cssText = 'width: 32px; height: 32px; padding: 0;';
+        download.title = 'Download';
+        download.dataset.download = file.name;
+        download.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">download</span>';
+        group.appendChild(download);
+
+        // Gated like the view's: applyStateGates() (app.js) sets disabled and
+        // the title from the live state once the row is in the document.
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-outline-danger btn-sm d-inline-flex align-items-center justify-content-center delete-btn';
+        del.style.cssText = 'width: 32px; height: 32px; padding: 0;';
+        del.dataset.filename = file.name;
+        del.dataset.enableWhen = gate;
+        del.dataset.enabledTitle = 'Delete';
+        del.dataset.disabledTitle = 'Stop the server to delete';
+        del.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">delete</span>';
+        group.appendChild(del);
+
+        actionsTd.appendChild(group);
+        tr.appendChild(actionsTd);
+        return tr;
+    }
+
+    // The rows in listing order (by name — the API's order), so the search can
+    // put them back after ranking them.
+    var listedRows = [];
+
+    function renderRows(files) {
+        if (!tbody) return;
+        listedRows.forEach(function (row) { row.remove(); });
+        listedRows = files.map(buildRow);
+        listedRows.forEach(function (row) { tbody.insertBefore(row, emptyRow); });
+
+        var count = files.length;
+        if (installedCountEl) {
+            installedCountEl.textContent = count + ' ' + (count === 1 ? contentSingular : contentLabel) + ' installed';
+        }
+        if (deleteAllCountEl) deleteAllCountEl.textContent = String(count);
+        if (listActions) listActions.classList.toggle('d-none', count === 0);
+        if (searchBar) searchBar.classList.toggle('d-none', count === 0);
+        if (emptyRow) emptyRow.classList.toggle('d-none', count > 0);
+
+        // New controls take the live gate, not the one the page loaded with.
+        applyStateGates();
+        applyFilters();
+    }
+
+    // Rows the view rendered are the initial listing.
+    if (tbody) {
+        listedRows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-filename]'));
+    }
+
+    // Refetch the folder and redraw. Sequenced so a slow response can never
+    // paint over a newer one.
+    var refreshSeq = 0;
+    async function refreshList() {
+        if (!tbody) return;
+        var seq = ++refreshSeq;
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins');
+        if (seq !== refreshSeq) return;
+        if (!res.ok || !res.data) {
+            showToast((res.data && res.data.error) || 'Could not refresh the ' + contentLabel + ' list.', 'danger');
+            return;
+        }
+        renderRows(res.data.files || []);
+    }
+
+    // Another tab changed the folder. Own changes are skipped — the handler
+    // that made them already refreshed. A short debounce folds a burst (a
+    // Modrinth install pulling several dependencies) into one fetch.
+    var remoteRefreshTimer = null;
+    document.addEventListener('craftbox:content-changed', function (e) {
+        var msg = e.detail || {};
+        if (msg.scope !== 'plugins') return;
+        if (msg.origin && msg.origin === window.CRAFTBOX_CLIENT_ID) return;
+        clearTimeout(remoteRefreshTimer);
+        remoteRefreshTimer = setTimeout(refreshList, 300);
+    });
+
+    // ── Search / Filter ──
+    // Both live here rather than only in their inputs, so a redraw after an
+    // upload, delete or install filters the new rows exactly as the old ones.
+
+    var searchQuery = '';
+    var envFilter = '';
+
+    function applyFilters() {
+        var query = searchQuery.trim().toLowerCase();
+        var shown = 0;
+        listedRows.forEach(function (row) {
+            var name = row.dataset.filename.toLowerCase();
+            var env = row.dataset.env || 'both';
+            var matchSearch = !query || name.indexOf(query) !== -1;
+            var matchEnv = !envFilter || env === envFilter;
+            var match = matchSearch && matchEnv;
+            row.classList.toggle('d-none', !match);
+            if (match) shown++;
+        });
+        if (noMatchRow) noMatchRow.classList.toggle('d-none', shown > 0 || listedRows.length === 0);
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            searchQuery = searchInput.value;
+            applyFilters();
+        });
+        // A browser restoring the page can hand the inputs their old values back.
+        searchQuery = searchInput.value;
+    }
+
+    if (envFilterSelect) {
+        envFilterSelect.addEventListener('change', function () {
+            envFilter = envFilterSelect.value;
+            applyFilters();
+        });
+        envFilter = envFilterSelect.value;
+    }
+
+    if (searchQuery || envFilter) applyFilters();
+
+    // ── Environment change ──
+    // Bound once, on the table, so rows drawn later work too. The row's
+    // data-env is the last value the server accepted, which is what a refused
+    // change is put back to.
+
+    if (tbody && isMods) {
+        tbody.addEventListener('change', async function (e) {
+            var sel = e.target.closest('.env-select');
+            if (!sel) return;
+            var row = sel.closest('tr[data-filename]');
+            var filename = sel.dataset.filename;
             var newValue = sel.value;
+            var previousValue = (row && row.dataset.env) || 'both';
             sel.disabled = true;
             try {
                 var res = await apiFetch('/api/v1/servers/' + serverId + '/plugins/environment', {
@@ -58,9 +237,7 @@
                 });
                 var data = res.data || {};
                 if (res.ok && data.success) {
-                    var row = sel.closest('tr[data-filename]');
-                    if (row) row.setAttribute('data-env', newValue);
-                    previousValue = newValue;
+                    if (row) row.dataset.env = newValue;
                     applyFilters();
                     showToast(contentSingularCap + ' environment updated.', 'success');
                 } else {
@@ -74,7 +251,7 @@
                 sel.disabled = false;
             }
         });
-    });
+    }
 
     // ── Upload ──
 
@@ -154,33 +331,31 @@
         var noun = uploadedCount === 1 ? contentSingular : contentLabel;
         var replacedNote = replaced > 0 ? ', ' + replaced + ' replaced' : '';
 
+        // Anything that landed is shown before the outcome is announced, so
+        // the toast never describes rows the table has yet to catch up with.
+        if (uploadedCount > 0) {
+            // The selection is spent: leaving it in the picker would offer the
+            // same jars for a second upload.
+            if (fileInput) fileInput.value = '';
+            await refreshList();
+        }
+        if (fileInput) fileInput.disabled = false;
+        refreshUploadBtn();
+        hideOverlay();
+
         if (failure && uploadedCount > 0) {
-            // Some files landed before the failure — reload to show them.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded, then: ' + failure, 'warning');
-            window.location.reload();
+            showToast(uploadedCount + ' ' + noun + ' uploaded, then: ' + failure, 'warning');
         } else if (failure) {
             showToast(failure, 'danger');
-            if (uploadBtn) uploadBtn.disabled = false;
-            if (fileInput) fileInput.disabled = false;
-            hideOverlay();
         } else if (uploadedCount === 0) {
-            // Nothing made it through — show a danger toast and stay on the page.
-            var allRejectedMsg = rejectedCount === 1
+            showToast(rejectedCount === 1
                 ? 'File rejected: ' + ((rejected[0] && rejected[0].reason) || 'not a valid JAR') + '.'
-                : 'No files uploaded — all ' + rejectedCount + ' were rejected.';
-            showToast(allRejectedMsg, 'danger');
-            if (uploadBtn) uploadBtn.disabled = false;
-            if (fileInput) fileInput.disabled = false;
-            hideOverlay();
+                : 'No files uploaded — all ' + rejectedCount + ' were rejected.', 'danger');
         } else if (rejectedCount > 0) {
-            // Partial success — reload to show what landed, with a warning toast.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote
+            showToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote
                 + ', ' + rejectedCount + ' rejected.', 'warning');
-            window.location.reload();
         } else {
-            // Clean success path.
-            flashToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote + '.', 'success');
-            window.location.reload();
+            showToast(uploadedCount + ' ' + noun + ' uploaded' + replacedNote + '.', 'success');
         }
     }
 
@@ -270,15 +445,16 @@
     var confirmDeleteBtn = document.getElementById('confirm-delete-btn');
     var pendingDeleteFilename = null;
 
-    if (deleteModal) {
+    if (deleteModal && tbody) {
         var bsDeleteModal = new bootstrap.Modal(deleteModal);
 
-        document.querySelectorAll('.delete-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                pendingDeleteFilename = btn.getAttribute('data-filename');
-                if (deleteFilenameEl) deleteFilenameEl.textContent = pendingDeleteFilename;
-                bsDeleteModal.show();
-            });
+        // Bound once, on the table, so rows drawn later work too.
+        tbody.addEventListener('click', function (e) {
+            var btn = e.target.closest('.delete-btn');
+            if (!btn || btn.disabled) return;
+            pendingDeleteFilename = btn.dataset.filename;
+            if (deleteFilenameEl) deleteFilenameEl.textContent = pendingDeleteFilename;
+            bsDeleteModal.show();
         });
 
         if (confirmDeleteBtn) {
@@ -297,18 +473,16 @@
                     var data = res.data || {};
                     if (res.ok && data.success) {
                         bsDeleteModal.hide();
-                        flashToast(contentSingularCap + ' deleted.', 'success');
-                        window.location.reload();
+                        await refreshList();
+                        showToast(contentSingularCap + ' deleted.', 'success');
                     } else {
                         showToast(data.error || 'Delete failed.', 'danger');
-                        confirmDeleteBtn.disabled = false;
-                        confirmDeleteBtn.textContent = 'Delete';
                     }
                 } catch {
                     showToast('Delete failed. Please try again.', 'danger');
-                    confirmDeleteBtn.disabled = false;
-                    confirmDeleteBtn.textContent = 'Delete';
                 }
+                confirmDeleteBtn.disabled = false;
+                confirmDeleteBtn.textContent = 'Delete';
             });
         }
     }
@@ -340,20 +514,19 @@
 
                     var data = res.data || {};
                     if (res.ok && data.success) {
-                        flashToast('All ' + contentLabel + ' deleted.', 'success');
-                        window.location.reload();
+                        await refreshList();
+                        hideOverlay();
+                        showToast('All ' + contentLabel + ' deleted.', 'success');
                     } else {
                         hideOverlay();
                         showToast(data.error || 'Delete all failed.', 'danger');
-                        confirmDeleteAllBtn.disabled = false;
-                        confirmDeleteAllBtn.textContent = 'Delete All';
                     }
                 } catch {
                     hideOverlay();
                     showToast('Delete all failed. Please try again.', 'danger');
-                    confirmDeleteAllBtn.disabled = false;
-                    confirmDeleteAllBtn.textContent = 'Delete All';
                 }
+                confirmDeleteAllBtn.disabled = false;
+                confirmDeleteAllBtn.textContent = 'Delete All';
             });
         }
     }
@@ -379,7 +552,6 @@
         var mrOffset = 0;
         var mrTotal = 0;
         var mrSeq = 0;
-        var mrInstalledCount = 0;
         var mrLoadedOnce = false;
         // projectId -> filename for files already in the content folder,
         // matched by hash server-side. null until the lookup lands.
@@ -569,7 +741,6 @@
             }
 
             var files = (res.data && res.data.installed) || [];
-            mrInstalledCount += files.length;
             var msg = files.length > 1
                 ? files[0].filename + ' installed (+' + (files.length - 1) + ' ' + (files.length === 2 ? 'dependency' : 'dependencies') + ').'
                 : ((files[0] ? files[0].filename : contentSingularCap) + ' installed.');
@@ -583,6 +754,9 @@
                 });
                 markInstalledRows();
             }
+            // The table behind the modal picks the new jars up straight away,
+            // so closing it lands on a listing that already has them.
+            refreshList();
         }
 
         var mrDebounce = null;
@@ -600,14 +774,6 @@
         mrLoadMore.addEventListener('click', function () {
             mrOffset += MR_PAGE;
             mrSearch(true);
-        });
-
-        // Reload once the user is done so the installed files table refreshes.
-        // No toast — each install already announced itself when it happened.
-        modrinthModalEl.addEventListener('hidden.bs.modal', function () {
-            if (mrInstalledCount > 0) {
-                window.location.reload();
-            }
         });
     }
 })();

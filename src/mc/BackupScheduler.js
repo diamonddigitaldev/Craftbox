@@ -161,18 +161,7 @@ class BackupScheduler {
                 await proc.waitForState(STATES.STOPPED, 60000);
             }
 
-            await this.serverManager.setOperationalState(server.id, STATES.BACKING_UP);
-            try {
-                const backup = await createBackup(server.id, 'Scheduled Backup (Catch-up)', 'scheduled');
-                await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
-                logEvent(server.id, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-                log('info', `[${server.name}] Catch-up backup completed.`);
-            } catch (err) {
-                log('error', `[${server.name}] Catch-up backup failed: ${err.message}`);
-                logEvent(server.id, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-            } finally {
-                await this.serverManager.setOperationalState(server.id, STATES.STOPPED);
-            }
+            await this._runScheduledBackup(server, 'Scheduled Backup (Catch-up)', 'Catch-up backup');
 
             // The cycle restarts from this backup, so drop the due time it just
             // satisfied. startSchedule runs straight after and would otherwise
@@ -359,6 +348,48 @@ class BackupScheduler {
     }
 
     /**
+     * The backup itself, once the server is stopped: BACKING_UP → create →
+     * retention → STOPPED, logged either way and never thrown. The outcome is
+     * then broadcast as a `backup` operation exactly as a manual one is, so a
+     * backups page that is open sees the new archive (and whatever retention
+     * pruned) without a reload, and one that loaded mid-backup gets its
+     * overlay released. Sent after the state is back to STOPPED, the same
+     * order the manual route uses.
+     * @param {object} server - the server record (name, id, backupSchedule)
+     * @param {string} backupName
+     * @param {string} label - for the log line: "Scheduled backup" / "Catch-up backup"
+     */
+    async _runScheduledBackup(server, backupName, label) {
+        const schedule = server.backupSchedule || {};
+        let backup = null;
+        let failure = null;
+
+        await this.serverManager.setOperationalState(server.id, STATES.BACKING_UP);
+        try {
+            backup = await createBackup(server.id, backupName, 'scheduled');
+            await applyRetention(server.id, schedule.retentionCount || 0, schedule.retentionDays || 0);
+            logEvent(server.id, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+            log('info', `[${server.name}] ${label} completed.`);
+        } catch (err) {
+            failure = err;
+            log('error', `[${server.name}] ${label} failed: ${err.message}`);
+            logEvent(server.id, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
+        } finally {
+            await this.serverManager.setOperationalState(server.id, STATES.STOPPED);
+        }
+
+        if (failure) {
+            this.serverManager.broadcastOperation(server.id, 'backup', 'failed', failure.message);
+        } else {
+            this.serverManager.broadcastOperation(server.id, 'backup', 'complete', {
+                backup: { ...backup, sizeFormatted: formatSize(backup.size) },
+                scheduled: true,
+                warning: null
+            });
+        }
+    }
+
+    /**
      * Execute the actual backup: stop the server if running, create backup,
      * apply retention, and restart if the server was running before.
      */
@@ -380,23 +411,12 @@ class BackupScheduler {
             return;
         }
 
-        const schedule = server.backupSchedule || {};
         const p = this.serverManager.getProcess(serverId);
 
         if (!p || [STATES.STOPPED, STATES.CRASHED].includes(p.state)) {
             // Server not running — just backup directly
             log('info', `[${server.name}] Scheduled backup: server already stopped, creating backup...`);
-            await this.serverManager.setOperationalState(serverId, STATES.BACKING_UP);
-            try {
-                const backup = await createBackup(serverId, 'Scheduled Backup', 'scheduled');
-                await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
-                logEvent(serverId, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-            } catch (err) {
-                log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
-                logEvent(serverId, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-            } finally {
-                await this.serverManager.setOperationalState(serverId, STATES.STOPPED);
-            }
+            await this._runScheduledBackup(server, 'Scheduled Backup', 'Scheduled backup');
             return;
         }
 
@@ -412,17 +432,7 @@ class BackupScheduler {
         }
 
         log('info', `[${server.name}] Scheduled backup: creating backup...`);
-        await this.serverManager.setOperationalState(serverId, STATES.BACKING_UP);
-        try {
-            const backup = await createBackup(serverId, 'Scheduled Backup', 'scheduled');
-            await applyRetention(serverId, schedule.retentionCount || 0, schedule.retentionDays || 0);
-            logEvent(serverId, 'backup_create', `Scheduled backup created (${formatSize(backup.size)})`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-        } catch (err) {
-            log('error', `[${server.name}] Scheduled backup failed: ${err.message}`);
-            logEvent(serverId, 'backup_create_fail', `Scheduled backup failed: ${err.message}`, { initiatedBy: 'Backup Scheduler' }).catch(() => {});
-        } finally {
-            await this.serverManager.setOperationalState(serverId, STATES.STOPPED);
-        }
+        await this._runScheduledBackup(server, 'Scheduled Backup', 'Scheduled backup');
 
         // Only restart if the server was running before the backup
         if (stateBeforeStop === STATES.RUNNING) {

@@ -32,6 +32,7 @@ const { createDgupRouter, multerShim } = require('../../middleware/dgup');
 const { syncServerConfig } = require('../../mc/syncServerConfig');
 const { STATES } = require('../../mc/stateMachine');
 const { isPathInside } = require('../../utils/pathSafety');
+const { notifyDashboard, notifyContentChanged } = require('../../utils/liveUpdates');
 const { normalizeGroupName, getGroupColor, getStoredGroupColor, setGroupColor, pruneGroupMetaIfEmpty, GROUP_NAME_ERROR, GROUP_COLOR_REGEX } = require('../../utils/serverGroups');
 const { MC_VERSION_RE, isReleaseVersion } = require('../../utils/mcVersion');
 const { pickLatestBuild, compareBuilds } = require('../../mc/serverTypes/_channels');
@@ -252,16 +253,6 @@ async function downloadJarSafely(type, source, jarPath) {
         throw err;
     }
 }
-
-// Notify all open dashboard/group pages that the server list or grouping changed
-// so they can live-refresh. `origin` lets the initiating tab skip its own event.
-function notifyDashboard(req) {
-    req.app.get('serverManager')?.broadcastGlobal?.({
-        type: 'dashboard-changed',
-        origin: req.get('x-client-id') || null
-    });
-}
-
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -2409,6 +2400,13 @@ function resolveServerPath(req, res, server, rawPath) {
     return { serverDir, targetPath };
 }
 
+// A directory relative to the server root with '/' separators ('' for the
+// root itself) — the form the files page addresses directories by, so a
+// content-changed broadcast can be matched to the page showing that directory.
+function relativeDir(serverDir, absDir) {
+    return path.relative(serverDir, absDir).split(path.sep).filter(Boolean).join('/');
+}
+
 // GET /servers/:id/files?path= — List a directory inside the server.
 router.get('/servers/:id/files', async (req, res) => {
     try {
@@ -2691,6 +2689,7 @@ const uploadFilesHandler = async (req, res) => {
         log('info', `Uploaded ${uploaded.length} file(s) to "${req.body.path || '/'}" `
             + `on server ${server.name} (${server.id})`);
         await syncIfConfigFile(server.id, serverDir, ...uploaded.map(n => path.join(targetDir, n)));
+        notifyContentChanged(req, server.id, 'files', { path: relativeDir(serverDir, targetDir) });
     }
 
     res.json({ success: true, count: uploaded.length, uploaded, replaced, rejected });
@@ -2763,6 +2762,7 @@ router.post('/servers/:id/files/delete', async (req, res) => {
     log('info', `Deleted ${stat.isDirectory() ? 'folder' : 'file'} "${req.body.path}" `
         + `from server ${server.name} (${server.id})`);
     await syncIfConfigFile(server.id, serverDir, targetPath);
+    notifyContentChanged(req, server.id, 'files', { path: relativeDir(serverDir, path.dirname(targetPath)) });
     res.json({ success: true });
 });
 
@@ -2812,6 +2812,7 @@ router.post('/servers/:id/files/rename', async (req, res) => {
 
     log('info', `Renamed "${req.body.path}" to "${newName}" on server ${server.name} (${server.id})`);
     await syncIfConfigFile(server.id, serverDir, targetPath, destPath);
+    notifyContentChanged(req, server.id, 'files', { path: relativeDir(serverDir, path.dirname(targetPath)) });
     res.json({ success: true, name: newName });
 });
 
@@ -2827,7 +2828,7 @@ router.post('/servers/:id/files/mkdir', async (req, res) => {
 
     const resolved = resolveServerPath(req, res, server, req.body.path);
     if (!resolved) return;
-    const { targetPath: parentDir } = resolved;
+    const { serverDir, targetPath: parentDir } = resolved;
 
     if (!fs.existsSync(parentDir) || !fs.statSync(parentDir).isDirectory()) {
         return res.status(404).json({ error: 'Directory not found.' });
@@ -2850,6 +2851,7 @@ router.post('/servers/:id/files/mkdir', async (req, res) => {
 
     log('info', `Created folder "${name}" in "${req.body.path || '/'}" `
         + `on server ${server.name} (${server.id})`);
+    notifyContentChanged(req, server.id, 'files', { path: relativeDir(serverDir, parentDir) });
     res.json({ success: true, name });
 });
 
@@ -2901,6 +2903,7 @@ router.post('/servers/:id/files/mkfile', async (req, res) => {
     // An empty server.properties / eula.txt created in the root has to re-sync
     // the mirrored database fields, exactly as uploading or deleting one does.
     await syncIfConfigFile(server.id, serverDir, destPath);
+    notifyContentChanged(req, server.id, 'files', { path: relativeDir(serverDir, parentDir) });
     res.json({ success: true, name });
 });
 
@@ -3135,6 +3138,8 @@ router.post('/servers/:id/edit-file', async (req, res) => {
             await syncServerConfig(id);
         }
 
+        // Size and modified time moved, which a files page on this directory shows.
+        notifyContentChanged(req, id, 'files', { path: relativeDir(serverDir, path.dirname(targetPath)) });
         res.json({ success: true, file: path.basename(targetPath) });
     } catch (err) {
         log('error', `Failed to save file ${filePath}: ${err.message}`);
