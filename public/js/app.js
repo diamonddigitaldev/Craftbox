@@ -221,6 +221,169 @@ function showToast(message, type) {
     toast.show();
 }
 
+// ── Closest-match search ──
+// The search boxes over the files, plugins/mods, versions and groups lists used
+// to be a plain substring test, which is fine right up until a name is typed
+// slightly wrong ("essentails"), abbreviated ("we" for WorldEdit) or given in
+// a different order ("edit world"). fuzzyScore() grades how well a query fits
+// a name and returns 0 for no fit at all; lists that rank their results sort
+// by it, lists with an order of their own (versions newest-first, groups by
+// name) just use it as the filter.
+//
+// Scoring, per whitespace-separated token — every token has to land somewhere,
+// and the query's score is the mean of its tokens':
+//   100  the whole name
+//    90  a prefix                       "wor"   → WorldEdit.jar
+//    85  a substring starting a word    "edit"  → WorldEdit.jar
+//    75  any other substring            "dedi"  → WorldEdit.jar
+//    70  the initials of its words      "we"    → WorldEdit.jar
+//  ≤ 60  the letters in order, closer together scoring higher
+//                                       "wrldedt" → WorldEdit.jar
+//  ≤ 45  within one typo (two from eight letters) of some part of the name
+//                                       "essentails" → EssentialsX.jar
+// Small penalties nudge earlier and tighter hits ahead of later, looser ones,
+// so "world" puts world before world_nether before WorldEdit. Case, accents
+// and separators do not matter; a word starts after a separator, at a
+// camelCase boundary, or where letters turn into digits.
+
+// One folded character per input character, so positions line up with the
+// word-start map computed on the original text.
+function _searchFoldChar(ch) {
+    return ch.normalize('NFD').charAt(0).toLowerCase();
+}
+
+function _searchFold(text) {
+    var out = '';
+    for (var i = 0; i < text.length; i++) out += _searchFoldChar(text.charAt(i));
+    return out;
+}
+
+function _searchWordStarts(text) {
+    var starts = [];
+    var prev = '';
+    for (var i = 0; i < text.length; i++) {
+        var ch = text.charAt(i);
+        var alnum = /[a-z0-9]/i.test(ch);
+        var prevAlnum = /[a-z0-9]/i.test(prev);
+        starts.push(alnum && (
+            !prevAlnum
+            || (/[a-z]/.test(prev) && /[A-Z]/.test(ch))
+            || (/[0-9]/.test(prev) !== /[0-9]/.test(ch))
+        ));
+        prev = ch;
+    }
+    return starts;
+}
+
+// Whether `token` is the initials of `text`'s words, in order ("we" for
+// WorldEdit, "lp" for LuckPerms). Only word-start letters are considered.
+function _searchInitials(token, text, starts) {
+    var i = 0;
+    for (var pos = 0; pos < text.length && i < token.length; pos++) {
+        if (starts[pos] && text.charAt(pos) === token.charAt(i)) i++;
+    }
+    return i === token.length;
+}
+
+// The letters of `token` in order through `text`, greedily. Returns 0 when
+// they are not all there or are spread too thin to be a plausible match,
+// otherwise a score that falls with the gaps between hits and rises for hits
+// on word starts. Not offered for one- or two-letter tokens: any two letters
+// are "in order" in most names.
+function _searchSubsequence(token, text, starts) {
+    if (token.length < 3) return 0;
+    var first = -1;
+    var pos = -1;
+    var gaps = 0;
+    var boundaryHits = 0;
+    for (var i = 0; i < token.length; i++) {
+        var next = text.indexOf(token.charAt(i), pos + 1);
+        if (next === -1) return 0;
+        if (i === 0) first = next;
+        else gaps += Math.min(next - pos - 1, 6);
+        if (starts[next]) boundaryHits++;
+        pos = next;
+    }
+    if (pos - first + 1 > token.length * 3 + 2) return 0;
+    return Math.max(1, 60 - gaps * 3 + boundaryHits * 2);
+}
+
+// Smallest edit distance between `pattern` and any substring of `text`
+// (Sellers' algorithm: the first row is free, so a match may start anywhere).
+function _searchWindowDistance(pattern, text) {
+    var m = pattern.length;
+    var prev = [];
+    var cur = [];
+    for (var i = 0; i <= m; i++) prev[i] = i;
+    var best = m;
+    for (var j = 1; j <= text.length; j++) {
+        cur[0] = 0;
+        for (var k = 1; k <= m; k++) {
+            var cost = pattern.charAt(k - 1) === text.charAt(j - 1) ? 0 : 1;
+            cur[k] = Math.min(prev[k] + 1, cur[k - 1] + 1, prev[k - 1] + cost);
+        }
+        if (cur[m] < best) best = cur[m];
+        var swap = prev; prev = cur; cur = swap;
+    }
+    return best;
+}
+
+function _searchTokenScore(token, text, starts, typos) {
+    if (text === token) return 100;
+    var idx = text.indexOf(token);
+    if (idx !== -1) {
+        var base = idx === 0 ? 90 : (starts[idx] ? 85 : 75);
+        return base - Math.min(idx, 20) * 0.25 - Math.min(text.length - token.length, 40) * 0.1;
+    }
+    if (_searchInitials(token, text, starts)) return 70;
+    var seq = _searchSubsequence(token, text, starts);
+    if (seq > 0) return seq;
+    if (typos && token.length >= 4) {
+        var allowed = token.length >= 8 ? 2 : 1;
+        var distance = _searchWindowDistance(token, text);
+        if (distance <= allowed) return 45 - distance * 10;
+    }
+    return 0;
+}
+
+// How well `query` fits `text`: 0 for not at all, up to 100 for exactly.
+// An empty query fits everything. `opts.typos: false` turns off the
+// edit-distance tier — for version ids, where "1.21.1" being a typo of
+// "1.21.4" is not a helpful reading.
+function fuzzyScore(query, text, opts) {
+    var typos = !opts || opts.typos !== false;
+    var q = _searchFold(String(query || '')).trim();
+    if (!q) return 1;
+    var t = String(text || '');
+    var folded = _searchFold(t);
+    var starts = _searchWordStarts(t);
+
+    // The query as typed, spaces and all, is the strongest kind of hit.
+    if (folded.indexOf(q) !== -1) return _searchTokenScore(q, folded, starts, typos);
+
+    var tokens = q.split(/\s+/);
+    var total = 0;
+    for (var i = 0; i < tokens.length; i++) {
+        var score = _searchTokenScore(tokens[i], folded, starts, typos);
+        if (score === 0) return 0;
+        total += score;
+    }
+    return total / tokens.length;
+}
+
+// The items that fit `query`, best first; ties keep their original order.
+// `getText` reads the searchable name off an item (defaults to the item).
+function fuzzyRank(query, items, getText, opts) {
+    getText = getText || function (item) { return item; };
+    var scored = [];
+    for (var i = 0; i < items.length; i++) {
+        var score = fuzzyScore(query, getText(items[i]), opts);
+        if (score > 0) scored.push({ item: items[i], score: score, index: i });
+    }
+    scored.sort(function (a, b) { return b.score - a.score || a.index - b.index; });
+    return scored.map(function (entry) { return entry.item; });
+}
+
 // ── Stray file drops ──
 // A file dropped somewhere the page does not handle is a navigation: the browser
 // leaves for that file's own URL, and a half-filled form goes with it. The four

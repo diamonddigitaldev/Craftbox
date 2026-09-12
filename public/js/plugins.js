@@ -178,23 +178,36 @@
     // ── Search / Filter ──
     // Both live here rather than only in their inputs, so a redraw after an
     // upload, delete or install filters the new rows exactly as the old ones.
+    //
+    // Matching is fuzzyRank (app.js): closest fit first, so a typo or an
+    // abbreviation still finds the jar, and the rows are re-ordered by how
+    // well they fit while a query is in. Clearing it puts the listing order
+    // back. The environment filter narrows the ranked set.
 
     var searchQuery = '';
     var envFilter = '';
 
     function applyFilters() {
-        var query = searchQuery.trim().toLowerCase();
-        var shown = 0;
-        listedRows.forEach(function (row) {
-            var name = row.dataset.filename.toLowerCase();
+        var query = searchQuery.trim();
+        var order = query
+            ? fuzzyRank(query, listedRows, function (row) { return row.dataset.filename; })
+            : listedRows;
+        var shown = {};
+        order.forEach(function (row) {
             var env = row.dataset.env || 'both';
-            var matchSearch = !query || name.indexOf(query) !== -1;
-            var matchEnv = !envFilter || env === envFilter;
-            var match = matchSearch && matchEnv;
-            row.classList.toggle('d-none', !match);
-            if (match) shown++;
+            if (envFilter && env !== envFilter) return;
+            shown[row.dataset.filename] = true;
+            // Moving each matched row in turn (appendChild relocates) lays
+            // them out in rank order, ahead of the fixed rows at the end.
+            tbody.insertBefore(row, emptyRow);
         });
-        if (noMatchRow) noMatchRow.classList.toggle('d-none', shown > 0 || listedRows.length === 0);
+        var count = 0;
+        listedRows.forEach(function (row) {
+            var visible = !!shown[row.dataset.filename];
+            row.classList.toggle('d-none', !visible);
+            if (visible) count++;
+        });
+        if (noMatchRow) noMatchRow.classList.toggle('d-none', count > 0 || listedRows.length === 0);
     }
 
     if (searchInput) {

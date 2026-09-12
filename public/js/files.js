@@ -221,18 +221,30 @@
     // ── Search / Filter ──
     // The query lives here rather than only in the input, so a redraw after an
     // upload or delete filters the new rows exactly as the old ones were.
+    //
+    // Matching is fuzzyRank (app.js): closest fit first, so a typo or an
+    // abbreviation still finds the file, and the rows are re-ordered by how
+    // well they fit while a query is in. Clearing it puts the listing order
+    // back.
 
     var searchQuery = '';
 
     function applySearch() {
-        var query = searchQuery.trim().toLowerCase();
-        var shown = 0;
-        listedRows.forEach(function (row) {
-            var match = !query || row.dataset.filename.toLowerCase().indexOf(query) !== -1;
-            row.classList.toggle('d-none', !match);
-            if (match) shown++;
+        var query = searchQuery.trim();
+        var order = query
+            ? fuzzyRank(query, listedRows, function (row) { return row.dataset.filename; })
+            : listedRows;
+        var shown = {};
+        order.forEach(function (row) {
+            shown[row.dataset.filename] = true;
+            // Moving each matched row in turn (appendChild relocates) lays
+            // them out in rank order, ahead of the fixed rows at the end.
+            tbody.insertBefore(row, emptyRow);
         });
-        if (noMatchRow) noMatchRow.classList.toggle('d-none', shown > 0 || listedRows.length === 0);
+        listedRows.forEach(function (row) {
+            row.classList.toggle('d-none', !shown[row.dataset.filename]);
+        });
+        if (noMatchRow) noMatchRow.classList.toggle('d-none', order.length > 0 || listedRows.length === 0);
     }
 
     if (searchInput) {
