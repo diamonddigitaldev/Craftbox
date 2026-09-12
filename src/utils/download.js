@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const archiver = require('archiver');
-const contentDisposition = require('content-disposition');
+const { create: createContentDisposition } = require('content-disposition');
 const { log } = require('./log');
 const { formatSize } = require('./formatSize');
 
@@ -16,6 +16,14 @@ const { formatSize } = require('./formatSize');
 // response ends, and the whole directory is wiped on boot to reclaim whatever
 // a crash left behind.
 const STAGING_DIR = path.join(os.tmpdir(), 'craftbox-downloads');
+
+// content-disposition 2.x stopped reducing the name to its basename before
+// encoding it. Every caller already passes one, but a header is the last place
+// a stray directory should be able to leak, so the reduction is kept here —
+// on both separators, as the 1.x implementation did.
+function contentDisposition(filename) {
+    return createContentDisposition(path.posix.basename(String(filename).replaceAll('\\', '/')));
+}
 
 // A packing job that outlives this is either wedged or forgotten; the reaper
 // deletes its file so a huge abandoned archive cannot sit on the disk.
