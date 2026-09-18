@@ -91,6 +91,7 @@ class DownloadReporter {
         this.label = label || 'file';
         this.settled = false;
         this._lastProgressAt = 0;
+        this._lastPhase = null;
     }
 
     get active() {
@@ -110,11 +111,17 @@ class DownloadReporter {
      * Packing/sending progress. Throttled to one message a second: packing a
      * large server directory fires archiver's progress event thousands of times
      * a second and none of that belongs on the socket.
+     *
+     * A change of phase always goes out. The switch to sending is reported
+     * exactly once, and it used to be dropped whenever the last packing tick
+     * had landed within the previous second — which, on a fast link, was
+     * nearly always, so the panel never showed the transfer as under way.
      */
     progress(phase, { done = 0, total = 0 } = {}) {
         if (!this.active || this.settled) return;
         const now = Date.now();
-        if (now - this._lastProgressAt < 1000) return;
+        if (phase === this._lastPhase && now - this._lastProgressAt < 1000) return;
+        this._lastPhase = phase;
         this._lastProgressAt = now;
         this._send('progress', { token: this.token, label: this.label, phase, done, total });
     }
