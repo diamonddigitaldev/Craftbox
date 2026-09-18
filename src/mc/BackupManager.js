@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 const StreamZip = require('node-stream-zip');
 const { v4: uuidv4 } = require('uuid');
 const { backupsDb, serversDb, BACKUPS_DIR, SERVERS_DIR } = require('../db');
@@ -117,7 +117,7 @@ async function _doCreateBackup(serverId, name, type) {
 
     await new Promise((resolve, reject) => {
         const output = fs.createWriteStream(zipPath);
-        const archive = archiver('zip', { zlib: { level: 5 } });
+        const archive = new ZipArchive({ zlib: { level: 5 } });
 
         output.on('close', resolve);
         archive.on('error', (err) => {

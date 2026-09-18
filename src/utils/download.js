@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 const { create: createContentDisposition } = require('content-disposition');
 const { log } = require('./log');
 const { formatSize } = require('./formatSize');
@@ -17,10 +17,10 @@ const { formatSize } = require('./formatSize');
 // a crash left behind.
 const STAGING_DIR = path.join(os.tmpdir(), 'craftbox-downloads');
 
-// content-disposition 2.x stopped reducing the name to its basename before
+// content-disposition stopped reducing the name to its basename before
 // encoding it. Every caller already passes one, but a header is the last place
 // a stray directory should be able to leak, so the reduction is kept here —
-// on both separators, as the 1.x implementation did.
+// on both separators, as its 1.x implementation did.
 function contentDisposition(filename) {
     return createContentDisposition(path.posix.basename(String(filename).replaceAll('\\', '/')));
 }
@@ -343,7 +343,7 @@ function removeStagedFile(stagedPath, attempt = 0) {
  */
 function packArchive({ build, stagedPath, zlibLevel, estimatedBytes, reporter, res, label }) {
     return new Promise((resolve, reject) => {
-        const archive = archiver('zip', { zlib: { level: zlibLevel } });
+        const archive = new ZipArchive({ zlib: { level: zlibLevel } });
         const out = fs.createWriteStream(stagedPath);
         let outcome = null; // { error } | { abandoned: true } | { packed: true }
 
