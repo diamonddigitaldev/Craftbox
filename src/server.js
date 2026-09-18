@@ -35,6 +35,25 @@ if (!validNodeEnvs.includes(NODE_ENV)) {
 }
 log('info', `NODE_ENV: ${NODE_ENV}`);
 
+// TRUST_PROXY is the number of reverse proxies sitting in front of Craftbox.
+// Express only reads the client address (and whether the request came in over
+// HTTPS) out of X-Forwarded-* when told how many hops to believe, and it
+// counts them from the socket inwards, so the login rate limiter keys on the
+// real client and secure session cookies work behind a TLS-terminating proxy.
+// Anything past that count is untrusted, which stops a client forging the
+// header to dodge the limiter. Unset, 0 or false trusts nothing; true is kept
+// as an alias for 1, which is what it always meant.
+const rawTrustProxy = process.env.TRUST_PROXY;
+const TRUST_PROXY = (() => {
+    const value = String(rawTrustProxy ?? '').trim().toLowerCase();
+    if (value === '' || value === 'false') return false;
+    if (value === 'true') return 1;
+    if (/^\d+$/.test(value)) return Number(value) || false;
+    log('warn', `Invalid TRUST_PROXY value "${rawTrustProxy}". Expected the number of reverse proxies in front of Craftbox, or true/false. Trusting no proxy.`);
+    return false;
+})();
+log('info', `TRUST_PROXY: ${TRUST_PROXY === false ? 'off' : `${TRUST_PROXY} hop${TRUST_PROXY === 1 ? '' : 's'}`}`);
+
 (async () => {
     try {
         // ── 1. Initialize database ──
@@ -52,9 +71,8 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         // ── 3. Create Express app ──
         const app = express();
 
-        // Trust proxy when behind reverse proxy / Docker
-        // Set TRUST_PROXY=true if running behind a reverse proxy (e.g. Nginx, Caddy)
-        app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
+        // Resolved from TRUST_PROXY above: false, or the number of proxy hops
+        app.set('trust proxy', TRUST_PROXY);
 
         // View engine
         app.set('view engine', 'ejs');
