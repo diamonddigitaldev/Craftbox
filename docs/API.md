@@ -359,7 +359,7 @@ Reads work in any state. The **mutating** routes require the server to be `stopp
 | POST | `/servers/:id/plugins/delete-all` | Delete all plugins/mods |
 | POST | `/servers/:id/plugins/environment` | Mod-loader servers only. Body: `{filename, environment}` where environment is `client`, `server`, or `both`. Client-only mods are disabled on the server but still offered on the status page mods download |
 
-> **Downloads.** The panel's download links live outside `/api/v1` and are listed here for completeness: `GET /servers/:id/plugins/download?file=` (one jar), `GET /servers/:id/plugins/download-all` (the whole folder as a zip), and `GET /servers/:id/download-zip` (the whole server directory). All three carry an exact `Content-Length` and report their outcome over the WebSocket as `operation: "download"`; the two zips are packed before the response begins, as [Export](#export) describes.
+> **Downloads.** The panel's download links live outside `/api/v1` and are listed here for completeness: `GET /servers/:id/plugins/download?file=` (one jar), `GET /servers/:id/plugins/download-all` (the whole folder as a zip), `GET /servers/:id/download?path=` (one file — the same as its [`/api/v1` twin](#files)), and `GET /servers/:id/download-zip` (the whole server directory). All four carry an exact `Content-Length` and report their outcome over the WebSocket as `operation: "download"`; the two zips are packed before the response begins, as [Export](#export) describes.
 
 
 ## Modrinth

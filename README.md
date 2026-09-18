@@ -35,10 +35,15 @@ Whether you're running a single Vanilla server or maintaining multiple modded in
 - **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
 - **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
 - **Plugin & Mod Management** — Upload, manage, search, and install plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge) with an intuitive interface powered by [Modrinth](https://modrinth.com/).
+- **Modpack Servers** — Create a ready-to-play server from any Modrinth modpack, or upload your own `.mrpack`. Craftbox installs the loader, the mods, and the pack's overrides for you.
+- **File Manager** — Browse, edit, upload, create, rename, and delete server files from the browser, with large-file streaming for logs.
+- **Jar Upgrades** — Check for and apply newer loader builds and Minecraft versions in place, with an optional restore-point backup first.
 - **Server Duplication & Templates** — Clone a server with or without world data, or save configurations as reusable templates.
+- **Server Groups** — Organize the dashboard into color-coded groups.
 - **Transferrable Servers**  — Export a Craftbox-managed server and import it into another Craftbox instance.
 - **Status & Monitoring** — Public status pages, live player tracking, resource monitoring, and event history.
 - **Crash Detection & Auto-Restart** — Watchdog detects crashes/runtime errors and optionally auto-restarts.
+- **REST API & WebSocket** — A versioned JSON API with bearer API keys and a live WebSocket feed for building your own tooling — see the [API Reference](./docs/API.md).
 - **PWA Support** — Installable as a Progressive Web App on desktop and mobile.
 
 
@@ -52,7 +57,7 @@ Whether you're running a single Vanilla server or maintaining multiple modded in
 | **Settings** — Configure basic world settings, JVM flags, auto-restart, auto-start, and other server behaviors. | ![Settings](./docs/img/screenshots/settings.png) |
 | **Server Properties** — Edit `server.properties` from the browser. | ![Properties](./docs/img/screenshots/properties.png) |
 | **Plugin & Mod Manager** — Upload and manage plugins for Paper/Purpur or mods for Fabric/Forge/NeoForge. | ![Mods](./docs/img/screenshots/mods.png) |
-| **File Manager** — Browse and edit server files directly from the web panel. | ![Files](./docs/img/screenshots/files.png) |
+| **File Manager** — Browse, edit, upload, and organize server files directly from the web panel. | ![Files](./docs/img/screenshots/files.png) |
 | **Backups** — Create, schedule, and restore backups with retention policies. | ![Backups](./docs/img/screenshots/backups.png) |
 | **Event History** — Track player joins, crashes, restarts, and other events. | ![Events](./docs/img/screenshots/events.png) |
 | **Public Status Page** — Share a read-only status page with your community. | ![Status](./docs/img/screenshots/status.png) |
