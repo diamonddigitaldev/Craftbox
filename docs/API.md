@@ -477,4 +477,4 @@ The server pings every 30 seconds and drops sockets that miss a pong.
 
 ## Rate limiting
 
-Only `POST /login` is rate limited (5 attempts per 15 minutes per IP; set `TRUST_PROXY=true` behind a reverse proxy so the client IP is detected correctly). There is currently **no rate limiting on `/api/v1`, `/status`, or the WebSocket** — be a considerate client, and treat API keys like passwords.
+Only `POST /login` is rate limited (5 attempts per 15 minutes per IP; behind a reverse proxy, set `TRUST_PROXY` to the number of proxies in front of Craftbox so the client IP is read from `X-Forwarded-For` rather than being the proxy's own). There is currently **no rate limiting on `/api/v1`, `/status`, or the WebSocket** — be a considerate client, and treat API keys like passwords.

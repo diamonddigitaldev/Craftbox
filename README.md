@@ -128,10 +128,10 @@ npm run dev
 |---|---|---|
 | `PORT` | `6464` | Port for the web panel. |
 | `NODE_ENV` | `development` | Set to `production` for secure session cookies (required when serving over HTTPS). |
-| `TRUST_PROXY` | `false` | Set to `true` if running behind a reverse proxy (e.g. Nginx, Caddy, Cloudflare Tunnel) so that rate limiting and secure cookies work correctly. |
+| `TRUST_PROXY` | `false` | The number of reverse proxies in front of Craftbox. Set it to `1` for a single proxy (e.g. Nginx, Caddy, or a Cloudflare Tunnel), `2` for a proxy behind a proxy, and so on. This is how many `X-Forwarded-For` hops are believed, so the login rate limiter sees the real client address and secure cookies work behind a TLS-terminating proxy. `true` is accepted as an alias for `1`; `false` or `0` trusts no proxy. Do not set it higher than the number of proxies you actually have, or clients can forge their address. |
 | `LOG_LEVEL` | `INFO` | `NONE`, `ERROR`, `WARN`, `INFO`, `DEBUG`. |
 
-> **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist.
+> **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist. If that HTTPS is terminated by a reverse proxy, also set `TRUST_PROXY` to the number of proxies in front of Craftbox, otherwise the panel sees plain HTTP arriving from the proxy and will not send the `Secure` cookie at all. Craftbox logs the value it resolved for both at startup.
 
 
 ## API
