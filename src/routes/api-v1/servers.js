@@ -2990,7 +2990,7 @@ router.get('/servers/:id/export', async (req, res) => {
     const startAfter = req.query.start === 'true';
     const initiatedBy = req.user?.username;
     const reporter = new DownloadReporter({
-        req, serverManager, serverId: server.id, label: 'Server export'
+        req, serverManager, serverId: server.id, label: 'server export'
     });
 
     // Hold the backup lock while the archive is packed so a scheduled backup

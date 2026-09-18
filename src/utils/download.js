@@ -176,7 +176,7 @@ function watchResponse(res, reporter, sizeBytes, describe) {
         if (settled || res.writableFinished) return;
         settled = true;
         const sent = Math.max(0, (res.socket ? res.socket.bytesWritten : 0) - startedAt);
-        log('warn', `${describe} cancelled by the client after ${formatSize(sent)} of ${formatSize(sizeBytes)}`);
+        log('warn', `Download of ${describe} cancelled by the client after ${formatSize(sent)} of ${formatSize(sizeBytes)}`);
         reporter.cancelled(sent);
     });
 }
@@ -302,7 +302,7 @@ async function sendArchiveDownload(req, res, {
         await new Promise((resolve) => {
             const stream = fs.createReadStream(stagedPath);
             stream.on('error', (err) => {
-                log('error', `${label} failed while streaming: ${err.message}`);
+                log('error', `Download of ${label} failed while streaming: ${err.message}`);
                 if (reporter) reporter.failed(err.message);
                 res.destroy(err);
                 stream.destroy();
@@ -366,7 +366,7 @@ function packArchive({ build, stagedPath, zlibLevel, estimatedBytes, reporter, r
         function onClientGone() {
             if (outcome || res.writableFinished) return;
             outcome = { abandoned: true };
-            log('warn', `${label} cancelled by the client while packing`);
+            log('warn', `Download of ${label} cancelled by the client while packing`);
             archive.abort();
             out.destroy();
         }
@@ -375,7 +375,7 @@ function packArchive({ build, stagedPath, zlibLevel, estimatedBytes, reporter, r
         archive.on('warning', (err) => {
             // ENOENT here means a file vanished between the listing and the read
             // — worth a line, not worth failing the whole archive over.
-            log('warn', `${label}: ${err.message}`);
+            log('warn', `Packing ${label}: ${err.message}`);
         });
         archive.on('error', fail);
         out.on('error', fail);

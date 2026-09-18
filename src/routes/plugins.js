@@ -106,7 +106,7 @@ router.get('/servers/:id/plugins/download', ensureAuth, blockWhileProvisioning, 
         req,
         serverManager: req.app.get('serverManager'),
         serverId: server ? server.id : req.params.id,
-        label: typeof filename === 'string' && filename ? path.basename(filename) : 'File'
+        label: typeof filename === 'string' && filename ? path.basename(filename) : 'file'
     });
     const reject = (status, error) => {
         reporter.failed(error);
@@ -163,7 +163,7 @@ router.get('/servers/:id/plugins/download-all', ensureAuth, blockWhileProvisioni
         req,
         serverManager: req.app.get('serverManager'),
         serverId: server ? server.id : req.params.id,
-        label: 'Mods and plugins'
+        label: 'mods and plugins'
     });
     const reject = (status, error) => {
         reporter.failed(error);

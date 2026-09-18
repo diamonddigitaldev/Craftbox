@@ -7,7 +7,7 @@
 //
 // Any anchor tagged `data-download="<label>"` is picked up automatically:
 //
-//     <a href="/servers/x/download-zip" data-download="Server files">…</a>
+//     <a href="/servers/x/download-zip" data-download="server files">…</a>
 //
 // The request is sent through a hidden iframe rather than by navigating, so an
 // error response can never replace the page the user is standing on. Each
@@ -68,7 +68,7 @@
     var STATUS_DELAY_MS = 400;
 
     function openStatus(label) {
-        var message = 'Preparing ' + label + '…';
+        var message = 'Preparing ' + label + '...';
         var text = null;
         var toast = null;
         var toastEl = null;
@@ -129,14 +129,14 @@
         var done = Number(payload.done) || 0;
         var total = Number(payload.total) || 0;
         if (payload.phase === 'sending') {
-            return 'Downloading ' + label + ' (' + formatSize(total) + ')…';
+            return 'Downloading ' + label + '...';
         }
         if (total > 0) {
             var pct = Math.min(100, Math.round((done / total) * 100));
-            return 'Preparing ' + label + ' — ' + formatSize(done) + ' of ' + formatSize(total) + ' (' + pct + '%)';
+            return 'Preparing ' + label + ' (' + pct + '%) — ' + formatSize(done) + ' of ' + formatSize(total);
         }
         if (done > 0) return 'Preparing ' + label + ' — ' + formatSize(done) + ' packed';
-        return 'Preparing ' + label + '…';
+        return 'Preparing ' + label + '...';
     }
 
     // `release` says whether the transfer is known to be over. Only a terminal
@@ -198,13 +198,13 @@
         }
         if (msg.status === 'complete') {
             settle(payload.token, function (done) {
-                showToast(done.label + ' downloaded (' + (payload.sizeFormatted || '') + ').', 'success');
+                showToast('Downloaded ' + done.label + ' (' + (payload.sizeFormatted || '') + ').', 'success');
             }, true);
             return;
         }
         if (msg.status === 'cancelled') {
             settle(payload.token, function (done) {
-                showToast(done.label + ' download cancelled.', 'warning');
+                showToast('Download of ' + done.label + ' cancelled.', 'warning');
             }, true);
         }
     });

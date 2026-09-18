@@ -204,7 +204,7 @@ router.get('/servers/:id/download', ensureAuth, blockWhileProvisioning, async (r
         req,
         serverManager,
         serverId: server.id,
-        label: filePath ? path.basename(String(filePath)) : 'File'
+        label: filePath ? path.basename(String(filePath)) : 'file'
     });
     const reject = (status, error) => {
         reporter.failed(error);
@@ -248,7 +248,7 @@ router.get('/servers/:id/download-zip', ensureAuth, blockWhileProvisioning, asyn
 
     const serverManager = req.app.get('serverManager');
     const reporter = new DownloadReporter({
-        req, serverManager, serverId: server.id, label: 'Server files'
+        req, serverManager, serverId: server.id, label: 'server files'
     });
     const reject = (status, error) => {
         reporter.failed(error);

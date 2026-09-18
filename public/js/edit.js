@@ -696,7 +696,7 @@ function _formToBody(form) {
     // or a packing failure lands in a toast instead of replacing this page with
     // a JSON error body, and reports packing progress and the final outcome.
     function startDownload(startAfter) {
-        CraftboxDownload.start(exportUrl(startAfter), 'Server export');
+        CraftboxDownload.start(exportUrl(startAfter), 'server export');
     }
 
     async function stopThenExport() {

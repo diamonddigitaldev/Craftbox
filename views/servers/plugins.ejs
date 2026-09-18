@@ -25,7 +25,7 @@ const _gate = 'stopped crashed';
     <h6 class="text-body-secondary mb-0" id="installed-count"><%= files.length %> <%= files.length === 1 ? contentType.label.toLowerCase().slice(0, -1) : contentType.label.toLowerCase() %> installed</h6>
     <div class="d-flex gap-2<%= files.length > 0 ? '' : ' d-none' %>" id="list-actions">
         <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1"
-           data-download="Mods and plugins">
+           data-download="mods and plugins">
             <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
             Download All
         </a>

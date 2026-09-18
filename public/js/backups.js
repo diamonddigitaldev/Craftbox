@@ -73,7 +73,7 @@
 
         var download = squareControl('a', 'btn btn-outline-secondary', 'download', 'Download');
         download.href = '/api/v1/servers/' + serverId + '/backups/' + backup.id + '/download';
-        download.dataset.download = 'Backup archive';
+        download.dataset.download = 'backup archive';
         group.appendChild(download);
 
         var restore = squareControl('button', 'btn btn-outline-primary restore-btn', 'restore', 'Restore');

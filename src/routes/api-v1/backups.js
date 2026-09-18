@@ -56,7 +56,7 @@ router.get('/servers/:id/backups/:backupId/download', async (req, res) => {
         req,
         serverManager: req.app.get('serverManager'),
         serverId: server ? server.id : req.params.id,
-        label: 'Backup archive'
+        label: 'backup archive'
     });
     const reject = (status, error) => {
         reporter.failed(error);
