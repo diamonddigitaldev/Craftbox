@@ -54,6 +54,19 @@ const TRUST_PROXY = (() => {
 })();
 log('info', `TRUST_PROXY: ${TRUST_PROXY === false ? 'off' : `${TRUST_PROXY} hop${TRUST_PROXY === 1 ? '' : 's'}`}`);
 
+// The JVM takes the encoding it uses for file names from the process locale,
+// and on Linux with no locale set at all (a bare container, a systemd unit)
+// that is plain ASCII: any non-ASCII name under the server directory — a mod
+// jar, a world folder, a datapack — then throws InvalidPathException the
+// moment a loader walks it, and the server crashes on every start until the
+// file is renamed. Every child inherits this environment, so defaulting the
+// locale here covers the JVM and the Forge/NeoForge installers alike. An
+// explicit locale is left alone; Windows names paths in UTF-16 and needs none.
+if (process.platform !== 'win32' && !process.env.LC_ALL && !process.env.LC_CTYPE && !process.env.LANG) {
+    process.env.LANG = 'C.UTF-8';
+    log('info', 'LANG: C.UTF-8 (no locale was set)');
+}
+
 (async () => {
     try {
         // ── 1. Initialize database ──
