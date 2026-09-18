@@ -260,11 +260,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const IMPORT_EXTENSIONS = ['.cbx'];
 const IMPORT_EXT_ERROR = 'Only .cbx transfer archives are allowed.';
 
+// Every multer instance below sets defParamCharset: browsers send the filename
+// as raw UTF-8 with no charset parameter, and multer decodes a charset-less
+// name as latin1, so a non-ASCII name arrived mangled (ünïcode → Ã¼nÃ¯code)
+// and was written to disk that way.
+
 // Multer config for transfer archive import — no size cap (the archive is
 // streamed to disk on upload and streamed out of the zip on extraction, so
 // size is bounded by disk space, not memory).
 const importUpload = multer({
     dest: os.tmpdir(),
+    defParamCharset: 'utf8',
     fileFilter: (_req, file, cb) => {
         const name = file.originalname.toLowerCase();
         if (IMPORT_EXTENSIONS.some(ext => name.endsWith(ext))) {
@@ -278,6 +284,7 @@ const importUpload = multer({
 // Multer config for .mrpack modpack upload — .mrpack only, 2 GiB cap
 const mrpackUpload = multer({
     dest: os.tmpdir(),
+    defParamCharset: 'utf8',
     limits: { fileSize: 2 * 1024 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         if (file.originalname.toLowerCase().endsWith('.mrpack')) {
@@ -291,6 +298,7 @@ const mrpackUpload = multer({
 // Multer config for server icon upload — PNG only, 20 MB limit
 const iconUpload = multer({
     dest: os.tmpdir(),
+    defParamCharset: 'utf8',
     limits: { fileSize: 20 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         if (file.mimetype !== 'image/png') {
@@ -2545,7 +2553,7 @@ router.get('/servers/:id/download', async (req, res) => {
 // authenticated user can already edit any text file and download the whole
 // directory — an allowlist here would be theatre rather than a boundary.
 // Files stream to disk, so size is bounded by disk space, not memory.
-const fileUpload = multer({ dest: os.tmpdir() });
+const fileUpload = multer({ dest: os.tmpdir(), defParamCharset: 'utf8' });
 
 // Returns false once a response has been sent — the caller must `return`.
 function requireStoppedForFiles(req, res, server, verb) {

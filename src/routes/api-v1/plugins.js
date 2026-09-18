@@ -39,8 +39,13 @@ async function getServerWithState(req) {
 
 // No size cap — files are streamed to disk by multer (or assembled on disk by
 // DGUP), so size is bounded by disk space rather than memory, same as import.
+//
+// Browsers send the filename as raw UTF-8 with no charset parameter, and multer
+// decodes a charset-less name as latin1, so a jar called ünïcode.jar landed on
+// disk as Ã¼nÃ¯code.jar. defParamCharset tells it what the bytes actually are.
 const upload = multer({
     dest: os.tmpdir(),
+    defParamCharset: 'utf8',
     fileFilter: (_req, file, cb) => {
         if (file.originalname.toLowerCase().endsWith('.jar')) {
             cb(null, true);
