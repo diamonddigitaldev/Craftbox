@@ -184,11 +184,9 @@
             showMotdStatus('success', 'Restart the server for changes to take effect.');
             showToast('MOTD saved.', 'success');
             var modalEl = document.getElementById('restartModal');
-            if (modalEl) {
-                var state = modalEl.dataset.serverState;
-                if (state !== 'stopped' && state !== 'crashed') {
-                    new bootstrap.Modal(modalEl).show();
-                }
+            // Live state — a server that has since stopped needs no restart prompt.
+            if (modalEl && !isServerStopped()) {
+                new bootstrap.Modal(modalEl).show();
             }
         } else {
             saveBtn.textContent = 'Error';

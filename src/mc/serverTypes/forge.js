@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const { log } = require('../../utils/log');
 const { getJavaForVersion } = require('../../utils/javaVersion');
 const { verifyChecksum } = require('./_verifyChecksum');
+const { pickLatestBuild, compareBuilds } = require('./_channels');
 
 const PROMOTIONS_URL = 'https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json';
 const MAVEN_BASE = 'https://maven.minecraftforge.net/net/minecraftforge/forge';
@@ -79,29 +80,32 @@ module.exports = {
         const data = await res.json();
         const promos = data.promos || {};
 
+        // Newest-first: "latest" is the head of the Forge branch and
+        // "recommended" trails it, sometimes by a dozen builds (MC 1.20.1:
+        // 47.4.23 against 47.4.10).
         const builds = [];
         const latest = promos[`${version}-latest`];
         const recommended = promos[`${version}-recommended`];
 
-        if (recommended) {
-            builds.push({ build: recommended, channel: 'recommended' });
-        }
-        if (latest && latest !== recommended) {
+        if (latest) {
             builds.push({ build: latest, channel: 'latest' });
         }
+        if (recommended && recommended !== latest) {
+            builds.push({ build: recommended, channel: 'recommended' });
+        }
 
-        return builds;
+        return builds.sort((a, b) => compareBuilds(b.build, a.build));
     },
 
     async downloadJar(version, build, destPath) {
-        // Auto-select build if none specified
+        // Auto-select build if none specified: the newest Forge published for
+        // this MC version, not the older "recommended" promotion.
         if (!build) {
             const builds = await this.getBuilds(version);
             if (!builds || builds.length === 0) {
                 throw new Error(`No Forge builds available for MC ${version}.`);
             }
-            // Prefer recommended, fallback to latest
-            build = builds[0].build;
+            build = pickLatestBuild(builds).build;
         }
 
         const forgeVersion = `${version}-${build}`;

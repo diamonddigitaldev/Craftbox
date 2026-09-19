@@ -3,6 +3,7 @@ const path = require('path');
 const { log } = require('../../utils/log');
 const { verifyChecksum } = require('./_verifyChecksum');
 const paper = require('./paper');
+const { pickLatestBuild } = require('./_channels');
 
 const BASE = 'https://api.purpurmc.org/v2/purpur';
 
@@ -46,9 +47,12 @@ module.exports = {
         if (!res.ok) throw new Error(`Failed to fetch Purpur builds for ${version}: HTTP ${res.status}`);
         const data = await res.json();
 
+        // Newest-first. Purpur lists builds oldest-first, but sort rather than
+        // reverse so the head of the list stays the newest build even if that
+        // ever changes.
         return data.builds.all
             .map(b => ({ build: Number(b), channel: 'default' }))
-            .reverse();
+            .sort((a, b) => b.build - a.build);
     },
 
     async downloadJar(version, build, destPath) {
@@ -57,7 +61,7 @@ module.exports = {
             if (!builds || builds.length === 0) {
                 throw new Error(`No builds available for Purpur ${version}.`);
             }
-            build = builds[0].build;
+            build = pickLatestBuild(builds).build;
         }
 
         log('info', `Downloading Purpur ${version} build ${build}...`);

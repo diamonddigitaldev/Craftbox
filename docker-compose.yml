@@ -15,7 +15,7 @@ services:
       - LOG_LEVEL=DEBUG
       # - PORT=6464 # Change if you want to run the web panel on a different port
       # - NODE_ENV=production # Will require HTTPS for secure cookies, so only enable if you have a reverse proxy with SSL
-      # - TRUST_PROXY=true # Enable if running behind a reverse proxy (e.g. Nginx, Caddy, Cloudflare Tunnel) so that rate limiting and secure cookies work correctly
+      # - TRUST_PROXY=1 # Number of reverse proxies in front of Craftbox (e.g. Nginx, Caddy, Cloudflare Tunnel), so that rate limiting and secure cookies see the real client. 2 for a proxy behind a proxy. Never more than you actually have
     stop_grace_period: 45s
 
 volumes:

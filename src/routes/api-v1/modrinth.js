@@ -15,6 +15,7 @@ const { DISABLED_SUFFIX } = require('../../utils/modEnvironment');
 const { downloadToFile } = require('../../utils/httpDownload');
 const { logEvent } = require('../../utils/eventLogger');
 const { log } = require('../../utils/log');
+const { notifyContentChanged } = require('../../utils/liveUpdates');
 // Shared with the server routes — accepts snapshot/pre-release ids so
 // browsing plugins/mods still works on snapshot servers.
 const { MC_VERSION_RE } = require('../../utils/mcVersion');
@@ -383,6 +384,10 @@ router.post('/servers/:id/modrinth-install', async (req, res) => {
         if (err instanceof modrinth.ModrinthApiError) return sendModrinthError(res, err);
         log('error', `Modrinth install failed for server ${server.id}: ${err.message}`);
         res.status(500).json({ error: err.message || 'Install failed.' });
+    } finally {
+        // A dependency that failed part-way still left the earlier files on
+        // disk, so the listing moved either way.
+        if (installed.length > 0) notifyContentChanged(req, server.id, 'plugins');
     }
 });
 
