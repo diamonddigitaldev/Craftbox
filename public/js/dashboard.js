@@ -82,6 +82,7 @@
 
         ws.onclose = () => {
             reconnectAttempts++;
+            probeSessionAfterFailures(reconnectAttempts);
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
             setTimeout(connect, delay);
         };

@@ -16,6 +16,7 @@ const { securityHeaders, csrfToken, csrfValidate } = require('./security');
 const serverStateMeta = require('./utils/serverStateMeta');
 const { initWebSocket } = require('./websocket');
 const ServerManager = require('./mc/ServerManager');
+const { setEventBroadcaster } = require('./utils/eventLogger');
 const BackupScheduler = require('./mc/BackupScheduler');
 const StatsCollector = require('./utils/StatsCollector');
 const mountRoutes = require('./routes');
@@ -34,6 +35,38 @@ if (!validNodeEnvs.includes(NODE_ENV)) {
 }
 log('info', `NODE_ENV: ${NODE_ENV}`);
 
+// TRUST_PROXY is the number of reverse proxies sitting in front of Craftbox.
+// Express only reads the client address (and whether the request came in over
+// HTTPS) out of X-Forwarded-* when told how many hops to believe, and it
+// counts them from the socket inwards, so the login rate limiter keys on the
+// real client and secure session cookies work behind a TLS-terminating proxy.
+// Anything past that count is untrusted, which stops a client forging the
+// header to dodge the limiter. Unset, 0 or false trusts nothing; true is kept
+// as an alias for 1, which is what it always meant.
+const rawTrustProxy = process.env.TRUST_PROXY;
+const TRUST_PROXY = (() => {
+    const value = String(rawTrustProxy ?? '').trim().toLowerCase();
+    if (value === '' || value === 'false') return false;
+    if (value === 'true') return 1;
+    if (/^\d+$/.test(value)) return Number(value) || false;
+    log('warn', `Invalid TRUST_PROXY value "${rawTrustProxy}". Expected the number of reverse proxies in front of Craftbox, or true/false. Trusting no proxy.`);
+    return false;
+})();
+log('info', `TRUST_PROXY: ${TRUST_PROXY === false ? 'off' : `${TRUST_PROXY} hop${TRUST_PROXY === 1 ? '' : 's'}`}`);
+
+// The JVM takes the encoding it uses for file names from the process locale,
+// and on Linux with no locale set at all (a bare container, a systemd unit)
+// that is plain ASCII: any non-ASCII name under the server directory — a mod
+// jar, a world folder, a datapack — then throws InvalidPathException the
+// moment a loader walks it, and the server crashes on every start until the
+// file is renamed. Every child inherits this environment, so defaulting the
+// locale here covers the JVM and the Forge/NeoForge installers alike. An
+// explicit locale is left alone; Windows names paths in UTF-16 and needs none.
+if (process.platform !== 'win32' && !process.env.LC_ALL && !process.env.LC_CTYPE && !process.env.LANG) {
+    process.env.LANG = 'C.UTF-8';
+    log('info', 'LANG: C.UTF-8 (no locale was set)');
+}
+
 (async () => {
     try {
         // ── 1. Initialize database ──
@@ -51,9 +84,8 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         // ── 3. Create Express app ──
         const app = express();
 
-        // Trust proxy when behind reverse proxy / Docker
-        // Set TRUST_PROXY=true if running behind a reverse proxy (e.g. Nginx, Caddy)
-        app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
+        // Resolved from TRUST_PROXY above: false, or the number of proxy hops
+        app.set('trust proxy', TRUST_PROXY);
 
         // View engine
         app.set('view engine', 'ejs');
@@ -62,6 +94,22 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
         // ── 4. Initialize core components ──
         const serverManager = new ServerManager();
         app.set('serverManager', serverManager);
+
+        // Push every logged event to that server's WebSocket subscribers, so the
+        // event log updates live. Wired here rather than imported inside
+        // eventLogger, which ServerProcess already depends on.
+        setEventBroadcaster((serverId, event) => {
+            serverManager.getProcess(serverId)?.broadcast({
+                type: 'event',
+                serverId,
+                eventId: event.id,
+                eventType: event.type,
+                message: event.message,
+                createdAt: event.createdAt,
+                initiatedBy: event.initiatedBy || null,
+                playerName: event.playerName || null
+            });
+        });
 
         const backupScheduler = new BackupScheduler(serverManager);
         app.set('backupScheduler', backupScheduler);
@@ -211,6 +259,9 @@ log('info', `NODE_ENV: ${NODE_ENV}`);
 
         // Sweep orphaned chunked-upload part files and start the session reaper
         require('./middleware/dgup').initDgup();
+
+        // Same for archives staged for download but never collected
+        require('./utils/download').initDownloads();
 
         // ── 13. Graceful shutdown ──
         let shuttingDown = false;

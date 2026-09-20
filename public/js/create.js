@@ -65,24 +65,12 @@ function setCustomNoticeVisible(visible) {
     customTypeNotice.classList.toggle('d-flex', visible);
 }
 
-// ── Center form fields left alone on their row ──
-// A row whose other columns are hidden (e.g. the port field once the version
-// picker is gone in modpack mode, or the group picker on its own row) looks
-// lopsided half-width on the left; center it instead.
-function centerLoneRowItems() {
-    form.querySelectorAll('.row').forEach(function (row) {
-        var cols = row.querySelectorAll(':scope > [class*="col-"]');
-        if (cols.length === 0) return;
-        var visible = Array.prototype.filter.call(cols, function (c) {
-            return !c.classList.contains('d-none');
-        });
-        row.classList.toggle('justify-content-center', visible.length === 1);
-    });
-}
-
 // ── Required field validation + EULA gating ──
 function validateCreateForm() {
-    centerLoneRowItems();
+    // Columns come and go here (modpack mode hides the version picker), so the
+    // centring is re-run with every validation pass. centerLoneRowItems is in
+    // app.js — the settings form uses it too.
+    centerLoneRowItems(form);
     if (!eulaCheck.checked) { createBtn.disabled = true; return; }
     var fields = form.querySelectorAll('[required]');
     var allFilled = true;
@@ -106,6 +94,12 @@ form.addEventListener('change', validateCreateForm);
 // A rejected file clears the input, and the re-fired change event bubbles to the
 // form listener above, so the Create button goes back to disabled.
 guardFileInput(mrpackFileInput, ['.mrpack'], 'Only .mrpack modpack files can be used here.');
+
+// This page has no drop zone of its own, so the picker is the drop target. A
+// folder dropped on it used to be handed straight to the upload: one named
+// something.mrpack even cleared the extension guard, and the request then failed
+// as a bare network_error.
+acceptFileDrops(mrpackFileInput, 'Drop the .mrpack file itself.');
 
 // ── Form submit — create via /api/v1/servers (or the modpack routes) ──
 form.addEventListener('submit', async (e) => {
@@ -147,12 +141,11 @@ form.addEventListener('submit', async (e) => {
 (async () => {
     // Modpack modes hide the type/version selectors entirely
     if (createMode !== 'normal') return;
-    try {
-        const res = await fetch('/api/v1/server-types');
-        const data = await res.json();
-        typesData = data.types || [];
+    const res = await apiFetch('/api/v1/server-types');
+    if (res.ok && res.data && res.data.types) {
+        typesData = res.data.types;
         renderTypeCards(typesData);
-    } catch {
+    } else {
         typeSelector.innerHTML = '<div class="col-12 text-danger">Failed to load server types.</div>';
     }
 
@@ -201,7 +194,7 @@ async function selectType(typeId) {
         customUrlGroup.classList.remove('d-none');
         versionDisplay.removeAttribute('required');
         setCustomNoticeVisible(true);
-        centerLoneRowItems();
+        centerLoneRowItems(form);
     } else {
         versionGroup.classList.remove('d-none');
         customUrlGroup.classList.add('d-none');
@@ -238,23 +231,22 @@ const templateGroup = document.getElementById('template-group');
 (async () => {
     // Templates pick a type/version themselves — not applicable to modpack modes
     if (createMode !== 'normal') return;
-    try {
-        const res = await fetch('/api/v1/templates');
-        const data = await res.json();
-        if (data.templates && data.templates.length > 0) {
-            // Unlock the Template card in the Create From picker; the select
-            // itself only shows once that source is picked.
-            sourceTemplateCard.classList.remove('type-card-disabled');
-            sourceTemplateCard.removeAttribute('title');
-            for (const t of data.templates) {
-                const opt = document.createElement('option');
-                opt.value = t.id;
-                const typeName = (t.serverType || 'vanilla').charAt(0).toUpperCase() + (t.serverType || 'vanilla').slice(1);
-                opt.textContent = `${t.name} (${typeName}${t.serverType === 'custom' ? '' : ` ${t.version}` || ''})`.trim();
-                templateSelect.appendChild(opt);
-            }
+    // Templates are optional — a failure here just leaves the card locked.
+    const res = await apiFetch('/api/v1/templates');
+    const data = res.data || {};
+    if (data.templates && data.templates.length > 0) {
+        // Unlock the Template card in the Create From picker; the select
+        // itself only shows once that source is picked.
+        sourceTemplateCard.classList.remove('type-card-disabled');
+        sourceTemplateCard.removeAttribute('title');
+        for (const t of data.templates) {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            const typeName = (t.serverType || 'vanilla').charAt(0).toUpperCase() + (t.serverType || 'vanilla').slice(1);
+            opt.textContent = `${t.name} (${typeName}${t.serverType === 'custom' ? '' : ` ${t.version}` || ''})`.trim();
+            templateSelect.appendChild(opt);
         }
-    } catch { /* ignore — templates are optional */ }
+    }
 })();
 
 function setTypeAndVersionLocked(locked) {
@@ -306,8 +298,8 @@ templateSelect.addEventListener('change', async () => {
     }
 
     try {
-        const res = await fetch(`/api/v1/templates/${id}`);
-        const data = await res.json();
+        const res = await apiFetch(`/api/v1/templates/${id}`);
+        const data = res.data || {};
         const t = data.template;
         if (!t) return;
 

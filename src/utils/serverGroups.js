@@ -30,10 +30,18 @@ async function getDistinctGroups() {
     return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
+// A group's stored color, or null when it has no record — lets a caller tell
+// "never given a color" from "colored the same as the default", which the
+// export needs so an import cannot repaint a group the destination already has.
+async function getStoredGroupColor(name) {
+    if (!name) return null;
+    const meta = await groupsDb.get(`group_${name}`);
+    return (meta && GROUP_COLOR_REGEX.test(meta.color)) ? meta.color : null;
+}
+
 // Stored color for a group; groups without a record use the default.
 async function getGroupColor(name) {
-    const meta = await groupsDb.get(`group_${name}`);
-    return (meta && GROUP_COLOR_REGEX.test(meta.color)) ? meta.color : DEFAULT_GROUP_COLOR;
+    return (await getStoredGroupColor(name)) || DEFAULT_GROUP_COLOR;
 }
 
 async function setGroupColor(name, color) {
@@ -99,6 +107,7 @@ module.exports = {
     normalizeGroupName,
     getDistinctGroups,
     getGroupColor,
+    getStoredGroupColor,
     setGroupColor,
     getGroupsWithMeta,
     pruneGroupMetaIfEmpty,

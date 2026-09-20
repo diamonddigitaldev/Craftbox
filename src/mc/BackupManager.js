@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 const StreamZip = require('node-stream-zip');
 const { v4: uuidv4 } = require('uuid');
 const { backupsDb, serversDb, BACKUPS_DIR, SERVERS_DIR } = require('../db');
 const { log } = require('../utils/log');
+const { formatSize } = require('../utils/formatSize');
 
 // Prevent concurrent backups for the same server
 const activeLocks = new Map();
@@ -116,7 +117,7 @@ async function _doCreateBackup(serverId, name, type) {
 
     await new Promise((resolve, reject) => {
         const output = fs.createWriteStream(zipPath);
-        const archive = archiver('zip', { zlib: { level: 5 } });
+        const archive = new ZipArchive({ zlib: { level: 5 } });
 
         output.on('close', resolve);
         archive.on('error', (err) => {
@@ -324,15 +325,6 @@ async function deleteAllBackups(serverId) {
     log('info', `Deleted all backups for server ${serverId}`);
 }
 
-/**
- * Format bytes to human-readable string.
- */
-function formatSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
-}
 
 module.exports = {
     createBackup,

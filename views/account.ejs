@@ -24,13 +24,16 @@
                     API keys let scripts and integrations call the Craftbox API on your behalf. Keys inherit your account's permissions.
                 </p>
 
-                <% if (!apiKeys || apiKeys.length === 0) { %>
-                    <div class="text-center text-body-secondary py-4">
+                <%# Both rendered; account.js redraws the rows in place as keys are
+                    created and deleted, from the same listing GET /api/v1/account/apikeys
+                    returns, and swaps in the empty state when none are left. buildRow
+                    there mirrors the row markup here — keep the two in step. %>
+                <% const _hasKeys = apiKeys && apiKeys.length > 0; %>
+                    <div class="text-center text-body-secondary py-4<%= _hasKeys ? ' d-none' : '' %>" id="apikeys-empty">
                         <span class="material-icons-outlined mb-2" style="font-size: 3rem; opacity: 0.3;">key</span>
                         <p class="mb-0">No API keys yet. Create one above to get started.</p>
                     </div>
-                <% } else { %>
-                    <div class="table-responsive">
+                    <div class="table-responsive<%= _hasKeys ? '' : ' d-none' %>" id="apikeys-table">
                         <table class="table table-hover mb-0 align-middle">
                             <thead>
                                 <tr>
@@ -41,9 +44,9 @@
                                     <th style="width: 48px;"></th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <% apiKeys.forEach(function(key) { %>
-                                    <tr>
+                            <tbody id="apikeys-tbody">
+                                <% (apiKeys || []).forEach(function(key) { %>
+                                    <tr data-key-id="<%= key.id %>">
                                         <td><%= key.name %></td>
                                         <td class="text-body-secondary small"><code><%= key.prefix %>…</code></td>
                                         <td class="text-body-secondary small">
@@ -72,7 +75,6 @@
                             </tbody>
                         </table>
                     </div>
-                <% } %>
             </div>
         </div>
 

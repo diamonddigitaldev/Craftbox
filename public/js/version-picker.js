@@ -94,12 +94,15 @@
 
         function applyFilters() {
             var eligible = eligibleVersions();
-            var q = searchInput.value.trim().toLowerCase();
+            var q = searchInput.value.trim();
             var ch = channelSelect.value;
 
+            // fuzzyScore (app.js) as a filter only — the list keeps its
+            // newest-first order, which is what a version list is for. Typo
+            // matching is off: "1.21.1" is not a misspelling of "1.21.4".
             filtered = eligible.list.filter(function (v) {
                 if (ch === 'stable' && v.channel !== 'stable') return false;
-                if (q && v.id.toLowerCase().indexOf(q) === -1) return false;
+                if (q && fuzzyScore(q, v.id, { typos: false }) === 0) return false;
                 return true;
             });
 

@@ -36,15 +36,13 @@
         var row = pendingBtn.closest('tr');
         if (row) row.remove();
 
-        // Show empty state if no templates left
+        // The last one gone swaps the table for the empty state in place.
         var tbody = document.getElementById('templates-table');
         if (tbody && tbody.children.length === 0) {
-            // Reload to render the empty-state UI; flashToast survives the navigation.
-            flashToast('Template deleted.', 'success');
-            location.reload();
-        } else {
-            showToast('Template deleted.', 'success');
+            document.getElementById('templates-card').classList.add('d-none');
+            document.getElementById('templates-empty').classList.remove('d-none');
         }
+        showToast('Template deleted.', 'success');
 
         pendingBtn = null;
     });

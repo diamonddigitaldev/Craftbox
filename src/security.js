@@ -54,6 +54,16 @@ function csrfValidate(req, res, next) {
     const isApi = req.path.startsWith('/api/');
     const fail = (message) => {
         if (isApi) return res.status(403).json({ error: 'forbidden', message });
+
+        // A page POST from a tab whose session lapsed carries the old session's
+        // token, so it lands here rather than on ensureAuth's redirect. "Invalid
+        // or missing CSRF token" is a misleading dead end for what is really an
+        // expired login — send them to sign in and back to where they were.
+        if (!req.isAuthenticated?.()) {
+            if (req.session) req.session.returnTo = req.originalUrl;
+            return res.redirect('/login');
+        }
+
         return res.status(403).render('errors/403', {
             title: 'Forbidden',
             message,

@@ -6,9 +6,12 @@ function initGroupPicker(inputEl, listEl, options) {
     var getNames = options.getNames || function () { return []; };
 
     function render() {
-        var query = inputEl.value.trim().toLowerCase();
+        var query = inputEl.value.trim();
+        // fuzzyScore (app.js) as a filter only: the names keep their order,
+        // and the input doubles as the new-name field, so a near miss is
+        // still offered rather than hidden behind an exact-substring test.
         var names = getNames().filter(function (name) {
-            return !query || name.toLowerCase().indexOf(query) !== -1;
+            return !query || fuzzyScore(query, name) > 0;
         });
 
         listEl.innerHTML = '';

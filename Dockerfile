@@ -64,6 +64,11 @@ RUN apt-get update && \
 # Non-root user, created before any COPY so the layer stays cached
 RUN groupadd -r craftbox && useradd -r -g craftbox craftbox
 
+# A UTF-8 locale, or the JVM names files in ASCII and a non-ASCII mod or world
+# name crashes the server on start (server.js defaults this too; set here so
+# a shell inside the container behaves the same way).
+ENV LANG=C.UTF-8
+
 WORKDIR /app
 
 # Compiled dependencies from the builder stage

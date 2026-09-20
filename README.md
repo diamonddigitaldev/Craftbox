@@ -9,7 +9,7 @@
 <div align="center">
 
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)
-![version](https://img.shields.io/badge/version-1.1.0-brightgreen?style=flat-square)
+![version](https://img.shields.io/badge/version-1.2.0--beta.14-orange?style=flat-square)
 ![docker](https://img.shields.io/badge/docker-supported-blue?style=flat-square)
 
 [![discord](https://img.shields.io/discord/667479986214666272?logo=discord&logoColor=white&style=flat-square)](https://diamonddigital.dev/discord)
@@ -35,10 +35,15 @@ Whether you're running a single Vanilla server or maintaining multiple modded in
 - **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
 - **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
 - **Plugin & Mod Management** — Upload, manage, search, and install plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge) with an intuitive interface powered by [Modrinth](https://modrinth.com/).
+- **Modpack Servers** — Create a ready-to-play server from any Modrinth modpack, or upload your own `.mrpack`. Craftbox installs the loader, the mods, and the pack's overrides for you.
+- **File Manager** — Browse, edit, upload, create, rename, and delete server files from the browser, with large-file streaming for logs.
+- **Jar Upgrades** — Check for and apply newer loader builds and Minecraft versions in place, with an optional restore-point backup first.
 - **Server Duplication & Templates** — Clone a server with or without world data, or save configurations as reusable templates.
+- **Server Groups** — Organize the dashboard into color-coded groups.
 - **Transferrable Servers**  — Export a Craftbox-managed server and import it into another Craftbox instance.
 - **Status & Monitoring** — Public status pages, live player tracking, resource monitoring, and event history.
 - **Crash Detection & Auto-Restart** — Watchdog detects crashes/runtime errors and optionally auto-restarts.
+- **REST API & WebSocket** — A versioned JSON API with bearer API keys and a live WebSocket feed for building your own tooling — see the [API Reference](./docs/API.md).
 - **PWA Support** — Installable as a Progressive Web App on desktop and mobile.
 
 
@@ -52,7 +57,7 @@ Whether you're running a single Vanilla server or maintaining multiple modded in
 | **Settings** — Configure basic world settings, JVM flags, auto-restart, auto-start, and other server behaviors. | ![Settings](./docs/img/screenshots/settings.png) |
 | **Server Properties** — Edit `server.properties` from the browser. | ![Properties](./docs/img/screenshots/properties.png) |
 | **Plugin & Mod Manager** — Upload and manage plugins for Paper/Purpur or mods for Fabric/Forge/NeoForge. | ![Mods](./docs/img/screenshots/mods.png) |
-| **File Manager** — Browse and edit server files directly from the web panel. | ![Files](./docs/img/screenshots/files.png) |
+| **File Manager** — Browse, edit, upload, and organize server files directly from the web panel. | ![Files](./docs/img/screenshots/files.png) |
 | **Backups** — Create, schedule, and restore backups with retention policies. | ![Backups](./docs/img/screenshots/backups.png) |
 | **Event History** — Track player joins, crashes, restarts, and other events. | ![Events](./docs/img/screenshots/events.png) |
 | **Public Status Page** — Share a read-only status page with your community. | ![Status](./docs/img/screenshots/status.png) |
@@ -128,10 +133,10 @@ npm run dev
 |---|---|---|
 | `PORT` | `6464` | Port for the web panel. |
 | `NODE_ENV` | `development` | Set to `production` for secure session cookies (required when serving over HTTPS). |
-| `TRUST_PROXY` | `false` | Set to `true` if running behind a reverse proxy (e.g. Nginx, Caddy, Cloudflare Tunnel) so that rate limiting and secure cookies work correctly. |
+| `TRUST_PROXY` | `false` | The number of reverse proxies in front of Craftbox. Set it to `1` for a single proxy (e.g. Nginx, Caddy, or a Cloudflare Tunnel), `2` for a proxy behind a proxy, and so on. This is how many `X-Forwarded-For` hops are believed, so the login rate limiter sees the real client address and secure cookies work behind a TLS-terminating proxy. `true` is accepted as an alias for `1`; `false` or `0` trusts no proxy. Do not set it higher than the number of proxies you actually have, or clients can forge their address. |
 | `LOG_LEVEL` | `INFO` | `NONE`, `ERROR`, `WARN`, `INFO`, `DEBUG`. |
 
-> **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist.
+> **Deployment note:** When deploying behind HTTPS (directly or via a reverse proxy), you **must** set `NODE_ENV=production` so that session cookies are marked `Secure` and only transmitted over encrypted connections. Without this, browsers will reject session cookies over HTTPS with `SameSite=Strict`, and login will not persist. If that HTTPS is terminated by a reverse proxy, also set `TRUST_PROXY` to the number of proxies in front of Craftbox, otherwise the panel sees plain HTTP arriving from the proxy and will not send the `Secure` cookie at all. Craftbox logs the value it resolved for both at startup.
 
 
 ## API
@@ -157,25 +162,7 @@ This project is licensed under the [GNU Affero General Public License v3.0](./LI
 
 ### AI Disclosure
 
-This project uses AI tools to aid development.
-
-AI is used to:
-- Plan significant changes
-- Implement initial passes of new features
-- Perform security audits (alongside human review)
-- Fix bugs and patch security vulnerabilities
-- Review pull requests (alongside human review)
-
-AI is NOT used to:
-- Design UI/UX
-- Design visual assets (such as bitmap and vector graphics)
-- Triage issues
-- Decide project direction
-- Create release information
-
-AI has a tendency to hallucinate/produce plausible but suboptimal, inaccurate or misleading solutions to delegated tasks.
-
-Every commit is manually reviewed and approved by a member of Diamond Digital Development, and testing is carried out to ensure changes work as intended, do not introduce regressions, and meet reliability and security expectations before being merged into the `master` branch.
+This project uses AI tools to aid development. Read our [AI Transparency & Quality Commitment](https://diamonddigital.dev/ai-transparency) statement for more information.
 
 
 ## Contact Us

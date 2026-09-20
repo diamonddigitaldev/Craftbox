@@ -10,14 +10,7 @@ const {
     GROUP_COLOR_REGEX
 } = require('../../utils/serverGroups');
 const { log } = require('../../utils/log');
-
-// Notify all open dashboard/group pages of a grouping change so they refresh.
-function notifyDashboard(req) {
-    req.app.get('serverManager')?.broadcastGlobal?.({
-        type: 'dashboard-changed',
-        origin: req.get('x-client-id') || null
-    });
-}
+const { notifyDashboard } = require('../../utils/liveUpdates');
 
 // GET /groups — All server groups with color and server count
 router.get('/groups', async (req, res) => {
