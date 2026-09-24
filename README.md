@@ -88,6 +88,8 @@ docker run -d \
 
 > **Note:** The Docker image only exposes ports **25500-25600** for Minecraft servers, allowing up to 100 servers. When creating servers in Craftbox, make sure to assign ports within this range. If you only need a few servers, you can expose a smaller subset (e.g. `-p 25500-25510:25500-25510`).
 
+> **Image tags:** `latest` always points at the newest stable release. To stay on a release line, pin a major (`1`), a minor (`1.2`) or an exact version (`1.2.0`). Pre-releases are published under their exact version (e.g. `1.3.0-beta.1`) and the `next` tag, and never move `latest`.
+
 Alternatively, use `docker-compose.yml`:
 
 ```yaml

@@ -1,18 +1,49 @@
 name: Build and Publish Craftbox to Docker Hub
 on:
-  [workflow_dispatch]
+  release:
+    types: [published]
 jobs:
   publish_image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      PRERELEASE: ${{ github.event.release.prerelease }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get version from package.json
-        id: version
-        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+      # The pre-release flag decides the tags, so refuse a release whose flag
+      # disagrees with its version, or whose version disagrees with package.json.
+      - name: Check release tag
+        run: |
+          if [[ "$TAG" == *-* && "$PRERELEASE" != "true" ]]; then
+            echo "::error::$TAG is a pre-release version but the release is not marked as a pre-release."
+            exit 1
+          fi
+          if [[ "$TAG" != *-* && "$PRERELEASE" == "true" ]]; then
+            echo "::error::$TAG is a stable version but the release is marked as a pre-release."
+            exit 1
+          fi
+          PKG_VERSION=$(jq -r .version package.json)
+          if [[ "${TAG#v}" != "$PKG_VERSION" ]]; then
+            echo "::error::Release tag $TAG does not match package.json version $PKG_VERSION."
+            exit 1
+          fi
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: willtda/craftbox
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ env.PRERELEASE != 'true' }}
+            type=semver,pattern={{major}},value=${{ env.TAG }},enable=${{ env.PRERELEASE != 'true' }}
+            type=raw,value=latest,enable=${{ env.PRERELEASE != 'true' }}
+            type=raw,value=next,enable=${{ env.PRERELEASE == 'true' }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -27,10 +58,10 @@ jobs:
           password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: Build and push multi-arch image
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            -t willtda/craftbox:latest \
-            -t willtda/craftbox:${{ steps.version.outputs.VERSION }} \
-            --push \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
