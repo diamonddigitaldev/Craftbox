@@ -1328,6 +1328,9 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
                 if (!fresh.modpack.versionNumber) fresh.modpack.versionNumber = result.manifestVersionId;
             }
             await serversDb.set(`server_${id}`, fresh);
+            // A seed the pack ships survives a blank one — mirror it so the
+            // settings page shows it (and a save there doesn't clear it).
+            await syncServerConfig(id);
         }
 
         if (serverManager) {
