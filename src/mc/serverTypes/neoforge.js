@@ -10,23 +10,44 @@ const MAVEN_API = 'https://maven.neoforged.net/api/maven/versions/releases/net/n
 const MAVEN_BASE = 'https://maven.neoforged.net/releases/net/neoforged/neoforge';
 
 /**
- * Convert a Minecraft version to a NeoForge version prefix.
- * MC 1.20.2 → "20.2", MC 1.21 → "21.0", MC 1.21.4 → "21.4"
+ * The Minecraft version a NeoForge build targets. NeoForge numbers its builds
+ * after it: up to 1.21.x it drops Minecraft's leading "1." (21.1.252 → 1.21.1,
+ * 21.0.x → 1.21), and from Minecraft's year-based versions on it keeps the
+ * whole version, hotfix included, ahead of the build number (26.1.2.112 →
+ * 26.1.2, 26.2.0.88 → 26.2).
  */
-function mcToNeoPrefix(mcVersion) {
-    const parts = mcVersion.split('.').map(Number);
-    const major = parts[1]; // 20, 21, etc.
-    const minor = parts[2] || 0;
-    return `${major}.${minor}`;
+function neoBuildToMc(build) {
+    const nums = String(build).split('-')[0].split('.').map(Number);
+    if (nums[0] >= 26) {
+        const [year, drop, hotfix] = nums;
+        return hotfix ? `${year}.${drop}.${hotfix}` : `${year}.${drop}`;
+    }
+    const [minor, patch] = nums;
+    return patch ? `1.${minor}.${patch}` : `1.${minor}`;
 }
 
 /**
- * Convert a NeoForge version prefix back to a Minecraft version.
- * "20.2" → "1.20.2", "21.0" → "1.21"
+ * Before 1.2.1 Craftbox listed NeoForge's year-based builds as Minecraft
+ * "1.26.x", which is no real version (and lumped 26.1, 26.1.1 and 26.1.2
+ * together as "1.26.1"). Returns the version a record with such a label
+ * actually runs, read off its build where it has one; any other version is
+ * returned unchanged.
  */
-function neoPrefixToMc(prefix) {
-    const [major, minor] = prefix.split('.').map(Number);
-    return minor === 0 ? `1.${major}` : `1.${major}.${minor}`;
+function relabelLegacyVersion(version, build) {
+    const legacy = /^1\.(\d+)\.(\d+)$/.exec(String(version || ''));
+    if (!legacy || Number(legacy[1]) < 26) return version;
+    if (build && /^\d+\.\d+\.\d+\.\d+/.test(String(build))) return neoBuildToMc(build);
+    return `${legacy[1]}.${legacy[2]}`;
+}
+
+function compareMcVersions(a, b) {
+    const aParts = a.split('.').map(Number);
+    const bParts = b.split('.').map(Number);
+    for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+        const diff = (aParts[i] || 0) - (bParts[i] || 0);
+        if (diff !== 0) return diff;
+    }
+    return 0;
 }
 
 /**
@@ -51,35 +72,23 @@ module.exports = {
         // April-Fools "craftmine" builds don't map to real MC versions — always excluded.
         const allVersions = (data.versions || []).filter(v => !/craftmine/i.test(v));
 
-        // Group by MC version prefix (e.g. "20.4", "21.1"), tracking whether the
-        // prefix has any stable NeoForge build. An MC version whose builds are
+        // Group builds by the MC version they target, tracking whether that
+        // version has any stable NeoForge build. An MC version whose builds are
         // all -beta (early lifecycle) is labeled 'beta'.
-        const prefixHasStable = new Map();
+        const mcHasStable = new Map();
         for (const v of allVersions) {
-            const dotIdx = v.indexOf('.');
-            const secondDotIdx = v.indexOf('.', dotIdx + 1);
-            if (secondDotIdx === -1) continue;
-            const prefix = v.substring(0, secondDotIdx);
-            prefixHasStable.set(prefix, prefixHasStable.get(prefix) || isStable(v));
+            if (v.split('.').length < 3) continue;
+            const mc = neoBuildToMc(v);
+            mcHasStable.set(mc, mcHasStable.get(mc) || isStable(v));
         }
 
-        // Sort prefixes descending and convert to MC versions
-        const sorted = [...prefixHasStable.keys()]
-            .filter(prefix => channel === 'all' || prefixHasStable.get(prefix))
-            .sort((a, b) => {
-                const aParts = a.split('.').map(Number);
-                const bParts = b.split('.').map(Number);
-                for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
-                    const diff = (bParts[i] || 0) - (aParts[i] || 0);
-                    if (diff !== 0) return diff;
-                }
-                return 0;
-            });
-
-        const versions = sorted.map(prefix => ({
-            id: neoPrefixToMc(prefix),
-            channel: prefixHasStable.get(prefix) ? 'stable' : 'beta'
-        }));
+        const versions = [...mcHasStable.keys()]
+            .filter(mc => channel === 'all' || mcHasStable.get(mc))
+            .sort((a, b) => compareMcVersions(b, a))
+            .map(mc => ({
+                id: mc,
+                channel: mcHasStable.get(mc) ? 'stable' : 'beta'
+            }));
         return {
             versions,
             latest: versions.find(v => v.channel === 'stable')?.id || null
@@ -87,7 +96,7 @@ module.exports = {
     },
 
     async getBuilds(version) {
-        const prefix = mcToNeoPrefix(version);
+        const mc = relabelLegacyVersion(version);
 
         const res = await fetch(MAVEN_API);
         if (!res.ok) throw new Error(`Failed to fetch NeoForge versions: HTTP ${res.status}`);
@@ -98,7 +107,7 @@ module.exports = {
         // so the beta could be picked over the release it precedes;
         // compareBuilds reads the -beta suffix as older.
         return (data.versions || [])
-            .filter(v => !/craftmine/i.test(v) && v.startsWith(prefix + '.'))
+            .filter(v => !/craftmine/i.test(v) && v.split('.').length >= 3 && neoBuildToMc(v) === mc)
             .map(v => ({ build: v, channel: isStable(v) ? 'release' : 'beta' }))
             .sort((a, b) => compareBuilds(b.build, a.build));
     },
@@ -218,6 +227,8 @@ function findNeoForgeJar(serverDir, build) {
 
 // Export helper for use by ServerProcess
 module.exports.findNeoForgeArgsFile = findNeoForgeArgsFile;
+// For the startup migration in db.js
+module.exports.relabelLegacyVersion = relabelLegacyVersion;
 
 function runNeoForgeInstaller(javaPath, installerPath, serverDir, timeoutMs) {
     return new Promise((resolve, reject) => {

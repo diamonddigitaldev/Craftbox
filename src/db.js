@@ -98,6 +98,34 @@ async function purgeFailedProvisions() {
     }
 }
 
+// Before 1.2.1, NeoForge's year-based builds (Minecraft 26.x) were listed as
+// Minecraft "1.26.x". Give servers and templates saved with such a label the
+// version they actually run, so the version picker, jar upgrades and the Java
+// lookup all see a real one.
+async function relabelNeoForgeVersions() {
+    try {
+        // Lazily required, like serverCleanup above.
+        const { relabelLegacyVersion } = require('./mc/serverTypes/neoforge');
+        let updated = 0;
+        for (const [table, prefix] of [[serversDb, 'server_'], [templatesDb, 'template_']]) {
+            for (const row of await table.all()) {
+                const record = row?.value;
+                if (!record || record.serverType !== 'neoforge' || !record.id) continue;
+                const version = relabelLegacyVersion(record.version, record.build);
+                if (version === record.version) continue;
+                log('info', `NeoForge ${prefix.slice(0, -1)} "${record.name}": version ${record.version} → ${version}.`);
+                record.version = version;
+                await table.set(`${prefix}${record.id}`, record);
+                updated++;
+            }
+        }
+        return { updated };
+    } catch (err) {
+        log('warn', `Failed to relabel NeoForge versions: ${err.message}`);
+        return { updated: 0, error: err };
+    }
+}
+
 async function initDb() {
     await db.init();
     await usersDb.init();
@@ -118,6 +146,8 @@ async function initDb() {
 
     // Remove servers whose provisioning was interrupted before it completed.
     await purgeFailedProvisions();
+
+    await relabelNeoForgeVersions();
 
     // Clear stale resource stats from any previous session
     await statsDb.deleteAll();
