@@ -58,6 +58,13 @@ async function loadServerOr404(req, res) {
     return server;
 }
 
+// A server record as the API returns it: the on-disk `directory` is internal.
+function publicServer(server) {
+    const s = { ...server };
+    delete s.directory;
+    return s;
+}
+
 // Downgrade guard for version changes (edit + upgrade-jar). Release ids compare
 // numerically; snapshot/pre/rc ids don't, so fall back to the provider's
 // newest-first version list and compare positions. Ids missing from the list
@@ -315,8 +322,7 @@ router.get('/servers', async (req, res) => {
         const serverManager = req.app.get('serverManager');
 
         const servers = all.map(row => {
-            const s = { ...row.value };
-            delete s.directory;
+            const s = publicServer(row.value);
             if (serverManager) {
                 const proc = serverManager.getProcess(s.id);
                 if (proc) s.state = proc.state;
@@ -336,8 +342,7 @@ router.get('/servers/:id', async (req, res) => {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
-        const s = { ...server };
-        delete s.directory;
+        const s = publicServer(server);
 
         const serverManager = req.app.get('serverManager');
         if (serverManager) {
@@ -1138,7 +1143,7 @@ router.post('/servers', async (req, res) => {
         await serversDb.set(`server_${id}`, server);
 
         notifyDashboard(req);
-        res.status(201).json({ success: true, server });
+        res.status(201).json({ success: true, server: publicServer(server) });
 
         const serverManager = req.app.get('serverManager');
         (async () => {
@@ -1429,7 +1434,7 @@ router.post('/servers/from-modpack', async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from Modrinth modpack "${project.title}" ${version.version_number}`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server });
+        res.status(201).json({ success: true, server: publicServer(server) });
 
         provisionModpackServer({
             req,
@@ -1518,7 +1523,7 @@ const createFromMrpackHandler = async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from uploaded modpack "${manifest.name || req.file.originalname}"`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server });
+        res.status(201).json({ success: true, server: publicServer(server) });
 
         provisionModpackServer({
             req,
@@ -1863,7 +1868,7 @@ const importServerHandler = async (req, res) => {
             + `${finalId === String(source.id).toLowerCase() ? '' : ` (re-keyed from ${source.id})`}`
             + ` — extracting in background`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: importedServer, warnings });
+        res.status(201).json({ success: true, server: publicServer(importedServer), warnings });
 
         const serverManager = req.app.get('serverManager');
         const initiatedBy = req.user.username;
@@ -2073,7 +2078,7 @@ router.post('/servers/:id/duplicate', async (req, res) => {
 
         await serversDb.set(`server_${newId}`, newServer);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: newServer, warning: null });
+        res.status(201).json({ success: true, server: publicServer(newServer), warning: null });
 
         (async () => {
             try {
@@ -2347,7 +2352,7 @@ router.post('/servers/:id/edit', async (req, res) => {
     try {
         const { versionChanged, jarChanged } = await applyEdit();
         notifyDashboard(req);
-        res.json({ success: true, server, versionChanged, jarChanged });
+        res.json({ success: true, server: publicServer(server), versionChanged, jarChanged });
     } catch (err) {
         res.status(err.status || 500).json({ error: err.message });
     }
