@@ -65,6 +65,22 @@ function publicServer(server) {
     return s;
 }
 
+// `latest` is accepted wherever a version is, and means the type's newest
+// stable version: the one GET /versions reports as `latest`. Resolved before
+// anything is saved, so a record never stores the word itself. Throws an
+// httpError: 400 when the type has no stable version, 502 when upstream fails.
+async function resolveVersion(type, version) {
+    if (version !== 'latest') return version;
+    let result;
+    try {
+        result = await getProvider(type).listVersions({ channel: 'stable' });
+    } catch (err) {
+        throw httpError(502, `Could not look up the latest ${type} version: ${err.message}`);
+    }
+    if (!result?.latest) throw httpError(400, `No stable ${type} version is available.`);
+    return result.latest;
+}
+
 // Downgrade guard for version changes (edit + upgrade-jar). Release ids compare
 // numerically; snapshot/pre/rc ids don't, so fall back to the provider's
 // newest-first version list and compare positions. Ids missing from the list
@@ -568,7 +584,7 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
     // Optional version upgrade in the same operation (edit page "Accept Risk"
     // flow) — same rules as the edit endpoint: format check, upgrades only.
     // Custom servers have no tracked version; they upgrade by jar URL instead.
-    const targetVersion = String(req.body?.version || '').trim();
+    let targetVersion = String(req.body?.version || '').trim();
     const targetUrl = String(req.body?.jarUrl || '').trim();
     let isVersionChange = false;
 
@@ -583,6 +599,13 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
             return res.status(400).json({ error: 'Invalid jar download URL.' });
         }
     } else {
+        if (targetVersion === 'latest') {
+            try {
+                targetVersion = await resolveVersion(type, targetVersion);
+            } catch (err) {
+                return res.status(err.status || 500).json({ error: err.message });
+            }
+        }
         isVersionChange = !!targetVersion && targetVersion !== server.version;
         if (isVersionChange) {
             if (!MC_VERSION_RE.test(targetVersion)) {
@@ -1086,10 +1109,15 @@ router.post('/servers', async (req, res) => {
         }
     }
 
-    const versionStr = String(version || '').trim();
+    let versionStr = String(version || '').trim();
     if (type !== 'custom') {
         if (!versionStr || (!MC_VERSION_RE.test(versionStr) && versionStr !== 'latest')) {
             return res.status(400).json({ error: 'Invalid Minecraft version format.' });
+        }
+        try {
+            versionStr = await resolveVersion(type, versionStr);
+        } catch (err) {
+            return res.status(err.status || 500).json({ error: err.message });
         }
     }
 
@@ -2224,7 +2252,14 @@ router.post('/servers/:id/edit', async (req, res) => {
     }
 
     const type = server.serverType || 'vanilla';
-    const newVersion = String(version || '').trim();
+    let newVersion = String(version || '').trim();
+    if (type !== 'custom' && newVersion === 'latest') {
+        try {
+            newVersion = await resolveVersion(type, newVersion);
+        } catch (err) {
+            return res.status(err.status || 500).json({ error: err.message });
+        }
+    }
 
     // Everything that mutates the server, deferred into one closure so the
     // backup path can run it only once a restore point exists. Throws

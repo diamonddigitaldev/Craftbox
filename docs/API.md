@@ -73,7 +73,7 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 | Group color | hex, `^#[0-9a-fA-F]{6}$` |
 | Port | integer 1024–65535 |
 | Memory | integer 512–65536 (MB, any whole value) |
-| Version | `latest` or `^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,63}$` (e.g. `1.21.4`, `25w03a`, `1.21.5-pre1`) |
+| Version | `latest` or `^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,63}$` (e.g. `1.21.4`, `25w03a`, `1.21.5-pre1`). `latest` is resolved when the request is made to the type's newest stable version, the one `GET /versions` reports as `latest`, and the server records that version rather than the word (`400` if the type has none) |
 | Server type | `vanilla`, `paper`, `purpur`, `folia`, `fabric`, `forge`, `neoforge`, `custom` |
 | `:id` route params | UUID v4 |
 | Console command | max 1000 chars |
