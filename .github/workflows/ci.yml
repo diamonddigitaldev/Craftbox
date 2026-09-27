@@ -1,0 +1,120 @@
+name: CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  # Weekly as well: "latest version" moves upstream (new Minecraft releases,
+  # loader builds) without any commit here to trigger a run.
+  schedule:
+    - cron: '0 6 * * 1'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Build the real image once; every check below runs against it, so CI tests
+  # exactly what gets published (the Java runtimes included).
+  build:
+    name: Build image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: craftbox:ci
+          outputs: type=docker,dest=${{ runner.temp }}/craftbox-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload image
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftbox-image
+          path: ${{ runner.temp }}/craftbox-image.tar
+          retention-days: 1
+
+  api:
+    name: API smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: craftbox-image
+          path: ${{ runner.temp }}
+
+      - name: Start Craftbox
+        run: |
+          docker load --input "$RUNNER_TEMP/craftbox-image.tar"
+          docker run -d --name craftbox -p 6464:6464 craftbox:ci
+
+      - name: Run API smoke test
+        run: node test/ci/api-smoke.mjs
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+
+      - name: Craftbox log
+        if: failure()
+        run: docker logs craftbox
+
+  servers:
+    name: Start ${{ matrix.type }} (latest)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # One broken upstream shouldn't hide the state of the others
+      fail-fast: false
+      matrix:
+        type: [vanilla, paper, purpur, folia, fabric, forge, neoforge]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: craftbox-image
+          path: ${{ runner.temp }}
+
+      - name: Start Craftbox
+        run: |
+          docker load --input "$RUNNER_TEMP/craftbox-image.tar"
+          docker run -d --name craftbox -p 6464:6464 craftbox:ci
+
+      - name: Start a ${{ matrix.type }} server
+        run: node test/ci/server-start.mjs ${{ matrix.type }}
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+
+      - name: Craftbox log
+        if: failure()
+        run: docker logs craftbox

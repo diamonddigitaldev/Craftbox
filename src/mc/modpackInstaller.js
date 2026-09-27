@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const StreamZip = require('node-stream-zip');
 const { downloadServerJar } = require('./downloader');
-const { writeServerProperties, writeEula } = require('./serverProperties');
+const { writeServerProperties, writeEula, parseServerProperties } = require('./serverProperties');
 const { downloadToFile, assertWhitelistedUrl } = require('../utils/httpDownload');
 const { setServerIcon } = require('../utils/serverIcon');
 const { DISABLED_SUFFIX } = require('../utils/modEnvironment');
@@ -26,6 +26,17 @@ const DISK_HEADROOM_BYTES = 512 * 1024 * 1024;
 // Only jars directly in mods/ take part in the mod environment map (it is keyed
 // by the filename listModFiles() reports for that folder).
 const MOD_JAR_RE = /^mods\/[^/]+\.jar$/i;
+
+// server.properties settings a pack doesn't get to decide for the host, even
+// though the rest of its file is kept: switching off account checks, opening
+// RCON with a password everyone who has the pack knows, or binding to an
+// address that doesn't exist here. All still changeable on Properties.
+const PINNED_PROPERTIES = {
+    'online-mode': true,
+    'enable-rcon': false,
+    'rcon.password': '',
+    'server-ip': ''
+};
 
 // Loader dependency keys in install-preference order. quilt-loader is known
 // but unsupported — detected separately for a clearer error.
@@ -338,13 +349,23 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
         // ── Phase 6: finalize ──
         emit('finalize');
         // After overrides on purpose: Craftbox-managed values (port, gamemode,
-        // difficulty, seed) must win over any server.properties the pack ships.
+        // difficulty, seed) must win over any server.properties the pack ships,
+        // while the rest of the pack's file is kept. A blank seed is no choice
+        // at all, so it leaves a seed the pack ships in place.
+        const packProps = parseServerProperties(serverDir);
+        const overruled = Object.keys(PINNED_PROPERTIES)
+            .filter(key => packProps[key] && packProps[key] !== String(PINNED_PROPERTIES[key]));
+        if (overruled.length > 0) {
+            warnings.push(`The modpack's server.properties set ${overruled.join(', ')}; Craftbox's safe values were kept. Change them on the Properties page if the pack needs them.`);
+            log('info', `Modpack install ${serverId}: kept Craftbox's ${overruled.join(', ')} over the pack's.`);
+        }
         writeServerProperties(serverDir, {
+            ...PINNED_PROPERTIES,
             serverPort: baseConfig.port,
             gamemode: baseConfig.gamemode,
             difficulty: baseConfig.difficulty,
-            levelSeed: baseConfig.seed
-        });
+            levelSeed: baseConfig.seed || undefined
+        }, { mergeExisting: true });
         writeEula(serverDir);
 
         if (iconUrl) {

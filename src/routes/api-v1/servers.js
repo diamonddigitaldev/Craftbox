@@ -58,6 +58,29 @@ async function loadServerOr404(req, res) {
     return server;
 }
 
+// A server record as the API returns it: the on-disk `directory` is internal.
+function publicServer(server) {
+    const s = { ...server };
+    delete s.directory;
+    return s;
+}
+
+// `latest` is accepted wherever a version is, and means the type's newest
+// stable version: the one GET /versions reports as `latest`. Resolved before
+// anything is saved, so a record never stores the word itself. Throws an
+// httpError: 400 when the type has no stable version, 502 when upstream fails.
+async function resolveVersion(type, version) {
+    if (version !== 'latest') return version;
+    let result;
+    try {
+        result = await getProvider(type).listVersions({ channel: 'stable' });
+    } catch (err) {
+        throw httpError(502, `Could not look up the latest ${type} version: ${err.message}`);
+    }
+    if (!result?.latest) throw httpError(400, `No stable ${type} version is available.`);
+    return result.latest;
+}
+
 // Downgrade guard for version changes (edit + upgrade-jar). Release ids compare
 // numerically; snapshot/pre/rc ids don't, so fall back to the provider's
 // newest-first version list and compare positions. Ids missing from the list
@@ -315,8 +338,7 @@ router.get('/servers', async (req, res) => {
         const serverManager = req.app.get('serverManager');
 
         const servers = all.map(row => {
-            const s = { ...row.value };
-            delete s.directory;
+            const s = publicServer(row.value);
             if (serverManager) {
                 const proc = serverManager.getProcess(s.id);
                 if (proc) s.state = proc.state;
@@ -336,8 +358,7 @@ router.get('/servers/:id', async (req, res) => {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
-        const s = { ...server };
-        delete s.directory;
+        const s = publicServer(server);
 
         const serverManager = req.app.get('serverManager');
         if (serverManager) {
@@ -563,7 +584,7 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
     // Optional version upgrade in the same operation (edit page "Accept Risk"
     // flow) — same rules as the edit endpoint: format check, upgrades only.
     // Custom servers have no tracked version; they upgrade by jar URL instead.
-    const targetVersion = String(req.body?.version || '').trim();
+    let targetVersion = String(req.body?.version || '').trim();
     const targetUrl = String(req.body?.jarUrl || '').trim();
     let isVersionChange = false;
 
@@ -578,6 +599,13 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
             return res.status(400).json({ error: 'Invalid jar download URL.' });
         }
     } else {
+        if (targetVersion === 'latest') {
+            try {
+                targetVersion = await resolveVersion(type, targetVersion);
+            } catch (err) {
+                return res.status(err.status || 500).json({ error: err.message });
+            }
+        }
         isVersionChange = !!targetVersion && targetVersion !== server.version;
         if (isVersionChange) {
             if (!MC_VERSION_RE.test(targetVersion)) {
@@ -1081,10 +1109,15 @@ router.post('/servers', async (req, res) => {
         }
     }
 
-    const versionStr = String(version || '').trim();
+    let versionStr = String(version || '').trim();
     if (type !== 'custom') {
         if (!versionStr || (!MC_VERSION_RE.test(versionStr) && versionStr !== 'latest')) {
             return res.status(400).json({ error: 'Invalid Minecraft version format.' });
+        }
+        try {
+            versionStr = await resolveVersion(type, versionStr);
+        } catch (err) {
+            return res.status(err.status || 500).json({ error: err.message });
         }
     }
 
@@ -1138,7 +1171,7 @@ router.post('/servers', async (req, res) => {
         await serversDb.set(`server_${id}`, server);
 
         notifyDashboard(req);
-        res.status(201).json({ success: true, server });
+        res.status(201).json({ success: true, server: publicServer(server) });
 
         const serverManager = req.app.get('serverManager');
         (async () => {
@@ -1328,6 +1361,9 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
                 if (!fresh.modpack.versionNumber) fresh.modpack.versionNumber = result.manifestVersionId;
             }
             await serversDb.set(`server_${id}`, fresh);
+            // A seed the pack ships survives a blank one — mirror it so the
+            // settings page shows it (and a save there doesn't clear it).
+            await syncServerConfig(id);
         }
 
         if (serverManager) {
@@ -1426,7 +1462,7 @@ router.post('/servers/from-modpack', async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from Modrinth modpack "${project.title}" ${version.version_number}`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server });
+        res.status(201).json({ success: true, server: publicServer(server) });
 
         provisionModpackServer({
             req,
@@ -1515,7 +1551,7 @@ const createFromMrpackHandler = async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from uploaded modpack "${manifest.name || req.file.originalname}"`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server });
+        res.status(201).json({ success: true, server: publicServer(server) });
 
         provisionModpackServer({
             req,
@@ -1860,7 +1896,7 @@ const importServerHandler = async (req, res) => {
             + `${finalId === String(source.id).toLowerCase() ? '' : ` (re-keyed from ${source.id})`}`
             + ` — extracting in background`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: importedServer, warnings });
+        res.status(201).json({ success: true, server: publicServer(importedServer), warnings });
 
         const serverManager = req.app.get('serverManager');
         const initiatedBy = req.user.username;
@@ -2070,7 +2106,7 @@ router.post('/servers/:id/duplicate', async (req, res) => {
 
         await serversDb.set(`server_${newId}`, newServer);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: newServer, warning: null });
+        res.status(201).json({ success: true, server: publicServer(newServer), warning: null });
 
         (async () => {
             try {
@@ -2216,7 +2252,14 @@ router.post('/servers/:id/edit', async (req, res) => {
     }
 
     const type = server.serverType || 'vanilla';
-    const newVersion = String(version || '').trim();
+    let newVersion = String(version || '').trim();
+    if (type !== 'custom' && newVersion === 'latest') {
+        try {
+            newVersion = await resolveVersion(type, newVersion);
+        } catch (err) {
+            return res.status(err.status || 500).json({ error: err.message });
+        }
+    }
 
     // Everything that mutates the server, deferred into one closure so the
     // backup path can run it only once a restore point exists. Throws
@@ -2344,17 +2387,28 @@ router.post('/servers/:id/edit', async (req, res) => {
     try {
         const { versionChanged, jarChanged } = await applyEdit();
         notifyDashboard(req);
-        res.json({ success: true, server, versionChanged, jarChanged });
+        res.json({ success: true, server: publicServer(server), versionChanged, jarChanged });
     } catch (err) {
         res.status(err.status || 500).json({ error: err.message });
     }
 });
 
 // POST /servers/:id/properties — Update server.properties
+// A partial update: a key left out of the body keeps its current value. That
+// includes toggles — the properties form sends every one explicitly, and an API
+// client changing one key must not switch every boolean it omits off.
 router.post('/servers/:id/properties', async (req, res) => {
     const id = req.params.id;
     const server = await loadServerOr404(req, res);
     if (!server) return;
+
+    const body = req.body || {};
+    // Checked before any restore-point backup starts, and never coerced to false.
+    const badToggle = Object.keys(body).find(key =>
+        PROPERTY_META[key]?.type === 'boolean' && ![true, false, 'true', 'false'].includes(body[key]));
+    if (badToggle) {
+        return res.status(400).json({ error: `${badToggle} must be true or false.` });
+    }
 
     const applyProperties = async () => {
         const serverDir = path.join(SERVERS_DIR, id);
@@ -2363,17 +2417,17 @@ router.post('/servers/:id/properties', async (req, res) => {
 
         for (const key of Object.keys(currentProps)) {
             // `backup` is this endpoint's own flag, never a Minecraft property.
-            if (key === 'backup') continue;
-            const meta = PROPERTY_META[key];
-            if (meta && meta.type === 'boolean') {
-                updates[key] = req.body[key] === 'true' || req.body[key] === true ? 'true' : 'false';
-            } else if (req.body[key] !== undefined) {
-                updates[key] = String(req.body[key]);
-            }
+            if (key === 'backup' || body[key] === undefined) continue;
+            updates[key] = String(body[key]);
         }
 
         updateServerProperties(serverDir, updates);
         await syncServerConfig(id);
+
+        const changed = Object.keys(updates).filter(key => updates[key] !== currentProps[key]);
+        if (changed.length > 0) {
+            log('info', `Server "${server.name}" properties updated: ${changed.join(', ')}.`);
+        }
         return {};
     };
 

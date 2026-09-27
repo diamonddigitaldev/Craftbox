@@ -32,15 +32,17 @@ const PROPERTY_META = {
     // --- World ---
     'level-name': { type: 'string', label: 'World Name', group: 'world', default: 'world' },
     'level-seed': { type: 'string', label: 'World Seed', group: 'world', default: '', description: 'Only applies when generating a new world' },
+    // Unescaped, as parseServerProperties returns them. Minecraft writes
+    // `minecraft\:normal`, but reads a bare colon in a value just the same.
     'level-type': {
         type: 'enum', label: 'World Type', group: 'world',
         options: [
-            { value: 'minecraft\\:normal', label: 'Normal' },
-            { value: 'minecraft\\:flat', label: 'Flat' },
-            { value: 'minecraft\\:large_biomes', label: 'Large Biomes' },
-            { value: 'minecraft\\:amplified', label: 'Amplified' },
-            { value: 'minecraft\\:single_biome_surface', label: 'Single Biome' }
-        ], default: 'minecraft\\:normal'
+            { value: 'minecraft:normal', label: 'Normal' },
+            { value: 'minecraft:flat', label: 'Flat' },
+            { value: 'minecraft:large_biomes', label: 'Large Biomes' },
+            { value: 'minecraft:amplified', label: 'Amplified' },
+            { value: 'minecraft:single_biome_surface', label: 'Single Biome' }
+        ], default: 'minecraft:normal'
     },
     'generate-structures': { type: 'boolean', label: 'Generate Structures', group: 'world', default: 'true' },
     'max-world-size': { type: 'number', label: 'Max World Size', group: 'world', min: 1, max: 29999984, default: '29999984', description: 'World border radius in blocks' },
