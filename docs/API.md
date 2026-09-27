@@ -152,7 +152,7 @@ The [WebSocket](#websocket-protocol) is the live feed, but it does not accept be
 | POST | `/servers/:id/statuspublic` | Toggle listing on the `/status` index. Body: `{enabled: bool}`. Does **not** gate direct access — see [Public status endpoints](#public-status-endpoints) |
 | POST | `/servers/:id/advertisedip` | Set the address shown on the status page. Body: `{value}` |
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
-| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
+| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). A partial update: properties left out keep their current value, and keys not already in the file are ignored. Toggles take `true`/`false` (boolean or string) — anything else is `400`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
 | POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` if the target is not text (see [Text vs binary](#files)) |
 
 ### Files

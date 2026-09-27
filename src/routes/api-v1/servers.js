@@ -2351,10 +2351,21 @@ router.post('/servers/:id/edit', async (req, res) => {
 });
 
 // POST /servers/:id/properties — Update server.properties
+// A partial update: a key left out of the body keeps its current value. That
+// includes toggles — the properties form sends every one explicitly, and an API
+// client changing one key must not switch every boolean it omits off.
 router.post('/servers/:id/properties', async (req, res) => {
     const id = req.params.id;
     const server = await loadServerOr404(req, res);
     if (!server) return;
+
+    const body = req.body || {};
+    // Checked before any restore-point backup starts, and never coerced to false.
+    const badToggle = Object.keys(body).find(key =>
+        PROPERTY_META[key]?.type === 'boolean' && ![true, false, 'true', 'false'].includes(body[key]));
+    if (badToggle) {
+        return res.status(400).json({ error: `${badToggle} must be true or false.` });
+    }
 
     const applyProperties = async () => {
         const serverDir = path.join(SERVERS_DIR, id);
@@ -2363,17 +2374,17 @@ router.post('/servers/:id/properties', async (req, res) => {
 
         for (const key of Object.keys(currentProps)) {
             // `backup` is this endpoint's own flag, never a Minecraft property.
-            if (key === 'backup') continue;
-            const meta = PROPERTY_META[key];
-            if (meta && meta.type === 'boolean') {
-                updates[key] = req.body[key] === 'true' || req.body[key] === true ? 'true' : 'false';
-            } else if (req.body[key] !== undefined) {
-                updates[key] = String(req.body[key]);
-            }
+            if (key === 'backup' || body[key] === undefined) continue;
+            updates[key] = String(body[key]);
         }
 
         updateServerProperties(serverDir, updates);
         await syncServerConfig(id);
+
+        const changed = Object.keys(updates).filter(key => updates[key] !== currentProps[key]);
+        if (changed.length > 0) {
+            log('info', `Server "${server.name}" properties updated: ${changed.join(', ')}.`);
+        }
         return {};
     };
 
