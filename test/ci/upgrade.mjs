@@ -12,7 +12,9 @@
 //   CRAFTBOX_UPGRADE_FROM=willtda/craftbox:latest CRAFTBOX_IMAGE=craftbox:ci node test/ci/upgrade.mjs
 //
 // It runs the containers itself, publishing CRAFTBOX_URL's port (default
-// 6464), with names craftbox-old and craftbox, and a fresh volume.
+// 6464), as craftbox-upgrade-from and craftbox-upgrade-to on a fresh volume,
+// all labelled craftbox-ci=upgrade. It only ever removes a container that
+// carries that label, so it can't take one of yours with the same name.
 
 import crypto from 'node:crypto';
 import {
@@ -23,17 +25,31 @@ import {
 const FROM = process.env.CRAFTBOX_UPGRADE_FROM || 'willtda/craftbox:latest';
 const TO = process.env.CRAFTBOX_IMAGE || 'craftbox:ci';
 const PORT = new URL(BASE_URL).port || '80';
-const OLD = 'craftbox-old';
-const NEW = 'craftbox';
+const OLD = 'craftbox-upgrade-from';
+const NEW = 'craftbox-upgrade-to';
+const LABEL = 'craftbox-ci=upgrade';
 const VOLUME = `craftbox-upgrade-${crypto.randomBytes(4).toString('hex')}`;
 // Every release so far can run it, with the Java 21 all their images carry
 const MC_VERSION = '1.21.1';
 
 const run = createRunner(`Upgrade test (${FROM} → ${TO})`);
 
+// Remove a container of ours left by an earlier run; refuse to touch anyone
+// else's
+function removeOurs(name) {
+    let label;
+    try {
+        label = docker(['inspect', '--format', '{{index .Config.Labels "craftbox-ci"}}', name]).trim();
+    } catch {
+        return; // no such container
+    }
+    if (label !== 'upgrade') throw new Error(`A container named ${name} already exists and isn't this test's; rename or remove it first.`);
+    docker(['rm', '-f', name]);
+}
+
 function startContainer(name, image) {
-    try { docker(['rm', '-f', name]); } catch { /* not there */ }
-    docker(['run', '-d', '--name', name, '-p', `${PORT}:6464`, '-v', `${VOLUME}:/app/data`, image]);
+    removeOurs(name);
+    docker(['run', '-d', '--name', name, '--label', LABEL, '-p', `${PORT}:6464`, '-v', `${VOLUME}:/app/data`, image]);
 }
 
 // Write straight into a running panel's database, as its own user
@@ -66,12 +82,16 @@ await run.step(`starts ${FROM} on a fresh volume`, async () => {
         }
     }
     if (lastErr) throw new UpstreamError('Docker Hub', `pulling ${FROM}: ${lastErr.stderr || lastErr.message}`);
-    docker(['volume', 'create', VOLUME]);
+    docker(['volume', 'create', '--label', LABEL, VOLUME]);
     startContainer(OLD, FROM);
     await waitForPanel();
     seeded.version = (await (await fetch(`${BASE_URL}/login`)).text()).match(/v(\d+\.\d+\.\d+[^<\s"]*)/)?.[1] || 'unknown';
     console.log(`    running ${seeded.version}`);
 });
+if (run.failed) {
+    run.finish();
+    process.exit();
+}
 
 await run.step('fills it with a server, settings, files, a backup and a template', async () => {
     const boot = await bootstrapPanel();
@@ -205,7 +225,7 @@ await run.step('starts the server on the new version', async () => {
 
 // Keep the containers for their logs if anything failed; CI throws them away
 if (run.failed === 0 && !process.env.GITHUB_ACTIONS) {
-    for (const name of [OLD, NEW]) docker(['rm', '-f', name]);
+    for (const name of [OLD, NEW]) removeOurs(name);
     docker(['volume', 'rm', VOLUME]);
 }
 run.finish();

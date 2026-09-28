@@ -194,8 +194,8 @@ jobs:
       - name: Craftbox logs
         if: failure()
         run: |
-          echo "::group::Before the upgrade"; docker logs craftbox-old || true; echo "::endgroup::"
-          echo "::group::After the upgrade"; docker logs craftbox || true; echo "::endgroup::"
+          echo "::group::Before the upgrade"; docker logs craftbox-upgrade-from || true; echo "::endgroup::"
+          echo "::group::After the upgrade"; docker logs craftbox-upgrade-to || true; echo "::endgroup::"
 
   servers:
     name: Start ${{ matrix.type }} (latest)
