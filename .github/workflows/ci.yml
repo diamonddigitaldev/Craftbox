@@ -116,6 +116,11 @@ jobs:
           # Headless, in the Chrome the runner already has
           - name: Browser
             script: browser.mjs
+          # The two halves of the operations test run side by side
+          - name: Lifecycle
+            script: operations.mjs lifecycle
+          - name: Backups
+            script: operations.mjs backups
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -516,20 +516,42 @@ export function createRunner(title) {
     const results = [];
 
     return {
-        async step(name, fn) {
+        // `knownIssue` marks a check for a bug that's been reported but not
+        // fixed: while it fails it's a warning, and once it passes it fails,
+        // so the marker comes off.
+        async step(name, fn, { knownIssue } = {}) {
             const started = Date.now();
+            let err = null;
             try {
                 await fn();
-                results.push({ name, ok: true, ms: Date.now() - started });
-                console.log(`  ✔ ${name}`);
-            } catch (err) {
-                const upstream = err instanceof UpstreamError;
-                results.push({ name, ok: false, upstream, ms: Date.now() - started, error: err.message });
-                console.log(`  ${upstream ? '⚠ [upstream unavailable]' : '✘'} ${name}\n      ${err.message.replace(/\n/g, '\n      ')}`);
+            } catch (caught) {
+                err = caught;
+            }
+            const ms = Date.now() - started;
+            const upstream = err instanceof UpstreamError;
+            const indent = (s) => s.replace(/\n/g, '\n      ');
+
+            if (knownIssue && err && !upstream) {
+                results.push({ name, ok: true, known: `${knownIssue}: ${err.message}`, ms });
+                console.log(`  ! ${name} (known issue: ${knownIssue})\n      ${indent(err.message)}`);
                 if (process.env.GITHUB_ACTIONS) {
-                    const heading = upstream ? `Upstream unavailable (${err.service}), not a Craftbox failure` : title;
-                    console.log(`::error title=${escapeProperty(`${heading}: ${name}`)}::${escapeData(err.message)}`);
+                    console.log(`::warning title=${escapeProperty(`Known issue: ${name}`)}::${escapeData(`${knownIssue}\n${err.message}`)}`);
                 }
+                return;
+            }
+            if (knownIssue && !err) {
+                err = new Error(`Passes now, so this looks fixed (${knownIssue}): remove its knownIssue marker.`);
+            }
+            if (!err) {
+                results.push({ name, ok: true, ms });
+                console.log(`  ✔ ${name}`);
+                return;
+            }
+            results.push({ name, ok: false, upstream, ms, error: err.message });
+            console.log(`  ${upstream ? '⚠ [upstream unavailable]' : '✘'} ${name}\n      ${indent(err.message)}`);
+            if (process.env.GITHUB_ACTIONS) {
+                const heading = upstream ? `Upstream unavailable (${err.service}), not a Craftbox failure` : title;
+                console.log(`::error title=${escapeProperty(`${heading}: ${name}`)}::${escapeData(err.message)}`);
             }
         },
         // A check that can't run in this environment, such as one that needs
@@ -548,8 +570,8 @@ export function createRunner(title) {
                 (outages ? ` (${outages} blocked by an upstream outage, not Craftbox)` : ''));
             if (process.env.GITHUB_STEP_SUMMARY) {
                 const cell = (s) => (s || '').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
-                const row = (r) => `| ${r.skipped ? '⏭️' : r.ok ? '✅' : r.upstream ? '⚠️' : '❌'} | ${cell(r.name)} | ` +
-                    `${(r.ms / 1000).toFixed(1)}s | ${r.skipped ? `skipped: ${cell(r.skipped)}` : r.ok ? '' : cell(r.error)} |`;
+                const row = (r) => `| ${r.skipped ? '⏭️' : r.known ? '🐞' : r.ok ? '✅' : r.upstream ? '⚠️' : '❌'} | ${cell(r.name)} | ` +
+                    `${(r.ms / 1000).toFixed(1)}s | ${r.skipped ? `skipped: ${cell(r.skipped)}` : r.known ? `known issue: ${cell(r.known)}` : r.ok ? '' : cell(r.error)} |`;
                 const table = (rows) => `| | Check | Time | Error |\n|---|---|---|---|\n${rows.map(row).join('\n')}\n\n`;
                 let md = `### ${title}\n\n${table(results.filter((r) => !r.upstream))}`;
                 if (outages) {
