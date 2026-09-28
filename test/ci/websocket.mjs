@@ -7,7 +7,7 @@
 //   CRAFTBOX_URL=http://localhost:6464 node test/ci/websocket.mjs
 
 import {
-    waitForPanel, bootstrapPanel, apiClient, provisionServer, waitForState, withUpstream,
+    waitForPanel, openPanel, apiClient, provisionServer, waitForState, withUpstream,
     openSocket, upgradeStatus, createRunner, assert, assertStatus, sleep
 } from './lib.mjs';
 
@@ -17,7 +17,7 @@ const CLIENT_ID = 'ci-websocket-test';
 
 const run = createRunner('WebSocket test');
 await waitForPanel();
-const { key, session } = await bootstrapPanel();
+const { key, session } = await openPanel();
 const api = apiClient(key);
 const tagged = (method, path, body) => api(method, path, body, { headers: { 'x-client-id': CLIENT_ID } });
 

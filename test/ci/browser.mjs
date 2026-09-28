@@ -10,7 +10,7 @@
 // Chrome is found on PATH or at its usual install path; CHROME_PATH overrides.
 
 import {
-    waitForPanel, bootstrapPanel, apiClient, provisionServer, waitForState, withUpstream, panelPages,
+    waitForPanel, openPanel, apiClient, provisionServer, waitForState, withUpstream, panelPages,
     CI_USER, createRunner, assert, assertStatus
 } from './lib.mjs';
 import { launchChrome } from './chrome.mjs';
@@ -21,7 +21,7 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
 const run = createRunner('Browser test');
 await waitForPanel();
-const { key } = await bootstrapPanel();
+const { key } = await openPanel();
 const api = apiClient(key);
 const browser = await launchChrome();
 const page = await browser.newPage();

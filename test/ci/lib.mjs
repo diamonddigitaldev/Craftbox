@@ -244,6 +244,13 @@ export async function loginPanel({ username, password } = CI_USER) {
     return { key: await mintApiKey(session), session, page: (path) => pageOf(session, path) };
 }
 
+// Set up a fresh panel, or sign in to one another script already set up
+export async function openPanel(credentials = CI_USER) {
+    const res = await fetch(`${BASE_URL}/setup`, { redirect: 'manual' });
+    await res.arrayBuffer();
+    return res.status === 200 ? bootstrapPanel(credentials) : loginPanel(credentials);
+}
+
 async function pageOf(session, path) {
     const res = await session.get(path);
     return { status: res.status, html: res.text };
@@ -302,6 +309,7 @@ export async function openSocket({ cookie, path = '/' } = {}) {
         for (const waiter of waiters) {
             if (waiter.match(msg)) {
                 waiters.delete(waiter);
+                clearTimeout(waiter.timer);
                 waiter.resolve(msg);
             }
         }
@@ -320,10 +328,10 @@ export async function openSocket({ cookie, path = '/' } = {}) {
             if (found) return Promise.resolve(found);
             return new Promise((resolve, reject) => {
                 const waiter = { match, resolve };
-                waiters.add(waiter);
-                setTimeout(() => {
+                waiter.timer = setTimeout(() => {
                     if (waiters.delete(waiter)) reject(new Error(`no ${what} within ${timeoutMs / 1000}s`));
                 }, timeoutMs);
+                waiters.add(waiter);
             });
         },
         close: () => ws.close()

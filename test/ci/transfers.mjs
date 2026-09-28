@@ -8,7 +8,7 @@
 
 import crypto from 'node:crypto';
 import {
-    BASE_URL, waitForPanel, bootstrapPanel, apiClient, provisionServer, waitForState, withUpstream, upstreamFetch,
+    BASE_URL, waitForPanel, openPanel, apiClient, provisionServer, waitForState, withUpstream, upstreamFetch,
     openSocket, dgupUpload, chunkHeaders, makeZip, makeModJar, makePng, pngSize, zipEntries,
     createRunner, assert, assertStatus
 } from './lib.mjs';
@@ -17,7 +17,7 @@ const PROVISION_TIMEOUT = 10 * 60_000;
 
 const run = createRunner('Transfers test');
 await waitForPanel();
-const { key, session } = await bootstrapPanel();
+const { key, session } = await openPanel();
 const api = apiClient(key);
 const socket = await openSocket({ cookie: session.cookie });
 

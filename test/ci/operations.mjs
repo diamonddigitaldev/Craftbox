@@ -16,7 +16,7 @@
 // crash and auto-start ones) are skipped.
 
 import {
-    CONTAINER, waitForPanel, bootstrapPanel, apiClient, provisionServer, waitForState, withUpstream,
+    CONTAINER, waitForPanel, openPanel, apiClient, provisionServer, waitForState, withUpstream,
     transientError, openSocket, docker, zipEntries, BASE_URL, createRunner, assert, assertStatus, sleep
 } from './lib.mjs';
 
@@ -26,7 +26,7 @@ const sections = process.argv.slice(2).length ? process.argv.slice(2) : ['lifecy
 
 const run = createRunner(`Operations test (${sections.join(', ')})`);
 await waitForPanel();
-const { key, session } = await bootstrapPanel();
+const { key, session } = await openPanel();
 const api = apiClient(key);
 let socket = await openSocket({ cookie: session.cookie });
 
@@ -152,43 +152,8 @@ async function lifecycle() {
         assert(s.state === 'stopped' && !s.crashReason, `a kill left it ${s.state} (${s.crashReason})`);
     });
 
-    if (!CONTAINER) {
-        for (const name of ['detects a crash', 'restarts itself after a crash', 'detects a JVM killed by a signal', 'restores settings behind a backup while running', 'auto-starts across a panel restart']) {
-            run.skip(name, 'CRAFTBOX_CONTAINER not set');
-        }
-        return;
-    }
-
-    await run.step('detects a crash, and keeps its details off the status page', async () => {
-        await start(id);
-        const since = socket.mark();
-        signalJava('TERM'); // the JVM exits 143
-        const s = await waitForState(api, id, ['crashed', 'stopped'], { timeoutMs: 60_000 });
-        assert(s.state === 'crashed' && s.crashReason === 'exit_code' && s.exitCode === 143,
-            `state ${s.state}, crashReason ${s.crashReason}, exitCode ${s.exitCode}`);
-        await socket.waitFor((m) => m.type === 'event' && m.serverId === id && m.eventType === 'crashed', { since, what: 'crashed event' });
-        const pub = (await (await fetch(`${BASE_URL}/status/${id}/api`)).json()).server;
-        assert(pub.state === 'crashed' && !('crashReason' in pub) && !('exitCode' in pub), `public: ${JSON.stringify(pub)}`);
-    });
-    await run.step('restarts itself after a crash when auto-restart is on', async () => {
-        assertStatus(await api('POST', `/servers/${id}/autorestart`, { enabled: true }), 200, 'autorestart');
-        await start(id);
-        const since = socket.mark();
-        signalJava('TERM');
-        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'crashed', { since, what: 'the crash' });
-        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'running', { since, what: 'running again', timeoutMs: START_TIMEOUT });
-    });
-    await run.step('detects a JVM killed by a signal (as the kernel\'s OOM killer does)', async () => {
-        const since = socket.mark();
-        signalJava('KILL');
-        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && ['crashed', 'stopped'].includes(m.state), { since, what: 'the exit' });
-        const s = await server(id);
-        assert(s.state === 'crashed' || s.state === 'starting' || s.state === 'running',
-            `recorded as a clean stop (state ${s.state}, exitCode ${s.exitCode}, crashReason ${s.crashReason}), so auto-restart never fires`);
-        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'running', { since, what: 'the auto-restart', timeoutMs: START_TIMEOUT });
-    }, { knownIssue: 'a JVM that dies from a signal exits with code null, which ServerProcess treats as a clean stop' });
     await run.step('saves settings behind a restore point while running, and restarts', async () => {
-        if ((await server(id)).state !== 'running') await start(id);
+        await start(id);
         const since = socket.mark();
         const res = await api('POST', `/servers/${id}/edit`, { name: 'CI Lifecycle', port: 25565, memory: 1536, difficulty: 'hard', backup: true });
         assertStatus(res, 202, 'edit with backup');
@@ -199,7 +164,46 @@ async function lifecycle() {
         assert(/^difficulty=hard$/m.test(await readFile(id, 'server.properties')), 'difficulty not saved');
         assert((await backups(id)).some((b) => b.name === 'Pre-edit backup'), 'no Pre-edit backup');
     });
-    await run.step('auto-starts across a panel restart only when asked to', async () => {
+
+    // The rest reach into the container
+    const crash = 'detects a crash, and keeps its details off the status page';
+    const autoRestart = 'restarts itself after a crash when auto-restart is on';
+    const signalled = 'detects a JVM killed by a signal (as the kernel\'s OOM killer does)';
+    const autoStart = 'auto-starts across a panel restart only when asked to';
+    if (!CONTAINER) {
+        for (const name of [crash, autoRestart, signalled, autoStart]) run.skip(name, 'CRAFTBOX_CONTAINER not set');
+        return;
+    }
+
+    await run.step(crash, async () => {
+        if ((await server(id)).state !== 'running') await start(id);
+        const since = socket.mark();
+        signalJava('TERM'); // the JVM exits 143
+        const s = await waitForState(api, id, ['crashed', 'stopped'], { timeoutMs: 60_000 });
+        assert(s.state === 'crashed' && s.crashReason === 'exit_code' && s.exitCode === 143,
+            `state ${s.state}, crashReason ${s.crashReason}, exitCode ${s.exitCode}`);
+        await socket.waitFor((m) => m.type === 'event' && m.serverId === id && m.eventType === 'crashed', { since, what: 'crashed event' });
+        const pub = (await (await fetch(`${BASE_URL}/status/${id}/api`)).json()).server;
+        assert(pub.state === 'crashed' && !('crashReason' in pub) && !('exitCode' in pub), `public: ${JSON.stringify(pub)}`);
+    });
+    await run.step(autoRestart, async () => {
+        assertStatus(await api('POST', `/servers/${id}/autorestart`, { enabled: true }), 200, 'autorestart');
+        await start(id);
+        const since = socket.mark();
+        signalJava('TERM');
+        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'crashed', { since, what: 'the crash' });
+        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'running', { since, what: 'running again', timeoutMs: START_TIMEOUT });
+    });
+    await run.step(signalled, async () => {
+        const since = socket.mark();
+        signalJava('KILL');
+        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && ['crashed', 'stopped'].includes(m.state), { since, what: 'the exit' });
+        const s = await server(id);
+        assert(s.state === 'crashed' || s.state === 'starting' || s.state === 'running',
+            `recorded as a clean stop (state ${s.state}, exitCode ${s.exitCode}, crashReason ${s.crashReason}), so auto-restart never fires`);
+        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'running', { since, what: 'the auto-restart', timeoutMs: START_TIMEOUT });
+    }, { knownIssue: 'a JVM that dies from a signal exits with code null, which ServerProcess treats as a clean stop' });
+    await run.step(autoStart, async () => {
         const restartPanel = async () => {
             socket.close();
             docker(['restart', '-t', '60', CONTAINER]);
