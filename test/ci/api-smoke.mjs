@@ -7,7 +7,8 @@
 //   CRAFTBOX_URL=http://localhost:6464 node test/ci/api-smoke.mjs
 
 import {
-    waitForPanel, bootstrapPanel, apiClient, waitForState,
+    waitForPanel, bootstrapPanel, apiClient, waitForState, provisionServer,
+    withUpstream, upstreamFetch, transientError,
     createRunner, assert, assertStatus, sleep, makeZip
 } from './lib.mjs';
 
@@ -66,7 +67,11 @@ await run.step('lists every server type', async () => {
     assert(missing.length === 0, `missing types: ${missing.join(', ')}`);
 });
 await run.step('lists vanilla versions with a latest stable', async () => {
-    const res = await api('GET', '/versions?type=vanilla');
+    const res = await withUpstream(['mojang'], async () => {
+        const r = await api('GET', '/versions?type=vanilla');
+        if (r.status === 500) throw transientError(`versions: HTTP 500 ${r.text}`);
+        return r;
+    });
     assertStatus(res, 200, 'versions');
     latest = res.body.latest;
     assert(latest, 'no latest version');
@@ -97,11 +102,13 @@ await run.step('validates create input', async () => {
     }
 });
 await run.step('creates a vanilla server from version "latest"', async () => {
-    const res = await api('POST', '/servers', { ...validBody(), version: 'latest' });
-    assertStatus(res, 201, 'create');
-    assert(res.body.server.state === 'provisioning', `state was ${res.body.server.state}`);
-    assert(res.body.server.version === latest, `"latest" recorded as ${res.body.server.version}, expected ${latest}`);
-    const server = await waitForState(api, res.body.server.id, ['stopped'], { timeoutMs: PROVISION_TIMEOUT, label: 'vanilla' });
+    const server = await provisionServer(api, { ...validBody(), version: 'latest' }, {
+        timeoutMs: PROVISION_TIMEOUT, label: 'vanilla',
+        onCreated: (res) => {
+            assert(res.body.server.state === 'provisioning', `state was ${res.body.server.state}`);
+            assert(res.body.server.version === latest, `"latest" recorded as ${res.body.server.version}, expected ${latest}`);
+        }
+    });
     assert(server.version === latest, `version ${server.version}, expected ${latest}`);
     id = server.id; // the rest only runs against a fully provisioned server
 });
@@ -293,7 +300,7 @@ await run.step('installs a .mrpack without letting it touch the launch files', a
     assert(mc, 'no stable Fabric version');
     // Craftbox picks Fabric's loader itself (no builds endpoint), but a pack
     // pins one, so ask Fabric's meta API, which Craftbox installs from
-    const loaders = await (await fetch('https://meta.fabricmc.net/v2/versions/loader')).json();
+    const loaders = await (await upstreamFetch('https://meta.fabricmc.net/v2/versions/loader')).json();
     const loader = (loaders.find((l) => l.stable) || loaders[0])?.version;
     assert(loader, 'no Fabric loader version');
 
@@ -310,13 +317,15 @@ await run.step('installs a .mrpack without letting it touch the launch files', a
         'server-overrides/evil.jar': 'PK',
         'server-overrides/server.properties': 'level-type=minecraft\\:amplified\nallow-flight=true\nonline-mode=false\n'
     });
-    const form = new FormData();
-    for (const [k, v] of Object.entries({ name: 'CI Pack', port: '25570', memory: '2048', eula: 'true', levelType: '' })) form.append(k, v);
-    form.append('mrpack', new Blob([pack]), 'ci.mrpack');
-    const res = await api('POST', '/servers/from-mrpack', form);
-    assertStatus(res, 201, 'from-mrpack');
-    const packId = res.body.server.id;
-    await waitForState(api, packId, ['stopped'], { timeoutMs: PROVISION_TIMEOUT, label: 'mrpack' });
+    const form = () => {
+        const f = new FormData();
+        for (const [k, v] of Object.entries({ name: 'CI Pack', port: '25570', memory: '2048', eula: 'true', levelType: '' })) f.append(k, v);
+        f.append('mrpack', new Blob([pack]), 'ci.mrpack');
+        return f;
+    };
+    const packId = (await provisionServer(api, form, {
+        path: '/servers/from-mrpack', timeoutMs: PROVISION_TIMEOUT, label: 'mrpack', upstreams: ['fabric', 'mojang']
+    })).id;
 
     const file = (path) => api('GET', `/servers/${packId}/file?path=${encodeURIComponent(path)}`);
     assert((await file('config/ci.txt')).body?.file?.content === 'kept', 'ordinary override missing');

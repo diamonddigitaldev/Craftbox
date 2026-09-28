@@ -2,20 +2,25 @@ name: Build and Publish Craftbox to Docker Hub
 on:
   release:
     types: [published]
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name }}
+  PRERELEASE: ${{ github.event.release.prerelease }}
+
 jobs:
-  publish_image:
+  # The pre-release flag decides the tags, so refuse a release whose flag
+  # disagrees with its version, or whose version disagrees with package.json.
+  # First, so a bad release fails before the long checks.
+  check_tag:
+    name: Check release tag
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    env:
-      TAG: ${{ github.event.release.tag_name }}
-      PRERELEASE: ${{ github.event.release.prerelease }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The pre-release flag decides the tags, so refuse a release whose flag
-      # disagrees with its version, or whose version disagrees with package.json.
       - name: Check release tag
         run: |
           if [[ "$TAG" == *-* && "$PRERELEASE" != "true" ]]; then
@@ -31,6 +36,27 @@ jobs:
             echo "::error::Release tag $TAG does not match package.json version $PKG_VERSION."
             exit 1
           fi
+
+  # Every check, the weekly ones included, against the release's own commit.
+  # Nothing is published unless all of them pass; after a failure (an
+  # upstream outage included), re-run the failed jobs to publish.
+  ci:
+    name: CI
+    needs: check_tag
+    uses: ./.github/workflows/ci.yml
+
+  ci_extended:
+    name: CI (extended)
+    needs: check_tag
+    uses: ./.github/workflows/ci-extended.yml
+
+  publish_image:
+    name: Publish image
+    needs: [ci, ci_extended]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Docker metadata
         id: meta
@@ -57,6 +83,9 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
+      # From the build cache the checks' images just filled (amd64 in CI,
+      # arm64 natively in CI (extended)), so wherever the cache holds them,
+      # the layers pushed are the ones that were tested
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
         with:
@@ -64,4 +93,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha
+            type=gha,scope=arm64
           push: true

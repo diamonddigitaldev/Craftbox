@@ -8,6 +8,8 @@ on:
   # loader builds) without any commit here to trigger a run.
   schedule:
     - cron: '0 6 * * 1'
+  # And by docker-image.yml, before a release is published
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,6 +19,23 @@ permissions:
   contents: read
 
 jobs:
+  # Pure logic, run straight from the checkout: no image, no npm install
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Run unit tests
+        run: npm test
+
   # Build the real image once; every check below runs against it, so CI tests
   # exactly what gets published (the Java runtimes included).
   build:
@@ -79,6 +98,104 @@ jobs:
       - name: Craftbox log
         if: failure()
         run: docker logs craftbox
+
+  # The rest of the panel, each against a fresh instance of its own. They can
+  # reach into the container (CRAFTBOX_CONTAINER) to age a session, kill a
+  # JVM or restart the panel.
+  checks:
+    name: ${{ matrix.name }} test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Web
+            script: web.mjs
+          - name: WebSocket
+            script: websocket.mjs
+          # Headless, in the Chrome the runner already has
+          - name: Browser
+            script: browser.mjs
+          # The two halves of the operations test run side by side
+          - name: Lifecycle
+            script: operations.mjs lifecycle
+          - name: Backups
+            script: operations.mjs backups
+          - name: Transfers
+            script: transfers.mjs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: craftbox-image
+          path: ${{ runner.temp }}
+
+      - name: Start Craftbox
+        run: |
+          docker load --input "$RUNNER_TEMP/craftbox-image.tar"
+          docker run -d --name craftbox -p 6464:6464 craftbox:ci
+
+      - name: Run ${{ matrix.name }} test
+        run: node test/ci/${{ matrix.script }}
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+          CRAFTBOX_CONTAINER: craftbox
+
+      - name: Craftbox log
+        if: failure()
+        run: docker logs craftbox
+
+  # The published release, filled with data, replaced by this image on the
+  # same volume. ci-extended.yml goes back further.
+  upgrade:
+    name: Upgrade from ${{ matrix.from }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        from: [latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: craftbox-image
+          path: ${{ runner.temp }}
+
+      - name: Load image
+        run: docker load --input "$RUNNER_TEMP/craftbox-image.tar"
+
+      - name: Upgrade from willtda/craftbox:${{ matrix.from }}
+        run: node test/ci/upgrade.mjs
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+          CRAFTBOX_UPGRADE_FROM: willtda/craftbox:${{ matrix.from }}
+          CRAFTBOX_IMAGE: craftbox:ci
+
+      - name: Craftbox logs
+        if: failure()
+        run: |
+          echo "::group::Before the upgrade"; docker logs craftbox-upgrade-from || true; echo "::endgroup::"
+          echo "::group::After the upgrade"; docker logs craftbox-upgrade-to || true; echo "::endgroup::"
 
   servers:
     name: Start ${{ matrix.type }} (latest)

@@ -7,3 +7,6 @@ jsconfig.json
 .git
 .gitignore
 data
+test
+docs
+.github
