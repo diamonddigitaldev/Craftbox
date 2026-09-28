@@ -91,6 +91,13 @@ A server whose process ends without Craftbox asking it to is `crashed`, and `cra
 
 > **Provisioning is exclusive.** A server created, imported, duplicated or built from a modpack stays `provisioning` until its directory is fully assembled, and can only leave that state for `stopped` or `crashed`. Backups, restores, jar upgrades, restarts, and the settings/properties restore-point saves all reject with `409 {"error": "Wait for the server to finish provisioning."}` until it clears — `stopFirst` does not override this. Poll `GET /servers/:id` or watch the WebSocket `state` message to know when it is ready.
 
+### Shared ports
+
+Two servers can be saved with the same port, since keeping a copy of a server beside it is a fair use; only one of them can run at a time. A server's `server-ip` (blank means every address) is taken into account, so servers bound to two different specific addresses don't share anything.
+
+- **Starting** or **restarting** a server while another server's process holds its port is refused with `409 {"error": "Port 25565 is in use by \"Survival\". Stop that server, or change this one's port."}`. Before 1.2.3 the second server was started anyway and crashed when Minecraft couldn't bind the port. The operations that start a server afterwards (`startAfter`, a restore-point save of a running server, auto-start) report the same reason as they report any failed start.
+- **Saving** a server with a port another server uses answers as usual, with a `warnings` array of sentences such as `Port 25565 is also used by "Survival". Only one of them can run at a time.` This happens on every create (`/servers`, `/servers/from-modpack`, `/servers/from-mrpack`), on `/duplicate` and on `/import`, and on `/edit` and `/properties` when the request changes the port (or, on `/properties`, `server-ip`). Those responses always carry `warnings`, empty when there's nothing to say, `202` restore-point answers included.
+
 
 ## Servers
 
@@ -112,10 +119,10 @@ The server object returned by these endpoints contains the full configuration (n
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. `gamemode` defaults to `survival` and `difficulty` to `normal`. See [World Type](#world-type) for `levelType`. Returns `201 {"success": true, "server": {...}}`; provisioning continues in the background |
+| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. `gamemode` defaults to `survival` and `difficulty` to `normal`. See [World Type](#world-type) for `levelType`. Returns `201 {"success": true, "server": {...}, "warnings": [...]}` (see [Shared ports](#shared-ports)); provisioning continues in the background |
 | POST | `/servers/from-modpack` | Create from a Modrinth modpack — see [Modrinth](#modrinth) |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack` file — see [Modrinth](#modrinth) |
-| POST | `/servers/:id/duplicate` | Clone a server. Body: `{name, port, includeWorld?, stopFirst?, startAfter?}`. `409` if running and `stopFirst` is not set. Returns `201` |
+| POST | `/servers/:id/duplicate` | Clone a server. Body: `{name, port, includeWorld?, stopFirst?, startAfter?}`. `409` if running and `stopFirst` is not set. Returns `201 {"success": true, "server": {...}, "warnings": [...]}` (see [Shared ports](#shared-ports)) |
 | POST | `/servers/import` | Import a transfer archive — see [Server transfer](#server-transfer) |
 | DELETE | `/servers/:id` | Delete a server and its data. `409` unless `stopped`/`crashed` |
 
@@ -123,9 +130,9 @@ The server object returned by these endpoints contains the full configuration (n
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/start` | Start. Returns `{"success": true, "message": ...}`; `400` on invalid state transition |
+| POST | `/servers/:id/start` | Start. Returns `{"success": true, "message": ...}`; `400` on invalid state transition; `409` while another server holds its port (see [Shared ports](#shared-ports)) |
 | POST | `/servers/:id/stop` | Graceful stop |
-| POST | `/servers/:id/restart` | Restart. Body: `{backup?: true}` to back up first (returns `202`; `409` if a backup is already in progress) |
+| POST | `/servers/:id/restart` | Restart. Body: `{backup?: true}` to back up first (returns `202`; `409` if a backup is already in progress). `409` while another server holds the port it would restart on, checked before it stops |
 | POST | `/servers/:id/kill` | Force-kill the process |
 | POST | `/servers/:id/command` | Send a console line. Body: `{command}`. `409` if not running |
 
@@ -147,14 +154,14 @@ The [WebSocket](#websocket-protocol) is the live feed, but it does not accept be
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, version?, customJarUrl?, backup?}`. Version changes must be upgrades (release versions compare numerically; snapshot/pre-release versions compare by the provider's chronological ordering) and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool}`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead |
+| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, version?, customJarUrl?, backup?}`. Version changes must be upgrades (release versions compare numerically; snapshot/pre-release versions compare by the provider's chronological ordering) and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool, "warnings": [...]}` (see [Shared ports](#shared-ports)). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead |
 | POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ..., "color": ...}` — `color` is the group's folder color (null when ungrouped) |
 | POST | `/servers/:id/autorestart` | Body: `{enabled: bool}`. Returns `{"autoRestart": bool}` |
 | POST | `/servers/:id/autostart` | Body: `{enabled: bool}`. Returns `{"autoStart": bool}` |
 | POST | `/servers/:id/statuspublic` | Toggle listing on the `/status` index. Body: `{enabled: bool}`. Does **not** gate direct access — see [Public status endpoints](#public-status-endpoints) |
 | POST | `/servers/:id/advertisedip` | Set the address shown on the status page. Body: `{value}` |
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
-| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). A partial update: properties left out keep their current value, and keys not already in the file are ignored. Toggles take `true`/`false` (boolean or string) — anything else is `400`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
+| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). A partial update: properties left out keep their current value, and keys not already in the file are ignored. Toggles take `true`/`false` (boolean or string) — anything else is `400`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true, "warnings": [...]}` (see [Shared ports](#shared-ports)) |
 | POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` if the target is not text (see [Text vs binary](#files)) |
 
 ### World Type
@@ -287,7 +294,7 @@ Import behavior:
 - The source server UUID is kept when free on the target instance, otherwise a new UUID is generated. Backup and event records always get fresh IDs.
 - All settings are preserved, `advertisedIp` included — the archive is a snapshot of the server as it was, so an address that does not apply on the new host is an edit away rather than something to remember. Only runtime state is reset (`exitCode`, `crashReason`, timestamps); the server stays stopped after import until started.
 - The dashboard group comes across by name, and its color travels in the manifest alongside it. A group that already exists on the target instance keeps the color chosen there — an import never restyles servers that were already in it.
-- A port collision with an existing server does not block the import; a warning is returned instead.
+- A port shared with an existing server does not block the import; a warning is returned instead (see [Shared ports](#shared-ports)).
 
 
 ## Chunked uploads (DGUP)
@@ -398,7 +405,7 @@ Two quirks of Modrinth's search are worked around inside the proxy, so these end
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
+| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}, "warnings": [...]}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack`. Multipart, file field `mrpack`, max 2 GiB, plus the same base fields as text fields. The pack is parsed and the loader resolved **before** any server record is created, so malformed or Quilt packs fail with a clean `400`. Returns `201` + background install. Also accepts [chunked uploads](#chunked-uploads-dgup) at `/servers/from-mrpack/upload/*` |
 
 The background install downloads the pack's files (SHA-512 verified; download hosts restricted to the mrpack spec whitelist), installs the loader server pinned to the pack's loader version, and applies `overrides/` then `server-overrides/`. No pack file, whether from the manifest or the overrides, may land among the server's launch files: anything under `libraries/` (where Forge and NeoForge keep the argument file handed to the JVM), a `.jar` or `*_args.txt` at the top of the server directory, `user_jvm_args.txt`, `run.sh`/`run.bat` or `fabric-server-launcher.properties`. Such files are skipped and named in the `complete` message's `warnings`, so a pack cannot change how the server is started. A `server.properties` the pack ships is kept: the port, gamemode and difficulty from the request are written over it (and the seed and `levelType`, when given — left blank, the pack's are kept), `online-mode`, `enable-rcon`, `rcon.password` and `server-ip` are always reset to `true`, `false`, empty and empty, and Craftbox's defaults fill in any other key it leaves out. If the pack had set any of those four differently, the `complete` message's `warnings` says so. Mods the pack marks as unsupported on the server are still installed, but land disabled on disk and tagged `client` in the mod environment map — so they show as **Client Only** on the plugins page and are included in the status page's mods download for players, without the loader ever seeing them. Progress streams over the WebSocket as `operation: "modpack-install"`, `status: "progress"` messages with payload `{phase, done?, total?}` — phases: `download`, `parse`, `loader`, `files`, `overrides`, `finalize` — ending in `complete` or `failed`. The `files` phase carries `done`/`total` counts of **mods** (every jar destined for `mods/`, from the manifest and from the overrides, client-only ones included — so the total matches what the mods page lists afterwards, not the raw file count); it keeps ticking during the `overrides` phase as any mods shipped there land. On `failed` the half-built server is removed automatically (see [Asynchronous operations](#asynchronous-operations)). The created server records a `modpack` block (`{projectId, versionId, name, versionNumber, iconUrl, source: "modrinth"|"file", installedAt}`) for future tooling; it survives export/import.

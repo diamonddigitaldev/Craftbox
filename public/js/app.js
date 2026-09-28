@@ -146,6 +146,35 @@ function flashToast(message, type) {
     } catch (_) { /* ignore */ }
 })();
 
+// ── Shared port warning ──
+// A port field tagged data-ports-in-use (the servers' {id, name, port}, from
+// the page) warns in the element tagged data-port-clash-for="<its id>" when
+// the port typed is one another server uses too, worded as the API words the
+// same warning on save. data-port-exclude leaves out the server being edited.
+// Sharing a port is allowed; only running both at once isn't.
+document.querySelectorAll('input[data-ports-in-use]').forEach(function (input) {
+    var hint = document.querySelector('[data-port-clash-for="' + input.id + '"]');
+    var ports;
+    try { ports = JSON.parse(input.dataset.portsInUse); } catch (_) { return; }
+    if (!hint || !Array.isArray(ports)) return;
+    var exclude = input.dataset.portExclude || null;
+
+    function update() {
+        var port = parseInt(input.value, 10);
+        var names = ports
+            .filter(function (p) { return p.id !== exclude && p.port === port; })
+            .map(function (p) { return '"' + p.name + '"'; })
+            // Each name once: an import or a copy can share its source's name
+            .filter(function (name, i, all) { return all.indexOf(name) === i; });
+        hint.classList.toggle('d-none', names.length === 0);
+        hint.textContent = names.length === 0 ? '' : 'Port ' + port + ' is also used by '
+            + (names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1])
+            + '. Only one of them can run at a time.';
+    }
+    input.addEventListener('input', update);
+    update();
+});
+
 // ── Wait for a background operation to finish ──
 // Resolves with the `operation` WebSocket message for this server (dispatched as
 // craftbox:operation by console.js / serverState.js). Call this BEFORE kicking

@@ -147,7 +147,8 @@
                             <div class="col-md-6 mt-3 mt-md-0">
                                 <label for="port" class="form-label required-star">Server Port</label>
                                 <input type="number" class="form-control" id="port" name="port" value="25565" min="1024"
-                                    max="65535" required>
+                                    max="65535" required data-ports-in-use="<%= JSON.stringify(portsInUse) %>">
+                                <div class="form-text text-warning d-none" data-port-clash-for="port" aria-live="polite"></div>
                             </div>
                         </div>
 

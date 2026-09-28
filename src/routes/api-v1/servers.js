@@ -43,6 +43,7 @@ const {
 } = require('../../utils/fileBrowser');
 const { readConsoleTail } = require('../../utils/consoleLog');
 const { cleanupServerData } = require('../../utils/serverCleanup');
+const { portClashWarnings, serverIpOf } = require('../../utils/portClash');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
 const modrinth = require('../../services/modrinth');
@@ -175,7 +176,7 @@ function httpError(status, message) {
 // Responds 202 immediately; completion is broadcast as `operation` over the
 // WebSocket. If the backup or the change fails, the server is put back the way
 // it was found and the failure is broadcast.
-async function runWithRestorePoint({ req, res, server, label, operation, apply }) {
+async function runWithRestorePoint({ req, res, server, label, operation, apply, warnings = [] }) {
     const id = server.id;
     const serverManager = req.app.get('serverManager');
     const initiatedBy = req.user.username;
@@ -200,7 +201,7 @@ async function runWithRestorePoint({ req, res, server, label, operation, apply }
 
         await serverManager.setOperationalState(id, STATES.BACKING_UP);
         lockOwnedByRoute = false; // handed off to the task below
-        res.status(202).json({ success: true, status: 'started' });
+        res.status(202).json({ success: true, status: 'started', warnings });
 
         (async () => {
             let result;
@@ -1213,7 +1214,11 @@ router.post('/servers', async (req, res) => {
         await serversDb.set(`server_${id}`, server);
 
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(server) });
+        res.status(201).json({
+            success: true,
+            server: publicServer(server),
+            warnings: await portClashWarnings(server.port, { excludeId: server.id })
+        });
 
         const serverManager = req.app.get('serverManager');
         (async () => {
@@ -1510,7 +1515,11 @@ router.post('/servers/from-modpack', async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from Modrinth modpack "${project.title}" ${version.version_number}`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(server) });
+        res.status(201).json({
+            success: true,
+            server: publicServer(server),
+            warnings: await portClashWarnings(server.port, { excludeId: server.id })
+        });
 
         provisionModpackServer({
             req,
@@ -1599,7 +1608,11 @@ const createFromMrpackHandler = async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from uploaded modpack "${manifest.name || req.file.originalname}"`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(server) });
+        res.status(201).json({
+            success: true,
+            server: publicServer(server),
+            warnings: await portClashWarnings(server.port, { excludeId: server.id })
+        });
 
         provisionModpackServer({
             req,
@@ -1699,6 +1712,9 @@ router.post('/servers/:id/restart', async (req, res) => {
     let lockOwnedByRoute = true;
     try {
         const proc = serverManager?.getProcess(id);
+        // Refused up front: found only at the start after the backup, a port
+        // clash would leave the server down and read as a failed backup.
+        if (proc) serverManager.assertPortFree(proc);
         if (proc && ['running', 'starting'].includes(proc.state)) {
             await serverManager.stopServer(id, { initiatedBy });
             await proc.waitForState('stopped', 60000);
@@ -1889,13 +1905,10 @@ const importServerHandler = async (req, res) => {
             finalId = uuidv4();
         }
 
-        const warnings = [];
-        const allServers = await serversDb.all();
-        const portClash = allServers.map(row => row.value).find(s => s && s.port === portNum);
-        if (portClash) {
-            warnings.push(`Port ${portNum} is already used by "${portClash.name}". Edit this server's port before starting it.`);
-            log('warn', `Import of "${trimmedName}": port ${portNum} clashes with "${portClash.name}"`);
-        }
+        // The archive's server.properties isn't unpacked yet, so its server-ip
+        // is taken as every address, which can only warn more, never less.
+        const warnings = await portClashWarnings(portNum, { excludeId: finalId });
+        if (warnings.length > 0) log('warn', `Import of "${trimmedName}": ${warnings[0]}`);
 
         const groupResult = normalizeGroupName(source.group);
         const importedServer = {
@@ -2154,7 +2167,13 @@ router.post('/servers/:id/duplicate', async (req, res) => {
 
         await serversDb.set(`server_${newId}`, newServer);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(newServer), warning: null });
+        res.status(201).json({
+            success: true,
+            server: publicServer(newServer),
+            warning: null,
+            // The copy keeps the source's server.properties, server-ip included
+            warnings: await portClashWarnings(portNum, { excludeId: newId, serverIp: serverIpOf(id) })
+        });
 
         (async () => {
             try {
@@ -2442,6 +2461,13 @@ router.post('/servers/:id/edit', async (req, res) => {
         return { versionChanged, jarChanged };
     };
 
+    // Moving onto a port another server uses is allowed, with a warning.
+    // Saving a port that was already shared says nothing new, so it doesn't
+    // warn again (the Settings page shows it beside the field either way).
+    const warnings = Number(server.port) !== portNum
+        ? await portClashWarnings(portNum, { excludeId: id, serverIp: serverIpOf(id) })
+        : [];
+
     // A backup taken after the save can't undo it — so when one is asked for,
     // it is taken first and the edit is applied on the far side of it.
     if (req.body?.backup === true || req.body?.backup === 'true') {
@@ -2449,14 +2475,15 @@ router.post('/servers/:id/edit', async (req, res) => {
             req, res, server,
             label: 'Pre-edit backup',
             operation: 'settings-save',
-            apply: applyEdit
+            apply: applyEdit,
+            warnings
         });
     }
 
     try {
         const { versionChanged, jarChanged } = await applyEdit();
         notifyDashboard(req);
-        res.json({ success: true, server: publicServer(server), versionChanged, jarChanged });
+        res.json({ success: true, server: publicServer(server), versionChanged, jarChanged, warnings });
     } catch (err) {
         res.status(err.status || 500).json({ error: err.message });
     }
@@ -2500,18 +2527,29 @@ router.post('/servers/:id/properties', async (req, res) => {
         return {};
     };
 
+    // Warn, as /edit does, when this moves the server onto a port (or an
+    // address) that shares one with another server. Only keys already in the
+    // file are written, so only those can change anything.
+    const fileProps = parseServerProperties(path.join(SERVERS_DIR, id));
+    const sent = (key) => (key in fileProps && body[key] !== undefined ? String(body[key]).trim() : fileProps[key] || '');
+    const newPort = parseInt(sent('server-port'), 10);
+    const warnings = newPort && (sent('server-port') !== (fileProps['server-port'] || '') || sent('server-ip') !== (fileProps['server-ip'] || ''))
+        ? await portClashWarnings(newPort, { excludeId: id, serverIp: sent('server-ip') })
+        : [];
+
     // As with /edit: a backup only rolls the change back if it predates it.
     if (req.body?.backup === true || req.body?.backup === 'true') {
         return runWithRestorePoint({
             req, res, server,
             label: 'Pre-properties backup',
             operation: 'settings-save',
-            apply: applyProperties
+            apply: applyProperties,
+            warnings
         });
     }
 
     await applyProperties();
-    res.json({ success: true });
+    res.json({ success: true, warnings });
 });
 
 // Where ServerProcess writes the console log for a server.

@@ -183,6 +183,7 @@ form.addEventListener('submit', async (e) => {
         restoreCreateBtn();
         return;
     }
+    ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
     var newId = res.data && res.data.server && res.data.server.id;
     window.location.href = newId ? '/servers/' + newId : '/dashboard';
 });
@@ -632,6 +633,7 @@ async function submitFromModpack() {
         restoreCreateBtn();
         return;
     }
+    ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
     const newId = res.data && res.data.server && res.data.server.id;
     window.location.href = newId ? '/servers/' + newId : '/dashboard';
 }
@@ -661,6 +663,7 @@ async function submitFromMrpack() {
         return;
     }
     flashToast('Modpack uploaded. Installing...', 'info');
+    ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
     const newId = res.data && res.data.server && res.data.server.id;
     window.location.href = newId ? '/servers/' + newId : '/dashboard';
 }

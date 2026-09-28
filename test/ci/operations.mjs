@@ -3,7 +3,8 @@
 // can run them side by side:
 //
 // - lifecycle: a version upgrade (and the refusals around it), restart,
-//   restart behind a backup, kill, the guards on a running server, crash
+//   restart behind a backup, kill, the guards on a running server, a second
+//   server sharing its port (warned about, never run beside it), crash
 //   detection and auto-restart (the JVM killed inside the container), a
 //   restore-point settings save, and auto-start across a panel restart;
 // - backups: backup, download, restore, restore-point Properties saves,
@@ -138,6 +139,46 @@ async function lifecycle() {
         }
         assert(wrong.length === 0, wrong.join('\n'));
         assert((await server(id)).state === 'running', 'no longer running');
+    });
+    await run.step('warns when a port is shared, and won\'t run two servers on one', async () => {
+        const shares = (res) => res.body?.warnings?.length === 1 && res.body.warnings[0].includes('"CI Lifecycle"');
+        let other = null;
+        try {
+            let created = null;
+            other = (await provisionServer(api, {
+                name: 'CI Port Share', serverType: 'vanilla', version: latest, port: 25565, memory: 1024, eula: true
+            }, { timeoutMs: PROVISION_TIMEOUT, label: 'vanilla', onCreated: (res) => { created = res; } })).id;
+            assert(shares(created), `create: ${JSON.stringify(created.body.warnings)}`);
+            const refused = await api('POST', `/servers/${other}/start`);
+            assert(refused.status === 409 && /in use by "CI Lifecycle"/.test(refused.body?.error), `start: ${refused.status} ${refused.text}`);
+            assert((await server(other)).state === 'stopped', `left ${(await server(other)).state}`);
+
+            // Only a change of port warns
+            const edit = (port) => api('POST', `/servers/${other}/edit`, { name: 'CI Port Share', port, memory: 1024 });
+            let res = await edit(25590);
+            assert(res.status === 200 && res.body.warnings?.length === 0, `edit away: ${res.status} ${res.text}`);
+            res = await edit(25565);
+            assert(res.status === 200 && shares(res), `edit back: ${res.status} ${res.text}`);
+            res = await edit(25565);
+            assert(res.status === 200 && res.body.warnings?.length === 0, `unchanged port: ${res.text}`);
+            res = await api('POST', `/servers/${other}/properties`, { 'server-port': 25590 });
+            assert(res.status === 200 && res.body.warnings?.length === 0, `properties away: ${res.status} ${res.text}`);
+
+            // Moved onto a running server's port while running, a server saves
+            // (with a warning) but won't restart onto it, and keeps running
+            await start(other);
+            res = await api('POST', `/servers/${id}/edit`, { name: 'CI Lifecycle', port: 25590, memory: 1536 });
+            assert(res.status === 200 && res.body.warnings?.some((w) => w.includes('"CI Port Share"')), `edit onto it: ${res.status} ${res.text}`);
+            res = await api('POST', `/servers/${id}/restart`);
+            assert(res.status === 409 && /in use by "CI Port Share"/.test(res.body?.error), `restart: ${res.status} ${res.text}`);
+            assert((await server(id)).state === 'running', 'the refused restart stopped it');
+            assertStatus(await api('POST', `/servers/${id}/edit`, { name: 'CI Lifecycle', port: 25565, memory: 1536 }), 200, 'edit back');
+        } finally {
+            if (other) {
+                if ((await server(other)).state === 'running') await stop(other);
+                await api('DELETE', `/servers/${other}`);
+            }
+        }
     });
     await run.step('restarts behind a backup', async () => {
         const since = socket.mark();

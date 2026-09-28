@@ -15,6 +15,7 @@ const { log } = require('../utils/log');
 const { hasIcon } = require('../utils/serverIcon');
 const { isPathInside } = require('../utils/pathSafety');
 const { getDistinctGroups } = require('../utils/serverGroups');
+const { portsInUse } = require('../utils/portClash');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, async (req, res) => {
@@ -26,6 +27,8 @@ router.get('/servers/create', ensureAuth, async (req, res) => {
         groupNames: await getDistinctGroups().catch(() => []),
         // The version is picked on the page, so both World Type lists go along
         worldTypeLists: { presets: WORLD_PRESETS, legacy: LEGACY_WORLD_TYPES },
+        // A new server listens on every address, so every server's port counts
+        portsInUse: await portsInUse(),
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -113,6 +116,8 @@ router.get('/servers/:id/edit', ensureAuth, blockWhileProvisioning, async (req, 
             ? (worldTypeFor(props['level-type'], server.version) || props['level-type'])
             : worldTypesFor(server.version)[0].value,
         hasIcon: hasIcon(server.id),
+        // For the Port and Duplicate fields; a copy keeps this server-ip too
+        portsInUse: await portsInUse({ serverIp: props['server-ip'] || '' }),
         user: req.user,
         groupNames: await getDistinctGroups().catch(() => []),
         messages: req.session.flash || {},

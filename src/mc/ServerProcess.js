@@ -11,6 +11,7 @@ const { logEvent, pruneEvents } = require('../utils/eventLogger');
 const { getProvider } = require('./serverTypes');
 const { clearCpuTracking } = require('../utils/resourceStats');
 const { reconcileModFiles } = require('../utils/modEnvironment');
+const { parseServerProperties } = require('./serverProperties');
 
 // Pattern that indicates the server is done starting
 const DONE_PATTERN = /\]:?\s+Done \(/;
@@ -43,6 +44,8 @@ class ServerProcess extends EventEmitter {
         this._crashDetected = false; // Set when crash report is detected in logs
         this._oomKillInProgress = false; // Guards against multiple OOM kill attempts
         this._initiatedBy = null; // Who triggered the current action (username or system label)
+        this.boundPort = null; // Port and address of the current run (set on spawn)
+        this.boundIp = '';
     }
 
     get serverDir() {
@@ -223,6 +226,14 @@ class ServerProcess extends EventEmitter {
             const logsDir = path.join(this.serverDir, 'logs');
             fs.mkdirSync(logsDir, { recursive: true });
             this.logStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
+
+            // Where this run listens, as the JVM will read it, so ServerManager
+            // can refuse another server the same port while this one holds it.
+            // Taken now rather than from config later: a port edited while the
+            // server runs only takes effect when it next starts.
+            const props = parseServerProperties(this.serverDir);
+            this.boundPort = Number(props['server-port']) || Number(this.config.port);
+            this.boundIp = props['server-ip'] || '';
 
             this.child = spawn(javaPath, args, {
                 cwd: this.serverDir,

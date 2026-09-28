@@ -57,6 +57,7 @@ function _formToBody(form) {
             return;
         }
         flashToast('Settings saved.', 'success');
+        ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
         // Reload with ?saved=1 so the restart-modal auto-shows
         window.location.href = '/servers/' + serverId + '/edit?saved=1';
     });
@@ -90,6 +91,7 @@ function _formToBody(form) {
             flashToast('Backup created and settings saved.' +
                 (payload.restarted ? ' Server restarted.' : ''), 'success');
         }
+        ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
         window.location.href = '/servers/' + serverId + '/edit';
     }
 })();
@@ -588,6 +590,7 @@ function _formToBody(form) {
             return;
         }
         flashToast('Server duplicated.', 'success');
+        ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
         var newId = res.data && res.data.server && res.data.server.id;
         window.location.href = newId ? '/servers/' + newId : '/dashboard';
     }

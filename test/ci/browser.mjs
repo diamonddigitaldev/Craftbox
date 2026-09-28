@@ -76,6 +76,32 @@ if (signedIn && vanilla && fabric) {
     });
 
     console.log('Flows');
+    await run.step('warns beside a port field when another server uses the port', async () => {
+        // Other scripts sharing this panel may have servers on these ports
+        // too, so each check looks for its own server's name
+        const hint = (id) => page.eval(`(() => {
+            const h = document.querySelector('[data-port-clash-for="${id}"]');
+            return h && !h.classList.contains('d-none') ? h.textContent : '';
+        })()`);
+        const warning = /^Port \d+ is also used by .+\. Only one of them can run at a time\.$/;
+        await page.goto('/servers/create');
+        let text = await hint('port');
+        assert(warning.test(text) && text.includes('"CI Browser"'), `create page on 25565: "${text}"`);
+        await page.type('#port', '25566');
+        text = await hint('port');
+        assert(text.includes('"CI Browser Fabric"') && !text.includes('"CI Browser"'), `create page on 25566: "${text}"`);
+        await page.type('#port', '25599');
+        assert(await hint('port') === '', `create page on 25599: "${await hint('port')}"`);
+
+        await page.goto(`/servers/${vanilla.id}/edit`);
+        text = await hint('port');
+        assert(!text.includes('"CI Browser"'), `Settings counts the server's own port: "${text}"`);
+        // Duplicate offers the next port up, which is the Fabric server's
+        text = await hint('dup-port');
+        assert(warning.test(text) && text.includes('"CI Browser Fabric"'), `Duplicate on 25566: "${text}"`);
+        await assertClean('the create and Settings pages');
+    });
+
     let created = null;
     await run.step('creates a server from the create page', async () => {
         await page.goto('/servers/create');
