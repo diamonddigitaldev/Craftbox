@@ -110,7 +110,7 @@ The server object returned by these endpoints contains the full configuration (n
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. See [World Type](#world-type) for `levelType`. Returns `201 {"success": true, "server": {...}}`; provisioning continues in the background |
+| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. `gamemode` defaults to `survival` and `difficulty` to `normal`. See [World Type](#world-type) for `levelType`. Returns `201 {"success": true, "server": {...}}`; provisioning continues in the background |
 | POST | `/servers/from-modpack` | Create from a Modrinth modpack — see [Modrinth](#modrinth) |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack` file — see [Modrinth](#modrinth) |
 | POST | `/servers/:id/duplicate` | Clone a server. Body: `{name, port, includeWorld?, stopFirst?, startAfter?}`. `409` if running and `stopFirst` is not set. Returns `201` |

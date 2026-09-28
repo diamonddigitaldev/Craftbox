@@ -21,7 +21,7 @@ const PROPERTY_META = {
             { value: 'easy', label: 'Easy' },
             { value: 'normal', label: 'Normal' },
             { value: 'hard', label: 'Hard' }
-        ], default: 'easy'
+        ], default: 'normal'
     },
     'hardcore': { type: 'boolean', label: 'Hardcore', group: 'gameplay', default: 'false', description: 'One life only: players cannot respawn. Only applies when generating a new world' },
     'pvp': { type: 'boolean', label: 'PvP', group: 'gameplay', default: 'true' },

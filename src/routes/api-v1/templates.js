@@ -82,7 +82,7 @@ router.post('/templates', async (req, res) => {
             memory: server.memory || 2048,
             javaArgs: server.javaArgs || '',
             gamemode: server.gamemode || 'survival',
-            difficulty: server.difficulty || 'easy',
+            difficulty: server.difficulty || 'normal',
             levelType: server.levelType || null,
             port: server.port || 25565,
             autoRestart: !!server.autoRestart,

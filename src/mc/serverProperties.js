@@ -5,7 +5,7 @@ const { firstStartProperties } = require('./worldTypes');
 const DEFAULT_PROPERTIES = {
     'server-port': 25565,
     'gamemode': 'survival',
-    'difficulty': 'easy',
+    'difficulty': 'normal',
     'max-players': 20,
     'motd': 'A Minecraft Server',
     'online-mode': true,

@@ -1083,7 +1083,7 @@ function validateBaseServerFields(body) {
         memoryNum,
         safeJavaArgs: String(javaArgs || '').trim(),
         gamemodeStr: validGamemodes.includes(gamemode) ? gamemode : 'survival',
-        difficultyStr: validDifficulties.includes(difficulty) ? difficulty : 'easy',
+        difficultyStr: validDifficulties.includes(difficulty) ? difficulty : 'normal',
         levelTypeStr,
         seedStr: String(seed || '').trim(),
         group: groupResult.value
