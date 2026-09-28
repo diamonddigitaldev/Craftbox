@@ -287,6 +287,17 @@ class ServerProcess extends EventEmitter {
     }
 
     /**
+     * The installed build's own folder first. Its args file becomes the JVM's
+     * command line, so another folder under libraries/ (one a modpack or an
+     * upload left there) mustn't outrank it. With no recorded build, or that
+     * folder missing its args file, the newest folder is used as before.
+     */
+    _ownBuildFirst(versions, ownDir) {
+        if (!this.config.build || !versions.includes(ownDir)) return versions;
+        return [ownDir, ...versions.filter(v => v !== ownDir)];
+    }
+
+    /**
      * Find Forge args file for 1.17+ style installations.
      */
     _findForgeArgsFile() {
@@ -303,7 +314,7 @@ class ServerProcess extends EventEmitter {
                 }
                 return 0;
             });
-            for (const ver of versions) {
+            for (const ver of this._ownBuildFirst(versions, `${this.config.version}-${this.config.build}`)) {
                 const argsName = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
                 const argsPath = path.join(libDir, ver, argsName);
                 if (fs.existsSync(argsPath)) {
@@ -332,7 +343,7 @@ class ServerProcess extends EventEmitter {
                 }
                 return 0;
             });
-            for (const ver of versions) {
+            for (const ver of this._ownBuildFirst(versions, String(this.config.build))) {
                 const argsName = process.platform === 'win32' ? 'win_args.txt' : 'unix_args.txt';
                 const argsPath = path.join(libDir, ver, argsName);
                 if (fs.existsSync(argsPath)) {

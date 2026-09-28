@@ -28,6 +28,22 @@ const DISK_HEADROOM_BYTES = 512 * 1024 * 1024;
 // by the filename listModFiles() reports for that folder).
 const MOD_JAR_RE = /^mods\/[^/]+\.jar$/i;
 
+// Files that decide how the server starts rather than what it runs. The
+// loader's own install tree (libraries/, where Forge and NeoForge keep the
+// unix_args.txt handed to the JVM as its arguments), the jars at the top of the
+// server directory, and the start scripts and argument files loaders ship. A
+// pack's mods already run inside the server, but it gets no say in the JVM's
+// command line (-javaagent, -XX:OnOutOfMemoryError=...), so a pack file that
+// would land on one of these is skipped.
+const LAUNCH_FILES = new Set(['user_jvm_args.txt', 'run.sh', 'run.bat', 'fabric-server-launcher.properties']);
+
+function isLaunchFile(serverDir, target) {
+    const rel = path.relative(path.resolve(serverDir), target).split(path.sep).join('/').toLowerCase();
+    if (rel.startsWith('libraries/')) return true;
+    if (rel.includes('/')) return false;
+    return LAUNCH_FILES.has(rel) || rel.endsWith('.jar') || rel.endsWith('_args.txt');
+}
+
 // server.properties settings a pack doesn't get to decide for the host, even
 // though the rest of its file is kept: switching off account checks, opening
 // RCON with a password everyone who has the pack knows, or binding to an
@@ -206,6 +222,7 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
         const files = [];
         const seenPaths = new Set();
         const clientOnlyMods = [];
+        const skippedLaunchFiles = [];
         // Every jar that ends up in mods/, from the manifest or from an override.
         // Keyed by filename so an override replacing a manifest mod counts once.
         const modJars = new Set();
@@ -220,6 +237,10 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
             }
             seenPaths.add(relKey);
             let dest = sanitizeEntryPath(serverDir, rel);
+            if (isLaunchFile(serverDir, dest)) {
+                skippedLaunchFiles.push(rel);
+                continue;
+            }
             if (MOD_JAR_RE.test(rel)) {
                 modJars.add(path.basename(rel).toLowerCase());
                 // Client-only mods are still installed, but land pre-disabled and
@@ -336,7 +357,9 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
                 const relative = entryName.slice(prefix.length);
                 if (!relative) continue;
                 const target = sanitizeEntryPath(serverDir, relative);
-                if (entry.isDirectory) {
+                if (isLaunchFile(serverDir, target)) {
+                    if (!entry.isDirectory) skippedLaunchFiles.push(relative);
+                } else if (entry.isDirectory) {
                     await fs.promises.mkdir(target, { recursive: true });
                 } else {
                     await fs.promises.mkdir(path.dirname(target), { recursive: true });
@@ -345,6 +368,13 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
                     trackMod(relative);
                 }
             }
+        }
+
+        if (skippedLaunchFiles.length > 0) {
+            const shown = skippedLaunchFiles.slice(0, 5).join(', ')
+                + (skippedLaunchFiles.length > 5 ? ` and ${skippedLaunchFiles.length - 5} more` : '');
+            warnings.push(`Skipped ${skippedLaunchFiles.length} file(s) the modpack tried to place among the server's launch files (${shown}). A modpack can't change how the server is started.`);
+            log('warn', `Modpack install ${serverId}: skipped launch files: ${skippedLaunchFiles.join(', ')}`);
         }
 
         // ── Phase 6: finalize ──
