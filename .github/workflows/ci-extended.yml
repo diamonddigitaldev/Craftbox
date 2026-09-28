@@ -69,9 +69,8 @@ jobs:
           - { target: custom@1.21.1, java: 25 }
           - { target: paper@1.20.4, java: 17 }
           - { target: fabric@1.16.5, java: 8 }
-          - target: forge@1.12.2
-            java: 8
-            known_issue: Forge's Maven publishes no .sha256 for 1.12.2 installers, and Craftbox requires one
+          # Forge's Maven has no .sha256 for this installer, only .sha1/.md5
+          - { target: forge@1.12.2, java: 8 }
           - { target: forge@1.16.5, java: 8 }
           - { target: forge@1.20.1, java: 17 }
           - { target: neoforge@1.21.1, java: 21 }

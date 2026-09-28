@@ -37,4 +37,25 @@ function verifyChecksum(buffer, algo, expectedHex, label) {
     }
 }
 
-module.exports = { verifyChecksum, ChecksumMismatchError };
+// A Maven repository publishes checksum sidecars beside each artifact, but
+// not always the same set: Forge's has only .sha1 and .md5 for many older
+// installers (1.12.2, 1.14.4 and 1.15.2 among them). Verify against the
+// strongest one published, moving on only when a sidecar is missing (404).
+// Any other failure, or no sidecar at all, refuses the download rather than
+// installing something unverified. Returns the algorithm used.
+const MAVEN_SIDECARS = [['sha256', '.sha256'], ['sha1', '.sha1'], ['md5', '.md5']];
+
+async function verifyMavenChecksum(buffer, artifactUrl, label) {
+    for (const [algo, ext] of MAVEN_SIDECARS) {
+        const res = await fetch(artifactUrl + ext);
+        if (res.status === 404) continue;
+        if (!res.ok) {
+            throw new Error(`Could not fetch ${label} installer checksum: HTTP ${res.status}.`);
+        }
+        verifyChecksum(buffer, algo, await res.text(), label);
+        return algo;
+    }
+    throw new Error(`${label}: no checksum published for the installer — cannot verify integrity.`);
+}
+
+module.exports = { verifyChecksum, verifyMavenChecksum, ChecksumMismatchError };
