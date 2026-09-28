@@ -174,22 +174,19 @@
         var msg = e.detail || {};
         if (msg.operation !== 'download') return;
 
-        // A failure is reported as a plain string, so it carries no token and
-        // cannot be matched to one click. With downloads started one at a time
-        // this is the one in flight; with several, the message still names what
-        // failed, which beats staying silent.
-        if (msg.status === 'failed') {
-            var tokens = Object.keys(pending);
-            if (tokens.length === 1) {
-                settle(tokens[0], function () {}, true);
-            }
-            showToast(msg.error || 'Download failed.', 'danger');
-            return;
-        }
-
+        // Every report carries the token, a failure included, so one that
+        // doesn't match belongs to another page (another tab, or another user
+        // on the same server) and isn't this page's to announce.
         var payload = msg.payload || {};
         var entry = pending[payload.token];
         if (!entry) return;
+
+        if (msg.status === 'failed') {
+            settle(payload.token, function () {
+                showToast(msg.error || 'Download failed.', 'danger');
+            }, true);
+            return;
+        }
 
         if (msg.status === 'progress') {
             entry.statusEl.set(describeProgress(entry.label, payload));

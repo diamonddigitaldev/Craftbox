@@ -167,10 +167,10 @@ await run.step('reports plugin downloads over the WebSocket', async () => {
     assert(msg.payload?.token === 'ci-all', JSON.stringify(msg.payload));
     since = socket.mark();
     assertStatus(await fetchBytes(`${p}/plugins/download?file=missing.jar&dl=ci-missing`), 404, 'a missing plugin');
-    // A failure carries its reason as a string, naming the file but not the
-    // token (public/js/download.js allows for that)
+    // A failure carries its reason as a string naming the file, and the token
+    // like every other report, so the page can tell which download failed
     msg = await socket.waitFor((m) => m.type === 'operation' && m.operation === 'download' && m.status === 'failed', { since, what: 'the failed download' });
-    assert(/missing\.jar/.test(msg.error), JSON.stringify(msg));
+    assert(/missing\.jar/.test(msg.error) && msg.payload?.token === 'ci-missing', JSON.stringify(msg));
     assertStatus(await api('POST', `${p}/plugins/delete-all`), 200, 'delete-all');
     assert((await api('GET', `${p}/plugins`)).body.files.length === 0, 'plugins left after delete-all');
 });

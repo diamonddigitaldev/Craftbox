@@ -149,7 +149,8 @@ class DownloadReporter {
         if (!this.active) return;
         try {
             this.serverManager.broadcastOperation(
-                this.serverId, 'download', 'failed', `${this.label}: ${message}`
+                this.serverId, 'download', 'failed', `${this.label}: ${message}`,
+                { token: this.token, label: this.label }
             );
         } catch (err) {
             log('warn', `Download report failed: ${err.message}`);

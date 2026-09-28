@@ -267,13 +267,19 @@ class ServerManager {
      * @param {'backup'|'restore'|'jar-upgrade'|'settings-save'|'create'|'duplicate'|'import'|'modpack-install'|'download'} operation
      * @param {'complete'|'failed'|'progress'|'cancelled'} status
      * @param {object|string} payloadOrError - error message on failed, payload object otherwise
+     * @param {object} [failedPayload] - on failed, a payload to send beside the
+     *   error (a download's `dl` token, so the page can tell which one failed)
      */
-    broadcastOperation(serverId, operation, status, payloadOrError) {
+    broadcastOperation(serverId, operation, status, payloadOrError, failedPayload) {
         const proc = this.getProcess(serverId);
         if (!proc) return;
         const data = { type: 'operation', serverId, operation, status };
-        if (status === 'failed') data.error = String(payloadOrError);
-        else data.payload = payloadOrError || {};
+        if (status === 'failed') {
+            data.error = String(payloadOrError);
+            if (failedPayload) data.payload = failedPayload;
+        } else {
+            data.payload = payloadOrError || {};
+        }
         proc.broadcast(data);
     }
 
