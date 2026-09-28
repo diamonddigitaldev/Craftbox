@@ -121,6 +121,8 @@ jobs:
             script: operations.mjs lifecycle
           - name: Backups
             script: operations.mjs backups
+          - name: Transfers
+            script: transfers.mjs
     steps:
       - name: Checkout
         uses: actions/checkout@v4

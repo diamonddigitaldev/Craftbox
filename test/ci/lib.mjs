@@ -352,7 +352,7 @@ export function apiClient(key) {
     return async function api(method, path, body, { headers = {} } = {}) {
         const init = { method, headers: { ...headers } };
         if (key) init.headers.authorization = `Bearer ${key}`;
-        if (body instanceof FormData) {
+        if (body instanceof FormData || body instanceof Uint8Array) {
             init.body = body;
         } else if (body !== undefined) {
             init.headers['content-type'] = 'application/json';
@@ -363,6 +363,33 @@ export function apiClient(key) {
         let json = null;
         try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
         return { status: res.status, body: json, text };
+    };
+}
+
+// Upload `data` as `filename` through an endpoint's chunked (DGUP) route at
+// `base` (e.g. /servers/:id/files/upload), as the panel's dgup.js does, with
+// `fields` in the complete request. Chunks go last to first, since the
+// protocol lets them arrive in any order. Resolves to the complete response,
+// plus `uploadId` and `chunks`.
+export async function dgupUpload(api, base, filename, data, fields = {}) {
+    const init = await api('POST', `${base}/init`, { filename, totalSize: data.length });
+    assertStatus(init, 200, `${base}/init`);
+    const { uploadId, chunkSize, totalChunks } = init.body;
+    for (let index = totalChunks - 1; index >= 0; index--) {
+        const chunk = data.subarray(index * chunkSize, (index + 1) * chunkSize);
+        const res = await api('POST', `${base}/chunk`, chunk, { headers: chunkHeaders(uploadId, index, chunk) });
+        assertStatus(res, 200, `${base}/chunk ${index}`);
+    }
+    const complete = await api('POST', `${base}/complete`, { uploadId, ...fields });
+    return Object.assign(complete, { uploadId, chunks: totalChunks });
+}
+
+export function chunkHeaders(uploadId, index, chunk, hash = crypto.createHash('sha256').update(chunk).digest('hex')) {
+    return {
+        'content-type': 'application/octet-stream',
+        'x-upload-id': uploadId,
+        'x-chunk-index': String(index),
+        'x-chunk-hash': hash
     };
 }
 
@@ -460,6 +487,36 @@ export function zipEntries(buf) {
         offset += 46 + nameLen + extraLen + commentLen;
     }
     return names;
+}
+
+// A solid-colour RGB PNG of the given size
+export function makePng(width, height) {
+    const chunk = (type, data) => {
+        const body = Buffer.concat([Buffer.from(type), data]);
+        const out = Buffer.alloc(body.length + 8);
+        out.writeUInt32BE(data.length, 0);
+        body.copy(out, 4);
+        out.writeUInt32BE(zlib.crc32(body), body.length + 4);
+        return out;
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(width, 0);
+    header.writeUInt32BE(height, 4);
+    header.writeUInt8(8, 8);   // bit depth
+    header.writeUInt8(2, 9);   // truecolour
+    const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 0x4c)]);
+    return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk('IHDR', header),
+        chunk('IDAT', zlib.deflateSync(Buffer.concat(Array(height).fill(row)))),
+        chunk('IEND', Buffer.alloc(0))
+    ]);
+}
+
+// A PNG's dimensions, read off its header
+export function pngSize(buf) {
+    if (buf.readUInt32BE(0) !== 0x89504e47 || buf.toString('ascii', 12, 16) !== 'IHDR') throw new Error('not a PNG');
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
 // A zip of `entries` ({name: string | Buffer}), stored uncompressed: enough for
