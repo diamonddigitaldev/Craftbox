@@ -49,6 +49,56 @@ const versionPicker = CraftboxVersionPicker({
 function setVersionField(id) {
     versionHidden.value = id || '';
     versionDisplay.value = id || '';
+    if (!inModpackSource()) renderWorldTypes(selectedType === 'custom' ? '' : id);
+}
+
+// ── World Type ──
+// Minecraft 1.19 renamed the world types (default → minecraft:normal) and
+// reads no old name it doesn't happen to share, so the list follows the chosen
+// version. A modpack keeps its own world type unless one is picked.
+const levelTypeSelect = document.getElementById('levelType');
+const WORLD_TYPES = JSON.parse(levelTypeSelect.dataset.worldTypes);
+const MODPACK_WORLD_TYPE = { value: '', label: 'Modpack default' };
+
+function inModpackSource() {
+    return createMode === 'modpack' || selectedSource === 'modpack';
+}
+
+// Mirrors isAtLeast(version, '1.19', '22w11a') in src/utils/mcVersion.js. A
+// blank or unrecognised version (custom jars) counts as current.
+function usesWorldPresets(version) {
+    const v = String(version || '').trim();
+    const snapshot = /^(\d{2})w(\d{2})/.exec(v);
+    if (snapshot) return Number(snapshot[1]) * 100 + Number(snapshot[2]) >= 2211;
+    const release = /^(\d+)\.(\d+)/.exec(v);
+    if (!release) return true;
+    return Number(release[1]) > 1 || Number(release[2]) >= 19;
+}
+
+// Rebuild the options for `version` (or the modpack list), keeping the
+// current choice where the new list has the same world type under another
+// name. `select` picks by label instead.
+function renderWorldTypes(version, { modpack = false, select } = {}) {
+    const list = modpack
+        ? [MODPACK_WORLD_TYPE].concat(WORLD_TYPES.presets)
+        : (usesWorldPresets(version) ? WORLD_TYPES.presets : WORLD_TYPES.legacy);
+    const wanted = select !== undefined ? select : (levelTypeSelect.selectedOptions[0] || {}).textContent;
+    levelTypeSelect.innerHTML = '';
+    list.forEach(function (t) {
+        const opt = document.createElement('option');
+        opt.value = t.value;
+        opt.textContent = t.label;
+        levelTypeSelect.appendChild(opt);
+    });
+    const keep = list.find(function (t) { return t.label === wanted; });
+    levelTypeSelect.value = keep ? keep.value : list[0].value;
+}
+
+// A saved world type's label, whichever list it came from
+function worldTypeLabel(value) {
+    const all = WORLD_TYPES.presets.concat(WORLD_TYPES.legacy);
+    const match = all.find(function (t) { return t.value.toLowerCase() === String(value || '').toLowerCase(); });
+    return match ? match.label : undefined;
 }
 
 function openVersionPicker() {
@@ -194,6 +244,7 @@ async function selectType(typeId) {
         customUrlGroup.classList.remove('d-none');
         versionDisplay.removeAttribute('required');
         setCustomNoticeVisible(true);
+        renderWorldTypes('');
         centerLoneRowItems(form);
     } else {
         versionGroup.classList.remove('d-none');
@@ -340,6 +391,9 @@ templateSelect.addEventListener('change', async () => {
         if (t.port) document.getElementById('port').value = t.port;
         if (t.gamemode) document.getElementById('gamemode').value = t.gamemode;
         if (t.difficulty) document.getElementById('difficulty').value = t.difficulty;
+        if (t.levelType && worldTypeLabel(t.levelType)) {
+            renderWorldTypes(t.serverType === 'custom' ? '' : versionHidden.value, { select: worldTypeLabel(t.levelType) });
+        }
 
         // Advanced options
         if (t.memory && t.memory !== 2048) {
@@ -380,6 +434,7 @@ function collectBaseFields() {
         javaArgs: document.getElementById('javaArgs').value,
         gamemode: document.getElementById('gamemode').value,
         difficulty: document.getElementById('difficulty').value,
+        levelType: levelTypeSelect.value,
         seed: document.getElementById('seed').value,
         group: document.getElementById('group').value
     };
@@ -438,6 +493,7 @@ async function enterModpackMode() {
     createSourceGroup.classList.add('d-none');
     hideTypeAndVersionPickers();
     modpackSummary.classList.remove('d-none');
+    renderWorldTypes(null, { modpack: true, select: MODPACK_WORLD_TYPE.label });
     suggestModpackMemory();
     validateCreateForm();
 
@@ -526,6 +582,7 @@ function applySource(source) {
         versionDisplay.removeAttribute('required');
         customUrlGroup.classList.add('d-none');
         setCustomNoticeVisible(false);
+        renderWorldTypes(null, { modpack: true, select: MODPACK_WORLD_TYPE.label });
         suggestModpackMemory();
     } else {
         mrpackFileInput.removeAttribute('required');
@@ -536,6 +593,11 @@ function applySource(source) {
         } else {
             versionGroup.classList.remove('d-none');
             versionDisplay.setAttribute('required', '');
+        }
+        // Back from the modpack list: "Modpack default" has no counterpart,
+        // so this falls to the version's default unless a type was picked
+        if (levelTypeSelect.querySelector('option[value=""]')) {
+            renderWorldTypes(selectedType === 'custom' ? '' : versionHidden.value);
         }
         revertModpackMemory();
     }

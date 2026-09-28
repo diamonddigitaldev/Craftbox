@@ -151,8 +151,13 @@
                             </div>
                         </div>
 
+                        <hr class="my-4">
+
+                        <%# World options. World Type's list depends on the chosen version
+                            (pre-1.19 servers read different names), so create.js fills it
+                            from these lists; the presets are rendered for a first paint. %>
                         <div class="row mb-3">
-                            <div class="col-md-4">
+                            <div class="col-md-6">
                                 <label for="gamemode" class="form-label">Game Mode</label>
                                 <select class="form-select" id="gamemode" name="gamemode">
                                     <option value="survival" selected>Survival</option>
@@ -161,7 +166,7 @@
                                     <option value="spectator">Spectator</option>
                                 </select>
                             </div>
-                            <div class="col-md-4 mt-3 mt-md-0">
+                            <div class="col-md-6 mt-3 mt-md-0">
                                 <label for="difficulty" class="form-label">Difficulty</label>
                                 <select class="form-select" id="difficulty" name="difficulty">
                                     <option value="peaceful">Peaceful</option>
@@ -170,7 +175,18 @@
                                     <option value="hard">Hard</option>
                                 </select>
                             </div>
-                            <div class="col-md-4 mt-3 mt-md-0">
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="levelType" class="form-label">World Type</label>
+                                <select class="form-select" id="levelType" name="levelType"
+                                    data-world-types="<%= JSON.stringify(worldTypeLists) %>">
+                                    <% worldTypeLists.presets.forEach(function(t, i) { %>
+                                        <option value="<%= t.value %>" <%= i === 0 ? 'selected' : '' %>><%= t.label %></option>
+                                    <% }) %>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mt-3 mt-md-0">
                                 <label for="seed" class="form-label">World Seed</label>
                                 <input type="text" class="form-control" id="seed" name="seed" placeholder="Optional">
                             </div>

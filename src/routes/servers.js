@@ -10,6 +10,7 @@ const { formatSize, getDirectorySize } = require('../utils/resourceStats');
 const { serversDb, SERVERS_DIR } = require('../db');
 const { parseServerProperties } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
+const { WORLD_PRESETS, LEGACY_WORLD_TYPES, worldTypesFor, worldTypeFor } = require('../mc/worldTypes');
 const { log } = require('../utils/log');
 const { hasIcon } = require('../utils/serverIcon');
 const { isPathInside } = require('../utils/pathSafety');
@@ -23,6 +24,8 @@ router.get('/servers/create', ensureAuth, async (req, res) => {
         navbar: true,
         user: req.user,
         groupNames: await getDistinctGroups().catch(() => []),
+        // The version is picked on the page, so both World Type lists go along
+        worldTypeLists: { presets: WORLD_PRESETS, legacy: LEGACY_WORLD_TYPES },
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -102,6 +105,13 @@ router.get('/servers/:id/edit', ensureAuth, blockWhileProvisioning, async (req, 
         description: `Configure basic server and runtime settings for ${server.name}.`,
         server,
         currentMotd,
+        worldTypes: worldTypesFor(server.version),
+        // Read from the file, in the form this version reads (an upgraded
+        // server can still hold a pre-1.19 name). A server that has never
+        // started, or one from before 1.2.2, may have no level-type at all.
+        currentLevelType: props['level-type']
+            ? (worldTypeFor(props['level-type'], server.version) || props['level-type'])
+            : worldTypesFor(server.version)[0].value,
         hasIcon: hasIcon(server.id),
         user: req.user,
         groupNames: await getDistinctGroups().catch(() => []),
@@ -131,7 +141,11 @@ router.get('/servers/:id/properties', ensureAuth, blockWhileProvisioning, async 
         description: `Edit server properties for ${server.name}.`,
         server,
         properties,
-        propertyMeta: PROPERTY_META,
+        // World Type lists the values the server's own version reads
+        propertyMeta: {
+            ...PROPERTY_META,
+            'level-type': { ...PROPERTY_META['level-type'], options: worldTypesFor(server.version) }
+        },
         groups: GROUPS,
         user: req.user,
         messages: req.session.flash || {},

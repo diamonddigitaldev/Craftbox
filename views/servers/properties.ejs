@@ -45,12 +45,13 @@
                                     <% } else if (meta.type === 'enum') { %>
                                         <label for="prop_<%= key %>" class="form-label"><%= meta.label %></label>
                                         <select class="form-select form-select-sm" id="prop_<%= key %>" name="<%= key %>">
-                                            <%# A value the list doesn't know (an older version's "default", say) stays selected rather than being saved over %>
-                                            <% if (!meta.options.some(function(opt) { return opt.value === properties[key]; })) { %>
+                                            <%# Matched case-insensitively, as Minecraft reads them (1.12 writes "DEFAULT"). A value the list doesn't know (a modded world type, say) stays selected rather than being saved over %>
+                                            <% const _current = String(properties[key]).toLowerCase(); %>
+                                            <% if (!meta.options.some(function(opt) { return opt.value.toLowerCase() === _current; })) { %>
                                                 <option value="<%= properties[key] %>" selected><%= properties[key] %> (current)</option>
                                             <% } %>
                                             <% meta.options.forEach(function(opt) { %>
-                                                <option value="<%= opt.value %>" <%= properties[key] === opt.value ? 'selected' : '' %>><%= opt.label %></option>
+                                                <option value="<%= opt.value %>" <%= opt.value.toLowerCase() === _current ? 'selected' : '' %>><%= opt.label %></option>
                                             <% }) %>
                                         </select>
                                         <% if (meta.description) { %>

@@ -83,6 +83,7 @@ router.post('/templates', async (req, res) => {
             javaArgs: server.javaArgs || '',
             gamemode: server.gamemode || 'survival',
             difficulty: server.difficulty || 'easy',
+            levelType: server.levelType || null,
             port: server.port || 25565,
             autoRestart: !!server.autoRestart,
             autoStart: !!server.autoStart,

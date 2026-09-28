@@ -25,6 +25,7 @@ const { clearStatsHistory, getStatsHistory } = require('../../utils/statsHistory
 const { setServerIcon, resetServerIcon, removeServerIcon, getIconPath, copyDefaultIcon } = require('../../utils/serverIcon');
 const { writeServerProperties, writeEula, parseServerProperties, updateServerProperties } = require('../../mc/serverProperties');
 const { PROPERTY_META } = require('../../mc/propertyMeta');
+const { worldTypeFor, worldTypesFor } = require('../../mc/worldTypes');
 const { getContentType } = require('../../utils/contentType');
 const { copyModEnvMap, setModEnvMap, getModEnvMap } = require('../../utils/modEnvironment');
 const { isZipFile, cleanupTempFiles } = require('../../utils/uploadSafety');
@@ -1032,7 +1033,7 @@ router.post('/servers/:id/motd', async (req, res) => {
 // from-modpack, from-mrpack) so the rules cannot drift apart.
 // Returns { error } on failure, otherwise the normalized values.
 function validateBaseServerFields(body) {
-    const { name, port, memory, javaArgs, eula, gamemode, difficulty, seed, group } = body || {};
+    const { name, port, memory, javaArgs, eula, gamemode, difficulty, levelType, seed, group } = body || {};
 
     if (!name || !port || !memory) {
         return { error: 'All required fields must be filled.' };
@@ -1069,6 +1070,13 @@ function validateBaseServerFields(body) {
         return { error: GROUP_NAME_ERROR };
     }
 
+    // Blank means the default (or, for a modpack, the pack's own). Which
+    // spelling a version reads is settled once the version is known.
+    const levelTypeStr = String(levelType || '').trim();
+    if (levelTypeStr && !worldTypeFor(levelTypeStr, '')) {
+        return { error: `Unknown world type: ${levelTypeStr}.` };
+    }
+
     return {
         trimmedName,
         portNum,
@@ -1076,6 +1084,7 @@ function validateBaseServerFields(body) {
         safeJavaArgs: String(javaArgs || '').trim(),
         gamemodeStr: validGamemodes.includes(gamemode) ? gamemode : 'survival',
         difficultyStr: validDifficulties.includes(difficulty) ? difficulty : 'easy',
+        levelTypeStr,
         seedStr: String(seed || '').trim(),
         group: groupResult.value
     };
@@ -1121,6 +1130,14 @@ router.post('/servers', async (req, res) => {
         }
     }
 
+    // In the spelling this version reads; the default when none was asked for
+    const levelTypeStr = base.levelTypeStr
+        ? worldTypeFor(base.levelTypeStr, versionStr)
+        : worldTypesFor(versionStr)[0].value;
+    if (!levelTypeStr) {
+        return res.status(400).json({ error: `World type ${base.levelTypeStr} isn't available for Minecraft ${versionStr}.` });
+    }
+
     const id = uuidv4();
     const serverDir = path.join(SERVERS_DIR, id);
     const initiatedBy = req.user.username;
@@ -1152,6 +1169,7 @@ router.post('/servers', async (req, res) => {
             version: versionStr,
             gamemode: gamemodeStr,
             difficulty: difficultyStr,
+            levelType: levelTypeStr,
             seed: seedStr,
             customJarUrl: type === 'custom' ? customJarUrl.trim() : null,
             jarFile: 'server.jar',
@@ -1183,8 +1201,9 @@ router.post('/servers', async (req, res) => {
                     serverPort: portNum,
                     gamemode: gamemodeStr,
                     difficulty: difficultyStr,
+                    levelType: levelTypeStr,
                     levelSeed: seedStr
-                });
+                }, { version: versionStr });
                 writeEula(serverDir);
 
                 const fresh = await serversDb.get(`server_${id}`);
@@ -1295,6 +1314,9 @@ function buildModpackServerRecord({ id, base, serverType, version, modpackMeta }
         version,
         gamemode: base.gamemodeStr,
         difficulty: base.difficultyStr,
+        // Provisional: the install settles it against the pack, then the
+        // record is synced from server.properties
+        levelType: base.levelTypeStr || null,
         seed: base.seedStr,
         customJarUrl: null,
         jarFile: 'server.jar',
@@ -1329,6 +1351,7 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
                 port: base.portNum,
                 gamemode: base.gamemodeStr,
                 difficulty: base.difficultyStr,
+                levelType: base.levelTypeStr,
                 seed: base.seedStr
             },
             iconUrl,
@@ -1361,8 +1384,9 @@ async function provisionModpackServer({ req, id, serverDir, name, base, mrpack, 
                 if (!fresh.modpack.versionNumber) fresh.modpack.versionNumber = result.manifestVersionId;
             }
             await serversDb.set(`server_${id}`, fresh);
-            // A seed the pack ships survives a blank one — mirror it so the
-            // settings page shows it (and a save there doesn't clear it).
+            // A seed or world type the pack ships survives a blank one; mirror
+            // them so the settings page shows them (and a save there doesn't
+            // clear them).
             await syncServerConfig(id);
         }
 
@@ -2261,6 +2285,25 @@ router.post('/servers/:id/edit', async (req, res) => {
         }
     }
 
+    // World Type in the spelling the (possibly new) version reads. A known type
+    // is translated, the value already in the file (a modpack's own type) is
+    // kept as it is, and anything else is refused. When none is sent, a version
+    // change still translates the file's value, so crossing 1.19 keeps it.
+    const targetVersion = type !== 'custom' && newVersion ? newVersion : server.version;
+    const fileLevelType = parseServerProperties(path.join(SERVERS_DIR, id))['level-type'];
+    const sentLevelType = String(req.body.levelType ?? '').trim();
+    let levelTypeStr;
+    if (sentLevelType) {
+        levelTypeStr = worldTypeFor(sentLevelType, targetVersion)
+            || (sentLevelType === fileLevelType ? fileLevelType : null);
+        if (!levelTypeStr) {
+            return res.status(400).json({ error: `World type ${sentLevelType} isn't available for Minecraft ${targetVersion}.` });
+        }
+    } else if (fileLevelType && targetVersion !== server.version) {
+        const translated = worldTypeFor(fileLevelType, targetVersion);
+        if (translated && translated !== fileLevelType) levelTypeStr = translated;
+    }
+
     // Everything that mutates the server, deferred into one closure so the
     // backup path can run it only once a restore point exists. Throws
     // httpError; callers map that to a status code or a WebSocket failure.
@@ -2343,6 +2386,7 @@ router.post('/servers/:id/edit', async (req, res) => {
         server.javaArgs = safeJavaArgs;
         server.gamemode = gamemodeStr;
         server.difficulty = difficultyStr;
+        if (levelTypeStr !== undefined) server.levelType = levelTypeStr;
         server.seed = seedStr;
         server.group = groupResult.value;
         await serversDb.set(`server_${id}`, server);
@@ -2363,6 +2407,7 @@ router.post('/servers/:id/edit', async (req, res) => {
                 'server-port': String(portNum),
                 'gamemode': gamemodeStr,
                 'difficulty': difficultyStr,
+                ...(levelTypeStr !== undefined ? { 'level-type': levelTypeStr } : {}),
                 'level-seed': seedStr
             });
         }

@@ -11,6 +11,7 @@ const path = require('path');
 const StreamZip = require('node-stream-zip');
 const { downloadServerJar } = require('./downloader');
 const { writeServerProperties, writeEula, parseServerProperties } = require('./serverProperties');
+const { worldTypeFor } = require('./worldTypes');
 const { downloadToFile, assertWhitelistedUrl } = require('../utils/httpDownload');
 const { setServerIcon } = require('../utils/serverIcon');
 const { DISABLED_SUFFIX } = require('../utils/modEnvironment');
@@ -163,7 +164,7 @@ async function runPool(items, concurrency, worker) {
  * @param {string} opts.serverId
  * @param {string} opts.serverDir - Absolute path
  * @param {object} opts.mrpack - { url, sha512 } (fetch it) or { localPath } (already on disk)
- * @param {object} opts.baseConfig - { port, gamemode, difficulty, seed } for server.properties
+ * @param {object} opts.baseConfig - { port, gamemode, difficulty, levelType, seed } for server.properties
  * @param {string|null} [opts.iconUrl] - Modrinth CDN icon to use as the server icon (non-fatal)
  * @param {function} [opts.onProgress] - (phase, done, total)
  * @returns {Promise<{serverType, mcVersion, loaderBuild, build, filesInstalled, modsInstalled, clientOnlyMods, manifestName, manifestVersionId, warnings}>}
@@ -349,9 +350,14 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
         // ── Phase 6: finalize ──
         emit('finalize');
         // After overrides on purpose: Craftbox-managed values (port, gamemode,
-        // difficulty, seed) must win over any server.properties the pack ships,
-        // while the rest of the pack's file is kept. A blank seed is no choice
-        // at all, so it leaves a seed the pack ships in place.
+        // difficulty, seed, world type) must win over any server.properties the
+        // pack ships, while the rest of the pack's file is kept. A blank seed or
+        // world type is no choice at all, so it leaves the pack's in place;
+        // anything the file still lacks gets this version's default.
+        const levelType = baseConfig.levelType ? worldTypeFor(baseConfig.levelType, mcVersion) : null;
+        if (baseConfig.levelType && !levelType) {
+            warnings.push(`World type ${baseConfig.levelType} isn't available for Minecraft ${mcVersion}, so the modpack's own was kept.`);
+        }
         const packProps = parseServerProperties(serverDir);
         const overruled = Object.keys(PINNED_PROPERTIES)
             .filter(key => packProps[key] && packProps[key] !== String(PINNED_PROPERTIES[key]));
@@ -364,8 +370,9 @@ async function installModpack({ serverId, serverDir, mrpack, baseConfig, iconUrl
             serverPort: baseConfig.port,
             gamemode: baseConfig.gamemode,
             difficulty: baseConfig.difficulty,
+            levelType: levelType || undefined,
             levelSeed: baseConfig.seed || undefined
-        }, { mergeExisting: true });
+        }, { mergeExisting: true, version: mcVersion });
         writeEula(serverDir);
 
         if (iconUrl) {

@@ -92,7 +92,7 @@ Allowed lifecycle actions: **start** from `stopped`/`crashed`; **stop** from `ru
 
 ## Servers
 
-The server object returned by these endpoints contains the full configuration (name, type, version, port, memory, JVM args, gamemode, difficulty, seed, flags, `group`, timestamps, `state`, `exitCode`, `crashReason`, `javaMajor` — the Java runtime requirement recorded from Mojang metadata at jar download time, null when unknown, …). The on-disk `directory` field is stripped from responses.
+The server object returned by these endpoints contains the full configuration (name, type, version, port, memory, JVM args, gamemode, difficulty, `levelType` (World Type, mirrored from `server.properties`), seed, flags, `group`, timestamps, `state`, `exitCode`, `crashReason`, `javaMajor` — the Java runtime requirement recorded from Mojang metadata at jar download time, null when unknown, …). The on-disk `directory` field is stripped from responses.
 
 ### Read
 
@@ -110,7 +110,7 @@ The server object returned by these endpoints contains the full configuration (n
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. Returns `201 {"success": true, "server": {...}}`; provisioning continues in the background |
+| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. See [World Type](#world-type) for `levelType`. Returns `201 {"success": true, "server": {...}}`; provisioning continues in the background |
 | POST | `/servers/from-modpack` | Create from a Modrinth modpack — see [Modrinth](#modrinth) |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack` file — see [Modrinth](#modrinth) |
 | POST | `/servers/:id/duplicate` | Clone a server. Body: `{name, port, includeWorld?, stopFirst?, startAfter?}`. `409` if running and `stopFirst` is not set. Returns `201` |
@@ -145,7 +145,7 @@ The [WebSocket](#websocket-protocol) is the live feed, but it does not accept be
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, seed?, group?, version?, customJarUrl?, backup?}`. Version changes must be upgrades (release versions compare numerically; snapshot/pre-release versions compare by the provider's chronological ordering) and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool}`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead |
+| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, version?, customJarUrl?, backup?}`. Version changes must be upgrades (release versions compare numerically; snapshot/pre-release versions compare by the provider's chronological ordering) and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool}`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead |
 | POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ..., "color": ...}` — `color` is the group's folder color (null when ungrouped) |
 | POST | `/servers/:id/autorestart` | Body: `{enabled: bool}`. Returns `{"autoRestart": bool}` |
 | POST | `/servers/:id/autostart` | Body: `{enabled: bool}`. Returns `{"autoStart": bool}` |
@@ -154,6 +154,19 @@ The [WebSocket](#websocket-protocol) is the live feed, but it does not accept be
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
 | POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). A partial update: properties left out keep their current value, and keys not already in the file are ignored. Toggles take `true`/`false` (boolean or string) — anything else is `400`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
 | POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` if the target is not text (see [Text vs binary](#files)) |
+
+### World Type
+
+`levelType` is `server.properties`' `level-type`, and like the seed it only applies when a new world is generated. Minecraft 1.19 renamed the world types and reads none of the old names it doesn't happen to share, so each version takes its own:
+
+| Minecraft | Values |
+|---|---|
+| 1.19 and later (including 26.x) | `minecraft:normal`, `minecraft:flat`, `minecraft:large_biomes`, `minecraft:amplified`, `minecraft:single_biome_surface` |
+| Before 1.19 | `default`, `flat`, `largeBiomes`, `amplified` |
+
+Either spelling is accepted and stored in the one the server's version reads, so `flat` on a 26.x server is saved as `minecraft:flat`. A type the version has no equivalent of (Single Biome before 1.19) is `400`. Left out on create, it defaults to the version's normal world; left out on `/edit`, it keeps its value, except that a version change translates it into the new version's spelling. `/edit` also accepts the value already in the file as it stands, so a modpack's own world type survives a settings save.
+
+New servers' `server.properties` carries every setting Minecraft only reads when it generates a world, so they can be set before the first start: `hardcore`, `level-type`, `generator-settings`, and from 1.19.3 `initial-enabled-packs` / `initial-disabled-packs`, each with the default that version would write itself.
 
 ### Files
 
@@ -383,10 +396,10 @@ Two quirks of Modrinth's search are worked around inside the proxy, so these end
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
+| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack`. Multipart, file field `mrpack`, max 2 GiB, plus the same base fields as text fields. The pack is parsed and the loader resolved **before** any server record is created, so malformed or Quilt packs fail with a clean `400`. Returns `201` + background install. Also accepts [chunked uploads](#chunked-uploads-dgup) at `/servers/from-mrpack/upload/*` |
 
-The background install downloads the pack's files (SHA-512 verified; download hosts restricted to the mrpack spec whitelist), installs the loader server pinned to the pack's loader version, and applies `overrides/` then `server-overrides/`. A `server.properties` the pack ships is kept: the port, gamemode and difficulty from the request are written over it (and the seed, when one is given — a blank seed keeps the pack's), `online-mode`, `enable-rcon`, `rcon.password` and `server-ip` are always reset to `true`, `false`, empty and empty, and Craftbox's defaults fill in any other key it leaves out. If the pack had set any of those four differently, the `complete` message's `warnings` says so. Mods the pack marks as unsupported on the server are still installed, but land disabled on disk and tagged `client` in the mod environment map — so they show as **Client Only** on the plugins page and are included in the status page's mods download for players, without the loader ever seeing them. Progress streams over the WebSocket as `operation: "modpack-install"`, `status: "progress"` messages with payload `{phase, done?, total?}` — phases: `download`, `parse`, `loader`, `files`, `overrides`, `finalize` — ending in `complete` or `failed`. The `files` phase carries `done`/`total` counts of **mods** (every jar destined for `mods/`, from the manifest and from the overrides, client-only ones included — so the total matches what the mods page lists afterwards, not the raw file count); it keeps ticking during the `overrides` phase as any mods shipped there land. On `failed` the half-built server is removed automatically (see [Asynchronous operations](#asynchronous-operations)). The created server records a `modpack` block (`{projectId, versionId, name, versionNumber, iconUrl, source: "modrinth"|"file", installedAt}`) for future tooling; it survives export/import.
+The background install downloads the pack's files (SHA-512 verified; download hosts restricted to the mrpack spec whitelist), installs the loader server pinned to the pack's loader version, and applies `overrides/` then `server-overrides/`. A `server.properties` the pack ships is kept: the port, gamemode and difficulty from the request are written over it (and the seed and `levelType`, when given — left blank, the pack's are kept), `online-mode`, `enable-rcon`, `rcon.password` and `server-ip` are always reset to `true`, `false`, empty and empty, and Craftbox's defaults fill in any other key it leaves out. If the pack had set any of those four differently, the `complete` message's `warnings` says so. Mods the pack marks as unsupported on the server are still installed, but land disabled on disk and tagged `client` in the mod environment map — so they show as **Client Only** on the plugins page and are included in the status page's mods download for players, without the loader ever seeing them. Progress streams over the WebSocket as `operation: "modpack-install"`, `status: "progress"` messages with payload `{phase, done?, total?}` — phases: `download`, `parse`, `loader`, `files`, `overrides`, `finalize` — ending in `complete` or `failed`. The `files` phase carries `done`/`total` counts of **mods** (every jar destined for `mods/`, from the manifest and from the overrides, client-only ones included — so the total matches what the mods page lists afterwards, not the raw file count); it keeps ticking during the `overrides` phase as any mods shipped there land. On `failed` the half-built server is removed automatically (see [Asynchronous operations](#asynchronous-operations)). The created server records a `modpack` block (`{projectId, versionId, name, versionNumber, iconUrl, source: "modrinth"|"file", installedAt}`) for future tooling; it survives export/import.
 
 ### Install a mod or plugin into an existing server
 
@@ -405,7 +418,7 @@ The background install downloads the pack's files (SHA-512 verified; download ho
 | POST | `/templates` | Create from an existing server. Body: `{serverId, name, stopFirst?, startAfter?}`. Returns `201` |
 | DELETE | `/templates/:id` | Delete a template |
 
-Templates capture reusable configuration (type, version, memory, JVM args, gamemode, difficulty, port, behavior flags) — not world data, files, or dashboard groups.
+Templates capture reusable configuration (type, version, memory, JVM args, gamemode, difficulty, world type, port, behavior flags) — not world data, files, or dashboard groups.
 
 
 ## API keys
