@@ -16,4 +16,35 @@ function isReleaseVersion(v) {
     return RELEASE_RE.test(String(v || ''));
 }
 
-module.exports = { MC_VERSION_RE, isReleaseVersion };
+const SNAPSHOT_RE = /^(\d{2})w(\d{2})/;
+
+/**
+ * Whether `version` is `release` or newer. Snapshot ids compare against
+ * `firstSnapshot`, the snapshot that opened `release`'s cycle; pre-release and
+ * rc ids count as their release. A blank version (a custom jar) or one in no
+ * known form is taken as current, since Craftbox tracks newer servers.
+ *
+ * @param {string} version - e.g. "1.18.2", "26.1", "22w45a", "1.19.3-pre1"
+ * @param {string} release - e.g. "1.19.3"
+ * @param {string} firstSnapshot - e.g. "22w42a"
+ */
+function isAtLeast(version, release, firstSnapshot) {
+    const v = String(version || '').trim();
+    const snapshot = SNAPSHOT_RE.exec(v);
+    if (snapshot) {
+        const [, year, week] = snapshot;
+        const [, firstYear, firstWeek] = SNAPSHOT_RE.exec(firstSnapshot);
+        return Number(year) * 100 + Number(week) >= Number(firstYear) * 100 + Number(firstWeek);
+    }
+    const cleaned = v.replace(/[ _-]?(?:pre|rc).*$/i, '');
+    if (!isReleaseVersion(cleaned)) return true;
+    const a = cleaned.split('.').map(Number);
+    const b = release.split('.').map(Number);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const diff = (a[i] || 0) - (b[i] || 0);
+        if (diff !== 0) return diff > 0;
+    }
+    return true;
+}
+
+module.exports = { MC_VERSION_RE, isReleaseVersion, isAtLeast };

@@ -49,6 +49,12 @@ async function syncServerConfig(serverId) {
         changed = true;
     }
 
+    if (props['level-type'] && props['level-type'] !== server.levelType) {
+        log('info', `[${server.name}] Config sync: world type ${server.levelType || '(none)'} → ${props['level-type']}`);
+        server.levelType = props['level-type'];
+        changed = true;
+    }
+
     // Sync EULA acceptance from eula.txt
     const eulaPath = path.join(serverDir, 'eula.txt');
     if (fs.existsSync(eulaPath)) {

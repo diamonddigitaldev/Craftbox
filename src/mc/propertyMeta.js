@@ -1,6 +1,8 @@
 // Metadata for known Minecraft server.properties keys
 // Used by the properties editor to render appropriate form fields
 
+const { WORLD_PRESETS } = require('./worldTypes');
+
 const PROPERTY_META = {
     // --- Gameplay ---
     'gamemode': {
@@ -19,9 +21,9 @@ const PROPERTY_META = {
             { value: 'easy', label: 'Easy' },
             { value: 'normal', label: 'Normal' },
             { value: 'hard', label: 'Hard' }
-        ], default: 'easy'
+        ], default: 'normal'
     },
-    'hardcore': { type: 'boolean', label: 'Hardcore', group: 'gameplay', default: 'false', description: 'One life only — players cannot respawn' },
+    'hardcore': { type: 'boolean', label: 'Hardcore', group: 'gameplay', default: 'false', description: 'One life only: players cannot respawn. Only applies when generating a new world' },
     'pvp': { type: 'boolean', label: 'PvP', group: 'gameplay', default: 'true' },
     'max-players': { type: 'number', label: 'Max Players', group: 'gameplay', min: 0, max: 999, default: '20' },
     'force-gamemode': { type: 'boolean', label: 'Force Game Mode', group: 'gameplay', default: 'false', description: 'Force players to join in the default game mode' },
@@ -32,24 +34,22 @@ const PROPERTY_META = {
     // --- World ---
     'level-name': { type: 'string', label: 'World Name', group: 'world', default: 'world' },
     'level-seed': { type: 'string', label: 'World Seed', group: 'world', default: '', description: 'Only applies when generating a new world' },
-    // Unescaped, as parseServerProperties returns them. Minecraft writes
-    // `minecraft\:normal`, but reads a bare colon in a value just the same.
+    // The 1.19+ presets; the properties page swaps in the list for the
+    // server's own version (worldTypes.js).
     'level-type': {
         type: 'enum', label: 'World Type', group: 'world',
-        options: [
-            { value: 'minecraft:normal', label: 'Normal' },
-            { value: 'minecraft:flat', label: 'Flat' },
-            { value: 'minecraft:large_biomes', label: 'Large Biomes' },
-            { value: 'minecraft:amplified', label: 'Amplified' },
-            { value: 'minecraft:single_biome_surface', label: 'Single Biome' }
-        ], default: 'minecraft:normal'
+        options: WORLD_PRESETS, default: WORLD_PRESETS[0].value,
+        description: 'Only applies when generating a new world'
     },
-    'generate-structures': { type: 'boolean', label: 'Generate Structures', group: 'world', default: 'true' },
+    'generator-settings': { type: 'string', label: 'Generator Settings', group: 'world', default: '', description: 'Layers for a flat world, as JSON. Only applies when generating a new world' },
+    'generate-structures': { type: 'boolean', label: 'Generate Structures', group: 'world', default: 'true', description: 'Only applies to newly generated chunks' },
     'max-world-size': { type: 'number', label: 'Max World Size', group: 'world', min: 1, max: 29999984, default: '29999984', description: 'World border radius in blocks' },
     'spawn-animals': { type: 'boolean', label: 'Spawn Animals', group: 'world', default: 'true' },
     'spawn-monsters': { type: 'boolean', label: 'Spawn Monsters', group: 'world', default: 'true' },
     'spawn-npcs': { type: 'boolean', label: 'Spawn Villagers', group: 'world', default: 'true' },
     'allow-nether': { type: 'boolean', label: 'Allow Nether', group: 'world', default: 'true' },
+    'initial-enabled-packs': { type: 'string', label: 'Enabled Datapacks', group: 'world', default: 'vanilla', description: 'Comma-separated. Only applies when generating a new world' },
+    'initial-disabled-packs': { type: 'string', label: 'Disabled Datapacks', group: 'world', default: '', description: 'Comma-separated. Only applies when generating a new world' },
 
     // --- Network ---
     'server-port': { type: 'number', label: 'Server Port', group: 'network', min: 1024, max: 65535, default: '25565' },

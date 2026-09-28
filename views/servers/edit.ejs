@@ -92,8 +92,11 @@ const _gate = 'stopped crashed'; %>
                                                 </div>
                                 </div>
 
+                                <hr class="my-4">
+
+                                <%# World options, laid out as on the create page %>
                                 <div class="row mb-3">
-                                    <div class="col-md-4">
+                                    <div class="col-md-6">
                                         <label for="gamemode" class="form-label">Game Mode</label>
                                         <select class="form-select" id="gamemode" name="gamemode">
                                             <option value="survival" <%=server.gamemode==='survival' ? 'selected' : ''
@@ -106,7 +109,7 @@ const _gate = 'stopped crashed'; %>
                                                 %>>Spectator</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-4 mt-3 mt-md-0">
+                                    <div class="col-md-6 mt-3 mt-md-0">
                                         <label for="difficulty" class="form-label">Difficulty</label>
                                         <select class="form-select" id="difficulty" name="difficulty">
                                             <option value="peaceful" <%=server.difficulty==='peaceful' ? 'selected' : ''
@@ -119,7 +122,21 @@ const _gate = 'stopped crashed'; %>
                                             </option>
                                         </select>
                                     </div>
-                                    <div class="col-md-4 mt-3 mt-md-0">
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="levelType" class="form-label">World Type</label>
+                                        <select class="form-select" id="levelType" name="levelType">
+                                            <%# A value the list doesn't know (a modpack's own world type) stays selected rather than being saved over %>
+                                            <% if (!worldTypes.some(function(t) { return t.value === currentLevelType; })) { %>
+                                                <option value="<%= currentLevelType %>" selected><%= currentLevelType %> (current)</option>
+                                            <% } %>
+                                            <% worldTypes.forEach(function(t) { %>
+                                                <option value="<%= t.value %>" <%= t.value === currentLevelType ? 'selected' : '' %>><%= t.label %></option>
+                                            <% }) %>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mt-3 mt-md-0">
                                         <label for="seed" class="form-label">World Seed</label>
                                         <input type="text" class="form-control" id="seed" name="seed"
                                             value="<%= server.seed || '' %>" placeholder="Optional">
