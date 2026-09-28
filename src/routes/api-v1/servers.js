@@ -511,7 +511,9 @@ router.get('/servers/:id/check-upgrade', async (req, res) => {
         const provider = getProvider(type);
         if (!provider) return res.json({ upgradeAvailable: false });
 
-        if (type === 'custom' || (!provider.getBuilds && !provider.getLatestBuild)) {
+        // Vanilla has a getBuilds() for the provider interface, but a Mojang
+        // release is one jar with no builds, so it always returns null.
+        if (type === 'custom' || type === 'vanilla' || (!provider.getBuilds && !provider.getLatestBuild)) {
             return res.json({ upgradeAvailable: false, reason: 'No build tracking for this server type.' });
         }
 

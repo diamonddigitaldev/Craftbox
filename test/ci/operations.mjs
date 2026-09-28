@@ -90,7 +90,7 @@ async function lifecycle() {
     await run.step('offers vanilla no build upgrade, and says why', async () => {
         const res = await api('GET', `/servers/${id}/check-upgrade`);
         assertStatus(res, 200, 'check-upgrade');
-        assert(res.body.upgradeAvailable === false && res.body.reason, JSON.stringify(res.body));
+        assert(res.body.upgradeAvailable === false && /no build tracking/i.test(res.body.reason), JSON.stringify(res.body));
     });
     await run.step(`upgrades it to ${latest}, refusing bad versions and downgrades`, async () => {
         assertStatus(await api('POST', `/servers/${id}/upgrade-jar`, { version: '../1.21' }), 400, 'bad version');
