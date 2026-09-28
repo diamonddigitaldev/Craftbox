@@ -87,10 +87,16 @@ function csrfValidate(req, res, next) {
     next();
 }
 
-// Rate limiter for login endpoint (using express-rate-limit)
+// Rate limiter for login endpoint (using express-rate-limit). Only failed
+// sign-ins count: every attempt is counted as it arrives, so parallel guesses
+// are still capped, and a successful one is taken back off once it has
+// answered. A success and a failure are both 302s, so POST /login marks a
+// success in res.locals for requestWasSuccessful to read.
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
+    skipSuccessfulRequests: true,
+    requestWasSuccessful: (_req, res) => res.locals.loginSucceeded === true,
     standardHeaders: true,
     legacyHeaders: false,
     handler: (_req, res) => {

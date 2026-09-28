@@ -118,6 +118,8 @@ router.post('/login', loginLimiter, (req, res, next) => {
 
         req.login(user, (err) => {
             if (err) return next(err);
+            // Tells loginLimiter not to count this attempt
+            res.locals.loginSucceeded = true;
             res.redirect(safeReturn);
         });
     })(req, res, next);

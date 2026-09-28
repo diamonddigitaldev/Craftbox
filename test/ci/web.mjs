@@ -305,9 +305,22 @@ await run.step('offers players the client-side mods as a zip', async () => {
     assert(page.includes(`/status/${fabric.id}/mods`), 'status page has no mods download');
 });
 
-// Last: from here on this address can't sign in for 15 minutes
 console.log('Rate limiting');
-await run.step('refuses a sixth sign-in inside 15 minutes, even with the right password', async () => {
+await run.step('doesn\'t count successful sign-ins toward the limit', async () => {
+    // Each attempt is counted as it arrives and a success is taken back off
+    // after, so every one of these sees the same number left
+    const left = [];
+    for (let attempt = 0; attempt < 6; attempt++) {
+        const visitor = createSession();
+        await visitor.get('/login');
+        const res = await visitor.post('/login', CI_USER);
+        assert(res.status === 302 && res.location === '/dashboard', `sign-in ${attempt + 1}: ${res.status} → ${res.location}`);
+        left.push(res.headers.get('ratelimit-remaining'));
+    }
+    assert(new Set(left).size === 1, `attempts left after each: ${left.join(', ')}`);
+});
+// Last: from here on this address can't sign in for 15 minutes
+await run.step('refuses a sign-in after five failed ones inside 15 minutes, even with the right password', async () => {
     const visitor = createSession();
     await visitor.get('/login');
     let remaining = null;

@@ -30,7 +30,7 @@ Failed authentication returns `401 {"error": "unauthorized"}`.
 
 ### Session cookies (browser clients)
 
-The panel frontend authenticates with a session cookie (`POST /login`, rate limited to 5 attempts per 15 minutes per IP). Cookie-based callers must send a CSRF token on every mutating request (POST/DELETE), either as an `X-CSRF-Token` header or a `_csrf` body field. The token is embedded in every panel page. CSRF failures return `403 {"error": "forbidden"}`.
+The panel frontend authenticates with a session cookie (`POST /login`, rate limited to 5 failed sign-ins per 15 minutes per IP). Cookie-based callers must send a CSRF token on every mutating request (POST/DELETE), either as an `X-CSRF-Token` header or a `_csrf` body field. The token is embedded in every panel page. CSRF failures return `403 {"error": "forbidden"}`.
 
 > If you are building an external tool, use an API key. Sessions are `SameSite=Strict`, expire after one hour, and require CSRF handling.
 
@@ -492,4 +492,4 @@ The server pings every 30 seconds and drops sockets that miss a pong.
 
 ## Rate limiting
 
-Only `POST /login` is rate limited (5 attempts per 15 minutes per IP; behind a reverse proxy, set `TRUST_PROXY` to the number of proxies in front of Craftbox so the client IP is read from `X-Forwarded-For` rather than being the proxy's own). There is currently **no rate limiting on `/api/v1`, `/status`, or the WebSocket** — be a considerate client, and treat API keys like passwords.
+Only `POST /login` is rate limited: 5 failed sign-ins per 15 minutes per IP, after which every attempt is refused with `429` until the window has passed, the right password included. A successful sign-in isn't counted (before 1.2.3 it was), although it still shows in the `RateLimit-Remaining` header of its own response. Behind a reverse proxy, set `TRUST_PROXY` to the number of proxies in front of Craftbox so the client IP is read from `X-Forwarded-For` rather than being the proxy's own. There is currently **no rate limiting on `/api/v1`, `/status`, or the WebSocket** — be a considerate client, and treat API keys like passwords.

@@ -236,8 +236,9 @@ export async function bootstrapPanel({ username, password } = CI_USER) {
     return { key: await mintApiKey(session), session, page: (path) => pageOf(session, path) };
 }
 
-// Log in to a panel that's already set up (each attempt counts towards the
-// login rate limit of 5 per 15 minutes) and mint an API key.
+// Log in to a panel that's already set up and mint an API key. Only failed
+// sign-ins count towards the login rate limit of 5 per 15 minutes, but
+// before 1.2.3 every one did, and the upgrade test signs in to older releases.
 export async function loginPanel({ username, password } = CI_USER) {
     const session = createSession();
     await session.get('/login');
@@ -251,7 +252,8 @@ export async function loginPanel({ username, password } = CI_USER) {
 // Set up a fresh panel, or sign in to one another script already set up.
 // With CRAFTBOX_SESSION_FILE, scripts run one after another share a single
 // signed-in session and API key through that file instead of each signing
-// in, since the login rate limit allows only 5 sign-ins in 15 minutes.
+// in. That saves a sign-in per script, which mattered before 1.2.3, when the
+// login rate limit counted successful ones and allowed 5 in 15 minutes.
 export async function openPanel(credentials = CI_USER) {
     const file = process.env.CRAFTBOX_SESSION_FILE;
     if (file && fs.existsSync(file)) {
