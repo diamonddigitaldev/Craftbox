@@ -49,8 +49,8 @@
         <% if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') || server.crashReason.startsWith('Duplication failed') || server.crashReason.startsWith('Jar upgrade interrupted') || server.crashReason.startsWith('Provisioning interrupted') || server.crashReason.startsWith('Modpack install failed'))) { %>
             <%= server.crashReason %>
         <% } else { %>
-            Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : '' %>.
-            Exit code: <strong><%= server.exitCode != null ? server.exitCode : '' %></strong>.
+            Server crashed<%= server.crashReason === 'oom' ? ' due to Out of Memory' : server.crashReason === 'signal' ? ': its process was killed, as the system does when it runs out of memory' : '' %>.
+            <% if (server.exitCode != null) { %>Exit code: <strong><%= server.exitCode %></strong>.<% } %>
             <% if (server.autoRestart) { %>Auto-restart is enabled.<% } %>
         <% } %>
     </div>

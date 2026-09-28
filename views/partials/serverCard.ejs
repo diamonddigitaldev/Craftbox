@@ -18,6 +18,7 @@ if (server.crashReason && (server.crashReason.startsWith('Provisioning failed') 
     crashFooterText = 'Setup failed: ' + server.crashReason.replace(/^(Provisioning failed|Modpack install failed): /, '');
 } else {
     if (server.crashReason === 'oom') crashFooterText += ' (Out of Memory)';
+    if (server.crashReason === 'signal') crashFooterText += ' (Process Killed)';
     if (server.exitCode != null) crashFooterText += ' — Exit code: ' + server.exitCode;
 }
 %>

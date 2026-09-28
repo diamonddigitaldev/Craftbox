@@ -87,6 +87,8 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 
 Allowed lifecycle actions: **start** from `stopped`/`crashed`; **stop** from `running`/`starting`; **restart** from `running`; **kill** from `running`/`starting`/`stopping`.
 
+A server whose process ends without Craftbox asking it to is `crashed`, and `crashReason` says why: `oom` (an `OutOfMemoryError` in the console, on which Craftbox kills the server straight away), `crash_report` (Minecraft wrote a crash report), `exit_code` (a non-zero exit, given in `exitCode`) or `signal` (the process was killed by a signal, so `exitCode` is null; this is how the system's out-of-memory killer ends a server in a memory-limited container). A failed operation leaves a sentence instead, such as `Duplication failed: …`. A stop, restart or kill from Craftbox, or `stop` typed into the console, ends in `stopped`.
+
 > **Provisioning is exclusive.** A server created, imported, duplicated or built from a modpack stays `provisioning` until its directory is fully assembled, and can only leave that state for `stopped` or `crashed`. Backups, restores, jar upgrades, restarts, and the settings/properties restore-point saves all reject with `409 {"error": "Wait for the server to finish provisioning."}` until it clears — `stopFirst` does not override this. Poll `GET /servers/:id` or watch the WebSocket `state` message to know when it is ready.
 
 

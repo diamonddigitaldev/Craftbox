@@ -199,12 +199,12 @@ async function lifecycle() {
     await run.step(signalled, async () => {
         const since = socket.mark();
         signalJava('KILL');
-        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && ['crashed', 'stopped'].includes(m.state), { since, what: 'the exit' });
-        const s = await server(id);
-        assert(s.state === 'crashed' || s.state === 'starting' || s.state === 'running',
-            `recorded as a clean stop (state ${s.state}, exitCode ${s.exitCode}, crashReason ${s.crashReason}), so auto-restart never fires`);
+        const exit = await socket.waitFor((m) => m.type === 'state' && m.serverId === id && ['crashed', 'stopped'].includes(m.state), { since, what: 'the exit' });
+        assert(exit.state === 'crashed' && exit.crashReason === 'signal' && exit.exitCode === null,
+            `recorded as ${exit.state} (exitCode ${exit.exitCode}, crashReason ${exit.crashReason}), so auto-restart never fires`);
+        await socket.waitFor((m) => m.type === 'event' && m.serverId === id && m.eventType === 'crashed', { since, what: 'crashed event' });
         await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'running', { since, what: 'the auto-restart', timeoutMs: START_TIMEOUT });
-    }, { knownIssue: 'a JVM that dies from a signal exits with code null, which ServerProcess treats as a clean stop' });
+    });
     await run.step(autoStart, async () => {
         const restartPanel = async () => {
             socket.close();

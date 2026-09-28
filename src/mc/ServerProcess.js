@@ -684,7 +684,13 @@ class ServerProcess extends EventEmitter {
         const wasOOM = this.lastLines.some(l => OOM_PATTERN.test(l));
         const hadCrashReport = this._crashDetected;
         const wasNonZeroExit = code !== null && code !== 0;
-        const isCrash = !this._stopRequested && (wasOOM || hadCrashReport || wasNonZeroExit);
+        // A process ended by a signal has no exit code at all. That's how the
+        // kernel's OOM killer ends a JVM in a memory-limited container
+        // (SIGKILL), so it has to count as a crash, not a clean exit. kill()
+        // and the stop timeout signal the JVM too, but they set
+        // _stopRequested first, so they still read as a requested stop.
+        const wasSignalled = code === null && !!signal;
+        const isCrash = !this._stopRequested && (wasOOM || hadCrashReport || wasNonZeroExit || wasSignalled);
 
         if (this._stopRequested && !hadCrashReport) {
             // Clean shutdown — user requested stop
@@ -732,7 +738,7 @@ class ServerProcess extends EventEmitter {
             }
         } else if (isCrash) {
             // Crash or unexpected exit
-            const crashReason = wasOOM ? 'oom' : hadCrashReport ? 'crash_report' : 'exit_code';
+            const crashReason = wasOOM ? 'oom' : hadCrashReport ? 'crash_report' : wasSignalled ? 'signal' : 'exit_code';
             this.config.exitCode = code;
             this.config.crashReason = crashReason;
             await this._setStateRobust(STATES.CRASHED);
@@ -741,7 +747,9 @@ class ServerProcess extends EventEmitter {
                 ? 'Out of Memory detected.'
                 : hadCrashReport
                     ? 'Crash report detected.'
-                    : `Exit code: ${code}`;
+                    : wasSignalled
+                        ? `Process killed (${signal}).`
+                        : `Exit code: ${code}`;
             this._appendLine(`[Craftbox] Server crashed! ${crashMsg}`);
 
             // Update DB with crash info
@@ -768,7 +776,8 @@ class ServerProcess extends EventEmitter {
                 }, 5000);
             }
         } else {
-            // Process exited with code 0 but stop wasn't requested — treat as clean stop
+            // Process exited with code 0 but stop wasn't requested (a `stop`
+            // typed into the console) — treat as clean stop
             this.config.exitCode = code;
             this.config.crashReason = null;
             await this._setStateRobust(STATES.STOPPED);

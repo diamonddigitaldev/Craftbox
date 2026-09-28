@@ -230,7 +230,9 @@
                 } else {
                     var reasonText = crashReason === 'oom'
                         ? ' due to Out of Memory'
-                        : '';
+                        : crashReason === 'signal'
+                            ? ': its process was killed, as the system does when it runs out of memory'
+                            : '';
                     var exitText = exitCode != null
                         ? ' Exit code: <strong>' + exitCode + '</strong>.'
                         : '';
