@@ -3,6 +3,7 @@
 // (22+, for fetch/FormData) and the panel's URL.
 
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 
 export const BASE_URL = (process.env.CRAFTBOX_URL || 'http://localhost:6464').replace(/\/$/, '');
 const API = `${BASE_URL}/api/v1`;
@@ -50,7 +51,13 @@ function csrfFrom(html) {
 // Run the first-run setup wizard on a fresh instance and mint an API key.
 // Returns the raw `cbx_` key. Keys can only be created from a session, so this
 // goes through the same forms a browser would.
-export async function bootstrapApiKey({ username = 'ci-admin', password = 'ci-password-123' } = {}) {
+export async function bootstrapApiKey(credentials) {
+    return (await bootstrapPanel(credentials)).key;
+}
+
+// As bootstrapApiKey, plus `page(path)`: a GET on the logged-in session
+// resolving to {status, html}, for checking what the panel's pages render.
+export async function bootstrapPanel({ username = 'ci-admin', password = 'ci-password-123' } = {}) {
     const jar = cookieJar();
     const page = async (path) => {
         const res = await fetch(BASE_URL + path, { headers: { cookie: jar.header() }, redirect: 'manual' });
@@ -93,7 +100,13 @@ export async function bootstrapApiKey({ username = 'ci-admin', password = 'ci-pa
     if (keyRes.status !== 201 || !body.key) {
         throw new Error(`Could not create an API key: ${keyRes.status} ${JSON.stringify(body)}`);
     }
-    return body.key;
+    return {
+        key: body.key,
+        page: async (path) => {
+            const res = await page(path);
+            return { status: res.status, html: await res.text() };
+        }
+    };
 }
 
 // ── API client ──
@@ -138,6 +151,48 @@ export async function waitForState(api, id, states, { timeoutMs, label = id } = 
         }
         await sleep(2000);
     }
+}
+
+// ── Test fixtures ──
+
+// A zip of `entries` ({name: string | Buffer}), stored uncompressed: enough for
+// a test .mrpack without a zip dependency (zlib.crc32 needs Node 22.2+).
+export function makeZip(entries) {
+    const parts = [];
+    const central = [];
+    let offset = 0;
+    for (const [name, content] of Object.entries(entries)) {
+        const data = Buffer.from(content);
+        const nameBuf = Buffer.from(name);
+        const crc = zlib.crc32(data);
+        const local = Buffer.alloc(30);
+        local.writeUInt32LE(0x04034b50, 0);          // local file header
+        local.writeUInt16LE(20, 4);                  // version needed
+        local.writeUInt32LE(crc, 14);
+        local.writeUInt32LE(data.length, 18);        // compressed = stored size
+        local.writeUInt32LE(data.length, 22);
+        local.writeUInt16LE(nameBuf.length, 26);
+        parts.push(local, nameBuf, data);
+        const entry = Buffer.alloc(46);
+        entry.writeUInt32LE(0x02014b50, 0);          // central directory entry
+        entry.writeUInt16LE(20, 4);
+        entry.writeUInt16LE(20, 6);
+        entry.writeUInt32LE(crc, 16);
+        entry.writeUInt32LE(data.length, 20);
+        entry.writeUInt32LE(data.length, 24);
+        entry.writeUInt16LE(nameBuf.length, 28);
+        entry.writeUInt32LE(offset, 42);
+        central.push(entry, nameBuf);
+        offset += local.length + nameBuf.length + data.length;
+    }
+    const directory = Buffer.concat(central);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);                // end of central directory
+    end.writeUInt16LE(central.length / 2, 8);
+    end.writeUInt16LE(central.length / 2, 10);
+    end.writeUInt32LE(directory.length, 12);
+    end.writeUInt32LE(offset, 16);
+    return Buffer.concat([...parts, directory, end]);
 }
 
 // ── Tiny test runner ──

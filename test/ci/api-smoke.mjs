@@ -1,19 +1,21 @@
 // API smoke test: exercises the documented /api/v1 surface against a fresh
 // Craftbox instance, the way an integration would. Starting servers is left to
-// server-start.mjs; this covers auth, validation, create, settings, files,
-// backups and delete on one vanilla server.
+// server-start.mjs; this covers auth, validation, create, settings, world
+// options, the pages that show them, files, backups and delete on one vanilla
+// server, plus a .mrpack install.
 //
 //   CRAFTBOX_URL=http://localhost:6464 node test/ci/api-smoke.mjs
 
 import {
-    waitForPanel, bootstrapApiKey, apiClient, waitForState,
-    createRunner, assert, assertStatus, sleep
+    waitForPanel, bootstrapPanel, apiClient, waitForState,
+    createRunner, assert, assertStatus, sleep, makeZip
 } from './lib.mjs';
 
 const EXPECTED_TYPES = ['vanilla', 'paper', 'purpur', 'folia', 'fabric', 'forge', 'neoforge', 'custom'];
 const PROVISION_TIMEOUT = 10 * 60_000;
 
-// server.properties as the API returns it, parsed into an object
+// server.properties as the API returns it, parsed into an object with the
+// escapes Minecraft writes (minecraft\:flat) undone, as Craftbox reads it
 async function readProperties(api, id) {
     const res = await api('GET', `/servers/${id}/file?path=server.properties`);
     assertStatus(res, 200, 'read server.properties');
@@ -21,14 +23,14 @@ async function readProperties(api, id) {
     for (const line of res.body.file.content.split(/\r?\n/)) {
         if (!line || line.startsWith('#') || !line.includes('=')) continue;
         const eq = line.indexOf('=');
-        props[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+        props[line.slice(0, eq).trim()] = line.slice(eq + 1).trim().replace(/\\:/g, ':').replace(/\\=/g, '=');
     }
     return props;
 }
 
 const run = createRunner('API smoke test');
 await waitForPanel();
-const key = await bootstrapApiKey();
+const { key, page } = await bootstrapPanel();
 const api = apiClient(key);
 const anon = apiClient(null);
 let latest = null;
@@ -77,7 +79,7 @@ await run.step('rejects an unknown type in /versions', async () => {
 console.log('Create');
 const validBody = () => ({
     name: 'CI Smoke', serverType: 'vanilla', version: latest || 'latest',
-    port: 25565, memory: 2048, eula: true, gamemode: 'survival', difficulty: 'easy'
+    port: 25565, memory: 2048, eula: true // game mode, difficulty and world type left to their defaults
 });
 await run.step('validates create input', async () => {
     const cases = [
@@ -87,6 +89,7 @@ await run.step('validates create input', async () => {
         ['bad name', { name: 'bad/name' }],
         ['unknown type', { serverType: 'bogus' }],
         ['bad version', { version: '../1.21' }],
+        ['unknown world type', { levelType: 'bogus' }],
         ['custom without a URL', { serverType: 'custom' }]
     ];
     for (const [what, patch] of cases) {
@@ -121,6 +124,20 @@ if (id) {
             assert(props[k] === 'true', `${k}=${props[k]}`);
         }
         assert(props['server-port'] === '25565', `server-port=${props['server-port']}`);
+        assert(props.gamemode === 'survival' && props.difficulty === 'normal',
+            `gamemode=${props.gamemode} difficulty=${props.difficulty} (expected survival/normal)`);
+    });
+    await run.step('writes the settings Minecraft only reads on first start', async () => {
+        // The latest release uses 1.19+ world presets and 1.19.3+ datapack keys
+        const props = await readProperties(api, id);
+        const want = {
+            'level-type': 'minecraft:normal', 'hardcore': 'false', 'generator-settings': '{}',
+            'initial-enabled-packs': 'vanilla', 'initial-disabled-packs': ''
+        };
+        const wrong = Object.keys(want).filter((k) => props[k] !== want[k]);
+        assert(wrong.length === 0, wrong.map((k) => `${k}=${props[k]}`).join(', '));
+        const server = (await api('GET', `/servers/${id}`)).body.server;
+        assert(server.levelType === 'minecraft:normal', `record levelType ${server.levelType}`);
     });
     await run.step('partial update leaves omitted toggles alone', async () => {
         assertStatus(await api('POST', `/servers/${id}/properties`, { 'max-players': 7 }), 200, 'partial update');
@@ -153,6 +170,7 @@ if (id) {
         assert(props['server-port'] === '25566' && props.gamemode === 'creative' && props.difficulty === 'hard',
             `properties: port=${props['server-port']} gamemode=${props.gamemode} difficulty=${props.difficulty}`);
     });
+
     await run.step('sets the MOTD', async () => {
         assertStatus(await api('POST', `/servers/${id}/motd`, { motd: 'CI smoke test' }), 200, 'motd');
         assert((await readProperties(api, id)).motd === 'CI smoke test', 'motd not written');
@@ -173,6 +191,37 @@ if (id) {
         const groups = await api('GET', '/groups');
         assertStatus(groups, 200, 'groups');
         assert(groups.body.groups.some((g) => g.name === 'CI Group' && g.count === 1), 'group not listed');
+    });
+
+    console.log('World options');
+    const editBody = (extra) => ({ name: 'CI Smoke Edited', port: 25566, memory: 1536, ...extra });
+    await run.step('stores World Type in the spelling the version reads', async () => {
+        const res = await api('POST', `/servers/${id}/edit`, editBody({ levelType: 'flat' }));
+        assertStatus(res, 200, 'edit levelType');
+        assert(res.body.server.levelType === 'minecraft:flat', `record levelType ${res.body.server.levelType}`);
+        assert((await readProperties(api, id))['level-type'] === 'minecraft:flat', 'level-type not written');
+        assertStatus(await api('POST', `/servers/${id}/edit`, editBody({ levelType: 'bogus' })), 400, 'unknown world type');
+    });
+    await run.step('shows the world options on the Settings page', async () => {
+        const res = await page(`/servers/${id}/edit`);
+        assert(res.status === 200, `Settings page returned ${res.status}`);
+        assert(/<select[^>]*id="levelType"[^>]*name="levelType"/.test(res.html), 'no World Type select');
+        assert(/<option value="minecraft:flat"\s+selected>/.test(res.html), 'saved World Type not selected');
+        const worldCols = res.html.match(/<div class="col-md-6[^"]*">\s*<label for="(gamemode|difficulty|levelType|seed)"/g) || [];
+        assert(worldCols.length === 4, `expected the four world options two to a row, found ${worldCols.length}`);
+    });
+    await run.step('lists the first-start settings on the Properties page', async () => {
+        const res = await page(`/servers/${id}/properties`);
+        assert(res.status === 200, `Properties page returned ${res.status}`);
+        const missing = ['hardcore', 'level-type', 'generator-settings', 'initial-enabled-packs', 'initial-disabled-packs']
+            .filter((k) => !res.html.includes(`name="${k}"`));
+        assert(missing.length === 0, `missing: ${missing.join(', ')}`);
+    });
+    await run.step('defaults the create page to Normal difficulty with a World Type', async () => {
+        const res = await page('/servers/create');
+        assert(res.status === 200, `create page returned ${res.status}`);
+        assert(/<option value="normal"\s+selected>/.test(res.html), 'Normal is not the preselected difficulty');
+        assert(/id="levelType"/.test(res.html), 'no World Type select');
     });
 
     console.log('Files');
@@ -237,5 +286,49 @@ if (id) {
         assertStatus(await api('GET', `/servers/${id}`), 404, 'deleted server');
     });
 }
+
+console.log('Modpacks');
+await run.step('installs a .mrpack without letting it touch the launch files', async () => {
+    const mc = (await api('GET', '/versions?type=fabric')).body?.latest;
+    assert(mc, 'no stable Fabric version');
+    // Craftbox picks Fabric's loader itself (no builds endpoint), but a pack
+    // pins one, so ask Fabric's meta API, which Craftbox installs from
+    const loaders = await (await fetch('https://meta.fabricmc.net/v2/versions/loader')).json();
+    const loader = (loaders.find((l) => l.stable) || loaders[0])?.version;
+    assert(loader, 'no Fabric loader version');
+
+    const pack = makeZip({
+        'modrinth.index.json': JSON.stringify({
+            formatVersion: 1, game: 'minecraft', versionId: '1.0.0', name: 'CI Pack', files: [],
+            dependencies: { minecraft: mc, 'fabric-loader': loader }
+        }),
+        'overrides/config/ci.txt': 'kept',
+        // Launch files: every one of these must be skipped
+        'overrides/user_jvm_args.txt': '-XX:OnOutOfMemoryError=touch /tmp/pwned',
+        'overrides/run.sh': 'echo pwned',
+        'server-overrides/libraries/net/neoforged/neoforge/99.0.0/unix_args.txt': '-javaagent:evil.jar',
+        'server-overrides/evil.jar': 'PK',
+        'server-overrides/server.properties': 'level-type=minecraft\\:amplified\nallow-flight=true\nonline-mode=false\n'
+    });
+    const form = new FormData();
+    for (const [k, v] of Object.entries({ name: 'CI Pack', port: '25570', memory: '2048', eula: 'true', levelType: '' })) form.append(k, v);
+    form.append('mrpack', new Blob([pack]), 'ci.mrpack');
+    const res = await api('POST', '/servers/from-mrpack', form);
+    assertStatus(res, 201, 'from-mrpack');
+    const packId = res.body.server.id;
+    await waitForState(api, packId, ['stopped'], { timeoutMs: PROVISION_TIMEOUT, label: 'mrpack' });
+
+    const file = (path) => api('GET', `/servers/${packId}/file?path=${encodeURIComponent(path)}`);
+    assert((await file('config/ci.txt')).body?.file?.content === 'kept', 'ordinary override missing');
+    for (const planted of ['user_jvm_args.txt', 'run.sh', 'libraries/net/neoforged/neoforge/99.0.0/unix_args.txt', 'evil.jar']) {
+        assert((await file(planted)).status === 404, `${planted} was installed`);
+    }
+    const props = await readProperties(api, packId);
+    assert(props['level-type'] === 'minecraft:amplified', `pack's World Type not kept: ${props['level-type']}`);
+    assert(props['allow-flight'] === 'true', 'pack setting allow-flight lost');
+    assert(props['online-mode'] === 'true', 'pack turned online-mode off');
+    assert(props.hardcore === 'false', 'first-start defaults not filled in');
+    assertStatus(await api('DELETE', `/servers/${packId}`), 200, 'delete pack server');
+});
 
 run.finish();
