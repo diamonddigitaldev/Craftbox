@@ -8,6 +8,8 @@ on:
   # loader builds) without any commit here to trigger a run.
   schedule:
     - cron: '0 6 * * 1'
+  # And by docker-image.yml, before a release is published
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}
