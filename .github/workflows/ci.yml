@@ -17,6 +17,23 @@ permissions:
   contents: read
 
 jobs:
+  # Pure logic, run straight from the checkout: no image, no npm install
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Run unit tests
+        run: npm test
+
   # Build the real image once; every check below runs against it, so CI tests
   # exactly what gets published (the Java runtimes included).
   build:
