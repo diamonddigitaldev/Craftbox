@@ -259,6 +259,32 @@ async function mintApiKey(session) {
     return res.body.key;
 }
 
+// Every page of the panel, as [path, title before " | Craftbox"], for a
+// provisioned vanilla server (in group "CI Group", with a ci-dir folder) and a
+// Fabric one, whose Mods page stands in for the plugins page
+export function panelPages(vanilla, fabric) {
+    const v = `/servers/${vanilla.id}`;
+    return [
+        ['/dashboard', 'Dashboard'],
+        ['/dashboard/groups/CI%20Group', 'CI Group'],
+        ['/servers/create', 'Create Server'],
+        [v, `${vanilla.name} Console`],
+        [`${v}/edit`, `${vanilla.name} Settings`],
+        [`${v}/properties`, `${vanilla.name} Properties`],
+        [`${v}/files`, `${vanilla.name} Files`],
+        [`${v}/files/ci-dir`, `${vanilla.name} Files`],
+        [`${v}/edit-file?path=server.properties`, `${vanilla.name} | Edit server.properties`],
+        [`${v}/backups`, `${vanilla.name} Backups`],
+        [`${v}/events`, `${vanilla.name} Events`],
+        [`/servers/${fabric.id}/plugins`, `${fabric.name} Mods`],
+        ['/modpacks', 'Modpacks'],
+        ['/templates', 'Templates'],
+        ['/account', 'Account Settings'],
+        ['/status', 'Server Status'],
+        [`/status/${vanilla.id}`, `${vanilla.name} Status`]
+    ];
+}
+
 // ── WebSocket ──
 
 // A panel socket that keeps every message it receives, so a check can wait

@@ -113,6 +113,9 @@ jobs:
             script: web.mjs
           - name: WebSocket
             script: websocket.mjs
+          # Headless, in the Chrome the runner already has
+          - name: Browser
+            script: browser.mjs
     steps:
       - name: Checkout
         uses: actions/checkout@v4

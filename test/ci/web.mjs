@@ -11,7 +11,7 @@
 // ages the session in the container's database, is skipped.
 
 import {
-    BASE_URL, CONTAINER, CI_USER, waitForPanel, createSession, apiClient, provisionServer,
+    BASE_URL, CONTAINER, CI_USER, waitForPanel, createSession, apiClient, provisionServer, panelPages,
     containerExec, makeModJar, zipEntries, createRunner, assert, assertStatus
 } from './lib.mjs';
 
@@ -107,25 +107,7 @@ await run.step('creates a vanilla and a Fabric server to show', async () => {
     assertStatus(await api('POST', `/servers/${vanilla.id}/files/mkdir`, { name: 'ci-dir' }), [200, 201], 'mkdir');
 });
 
-const pages = () => vanilla && fabric ? [
-    ['/dashboard', 'Dashboard'],
-    ['/dashboard/groups/CI%20Group', 'CI Group'],
-    ['/servers/create', 'Create Server'],
-    [`/servers/${vanilla.id}`, 'CI Web Console'],
-    [`/servers/${vanilla.id}/edit`, 'CI Web Settings'],
-    [`/servers/${vanilla.id}/properties`, 'CI Web Properties'],
-    [`/servers/${vanilla.id}/files`, 'CI Web Files'],
-    [`/servers/${vanilla.id}/files/ci-dir`, 'CI Web Files'],
-    [`/servers/${vanilla.id}/edit-file?path=server.properties`, 'CI Web | Edit server.properties'],
-    [`/servers/${vanilla.id}/backups`, 'CI Web Backups'],
-    [`/servers/${vanilla.id}/events`, 'CI Web Events'],
-    [`/servers/${fabric.id}/plugins`, 'CI Web Fabric Mods'],
-    ['/modpacks', 'Modpacks'],
-    ['/templates', 'Templates'],
-    ['/account', 'Account Settings'],
-    ['/status', 'Server Status'],
-    [`/status/${vanilla.id}`, 'CI Web Status']
-] : [];
+const pages = () => vanilla && fabric ? panelPages(vanilla, fabric) : [];
 
 const rendered = new Map();
 await run.step('renders every page', async () => {
