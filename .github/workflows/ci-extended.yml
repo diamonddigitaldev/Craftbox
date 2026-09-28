@@ -1,0 +1,282 @@
+name: CI (extended)
+
+# The slower and more upstream-dependent checks, kept off every PR: older
+# Minecraft versions and their Java runtimes, Modrinth, upgrades from older
+# releases, the arm64 image, and Craftbox outside Docker on Linux and
+# Windows. Runs weekly, by hand, before a release is published (called by
+# docker-image.yml), and on a PR that changes this file.
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    paths: ['.github/workflows/ci-extended.yml']
+
+concurrency:
+  group: ci-extended-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: craftbox:ci
+          outputs: type=docker,dest=${{ runner.temp }}/craftbox-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload image
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftbox-image-extended
+          path: ${{ runner.temp }}/craftbox-image.tar
+          retention-days: 1
+
+  # Each Java path the image has, through the versions that need it, and the
+  # loaders' older installers
+  older-versions:
+    name: Start ${{ matrix.target }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: vanilla@1.12.2, java: 8 }
+          - { target: vanilla@1.16.5, java: 8 }
+          - { target: vanilla@1.18.2, java: 17 }
+          - { target: vanilla@1.20.4, java: 17 }
+          - { target: vanilla@1.21.1, java: 21 }
+          - { target: vanilla@snapshot }
+          # A custom jar has no version to go by, so it gets the newest Java
+          - { target: custom@1.21.1, java: 25 }
+          - { target: paper@1.20.4, java: 17 }
+          - { target: fabric@1.16.5, java: 8 }
+          - target: forge@1.12.2
+            java: 8
+            known_issue: Forge's Maven publishes no .sha256 for 1.12.2 installers, and Craftbox requires one
+          - { target: forge@1.16.5, java: 8 }
+          - { target: forge@1.20.1, java: 17 }
+          - { target: neoforge@1.21.1, java: 21 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: craftbox-image-extended
+          path: ${{ runner.temp }}
+
+      - name: Start Craftbox
+        run: |
+          docker load --input "$RUNNER_TEMP/craftbox-image.tar"
+          docker run -d --name craftbox -p 6464:6464 craftbox:ci
+
+      - name: Start ${{ matrix.target }}
+        run: node test/ci/server-start.mjs ${{ matrix.target }}
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+          CRAFTBOX_CONTAINER: craftbox
+          CRAFTBOX_EXPECT_JAVA: ${{ matrix.java }}
+          CRAFTBOX_KNOWN_ISSUE: ${{ matrix.known_issue }}
+
+      - name: Craftbox log
+        if: failure()
+        run: docker logs craftbox
+
+  modrinth:
+    name: Modrinth test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: craftbox-image-extended
+          path: ${{ runner.temp }}
+
+      - name: Start Craftbox
+        run: |
+          docker load --input "$RUNNER_TEMP/craftbox-image.tar"
+          docker run -d --name craftbox -p 6464:6464 craftbox:ci
+
+      - name: Run Modrinth test
+        run: node test/ci/modrinth.mjs
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+
+      - name: Craftbox log
+        if: failure()
+        run: docker logs craftbox
+
+  # As in ci.yml, from each older stable release
+  upgrade:
+    name: Upgrade from ${{ matrix.from }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        from: ['1.0.0', '1.1.0', '1.2.0']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download image
+        uses: actions/download-artifact@v4
+        with:
+          name: craftbox-image-extended
+          path: ${{ runner.temp }}
+
+      - name: Load image
+        run: docker load --input "$RUNNER_TEMP/craftbox-image.tar"
+
+      - name: Upgrade from willtda/craftbox:${{ matrix.from }}
+        run: node test/ci/upgrade.mjs
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+          CRAFTBOX_UPGRADE_FROM: willtda/craftbox:${{ matrix.from }}
+          CRAFTBOX_IMAGE: craftbox:ci
+
+      - name: Craftbox logs
+        if: failure()
+        run: |
+          echo "::group::Before the upgrade"; docker logs craftbox-old || true; echo "::endgroup::"
+          echo "::group::After the upgrade"; docker logs craftbox || true; echo "::endgroup::"
+
+  # The image is published for arm64 too, but otherwise only ever built for
+  # it at release. Built and run natively here, not under emulation.
+  arm64:
+    name: arm64 image
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: craftbox:ci
+          load: true
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=max
+
+      - name: Start Craftbox
+        run: docker run -d --name craftbox -p 6464:6464 craftbox:ci
+
+      - name: Run API smoke test
+        run: node test/ci/api-smoke.mjs
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+
+      - name: Start vanilla, Paper and Fabric
+        if: success() || failure()
+        run: node test/ci/server-start.mjs vanilla paper fabric
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+
+      - name: Craftbox log
+        if: failure()
+        run: docker logs craftbox
+
+  # Craftbox run straight from the checkout with Java from the runner, as the
+  # README's non-Docker install runs it (npm ci for a repeatable install,
+  # then what `npm start` runs)
+  standalone:
+    name: Standalone on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      # The panel and the checks share one step: a background process may not
+      # outlive its step on Windows
+      - name: Run checks against Craftbox
+        run: |
+          node src/server.js > "$RUNNER_TEMP/craftbox.log" 2>&1 &
+          status=0
+          for check in api-smoke.mjs "server-start.mjs vanilla" websocket.mjs transfers.mjs "operations.mjs lifecycle" "operations.mjs backups"; do
+            node test/ci/$check || status=1
+          done
+          exit $status
+        env:
+          CRAFTBOX_URL: http://localhost:6464
+          # One sign-in shared between them, clear of the login rate limit
+          CRAFTBOX_SESSION_FILE: ${{ runner.temp }}/craftbox-session.json
+
+      - name: Craftbox log
+        if: failure()
+        run: cat "$RUNNER_TEMP/craftbox.log"

@@ -159,6 +159,12 @@ function cookieJar() {
         },
         header() {
             return [...cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+        },
+        load(header) {
+            for (const pair of header.split(/;\s*/).filter(Boolean)) {
+                const eq = pair.indexOf('=');
+                cookies.set(pair.slice(0, eq), pair.slice(eq + 1));
+            }
         }
     };
 }
@@ -170,11 +176,13 @@ function csrfFrom(html) {
 
 // A browser-like session: it keeps its cookies, doesn't follow redirects,
 // and remembers the CSRF token of the last page it rendered, which it sends
-// with its next form post (`_csrf`) or API call (X-CSRF-Token) unless told
-// `csrf: false`, or given a `csrf` of its own. Responses resolve to
+// with its next form post (`_csrf`) or API call (X-CSRF-Token), unless given
+// `csrf: null` for none or a `csrf` of its own. Responses resolve to
 // {status, headers, location, text, body} with `body` parsed when JSON.
-export function createSession() {
+// `cookie` picks up a session saved from another one.
+export function createSession(cookie = '') {
     const jar = cookieJar();
+    jar.load(cookie);
     let token = null;
     const session = {
         get csrf() { return token; },
@@ -211,14 +219,10 @@ export function createSession() {
 export const CI_USER = { username: 'ci-admin', password: 'ci-password-123' };
 
 // Run the first-run setup wizard on a fresh instance and mint an API key.
-// Returns the raw `cbx_` key. Keys can only be created from a session, so this
-// goes through the same forms a browser would.
-export async function bootstrapApiKey(credentials) {
-    return (await bootstrapPanel(credentials)).key;
-}
-
-// As bootstrapApiKey, plus the logged-in `session` and `page(path)`, a GET on
-// it resolving to {status, html}, for checking what the panel's pages render.
+// Keys can only be created from a session, so this goes through the same
+// forms a browser would. Resolves to the raw `cbx_` key, the logged-in
+// `session`, and `page(path)`, a GET on it resolving to {status, html}, for
+// checking what the panel's pages render.
 export async function bootstrapPanel({ username, password } = CI_USER) {
     const session = createSession();
     const setupPage = await session.get('/setup');
@@ -244,11 +248,24 @@ export async function loginPanel({ username, password } = CI_USER) {
     return { key: await mintApiKey(session), session, page: (path) => pageOf(session, path) };
 }
 
-// Set up a fresh panel, or sign in to one another script already set up
+// Set up a fresh panel, or sign in to one another script already set up.
+// With CRAFTBOX_SESSION_FILE, scripts run one after another share a single
+// signed-in session and API key through that file instead of each signing
+// in, since the login rate limit allows only 5 sign-ins in 15 minutes.
 export async function openPanel(credentials = CI_USER) {
+    const file = process.env.CRAFTBOX_SESSION_FILE;
+    if (file && fs.existsSync(file)) {
+        const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const session = createSession(saved.cookie);
+        if ((await session.get('/account')).status === 200) {
+            return { key: saved.key, session, page: (path) => pageOf(session, path) };
+        }
+    }
     const res = await fetch(`${BASE_URL}/setup`, { redirect: 'manual' });
     await res.arrayBuffer();
-    return res.status === 200 ? bootstrapPanel(credentials) : loginPanel(credentials);
+    const opened = res.status === 200 ? await bootstrapPanel(credentials) : await loginPanel(credentials);
+    if (file) fs.writeFileSync(file, JSON.stringify({ cookie: opened.session.cookie, key: opened.key }));
+    return opened;
 }
 
 async function pageOf(session, path) {

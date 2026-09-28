@@ -172,6 +172,8 @@ async function lifecycle() {
     const autoStart = 'auto-starts across a panel restart only when asked to';
     if (!CONTAINER) {
         for (const name of [crash, autoRestart, signalled, autoStart]) run.skip(name, 'CRAFTBOX_CONTAINER not set');
+        // Leave the port free for whatever uses this panel next
+        if ((await server(id)).state === 'running') await stop(id);
         return;
     }
 
@@ -223,6 +225,7 @@ async function lifecycle() {
         const started = (await api('GET', `/servers/${id}/events?limit=5`)).body.events.find((e) => e.type === 'started');
         assert(started?.initiatedBy === 'Auto Start', `started by ${started?.initiatedBy}`);
     });
+    if ((await server(id)).state === 'running') await stop(id);
 }
 
 // ── Backups ──
@@ -232,7 +235,7 @@ async function backupsSection() {
     let id = null;
     await run.step('creates a vanilla server', async () => {
         id = (await provisionServer(api, {
-            name: 'CI Backups', serverType: 'vanilla', version: 'latest', port: 25565, memory: 1536, eula: true
+            name: 'CI Backups', serverType: 'vanilla', version: 'latest', port: 25566, memory: 1536, eula: true
         }, { timeoutMs: PROVISION_TIMEOUT, label: 'vanilla' })).id;
         socket.send({ type: 'subscribe', serverId: id });
         await socket.waitFor((m) => m.type === 'subscribed' && m.serverId === id, { what: 'subscribed' });
