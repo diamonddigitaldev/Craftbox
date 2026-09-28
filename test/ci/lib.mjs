@@ -3,7 +3,10 @@
 // (22+, for fetch/FormData) and the panel's URL.
 
 import fs from 'node:fs';
+import http from 'node:http';
+import crypto from 'node:crypto';
 import zlib from 'node:zlib';
+import { execFileSync } from 'node:child_process';
 
 export const BASE_URL = (process.env.CRAFTBOX_URL || 'http://localhost:6464').replace(/\/$/, '');
 const API = `${BASE_URL}/api/v1`;
@@ -160,11 +163,52 @@ function cookieJar() {
     };
 }
 
+// The token pages embed for forms (`_csrf`) or for scripts (#csrf-token)
 function csrfFrom(html) {
-    const match = /name="_csrf" value="([^"]+)"/.exec(html);
-    if (!match) throw new Error('No CSRF token on the page.');
-    return match[1];
+    return /name="_csrf" value="([^"]+)"/.exec(html)?.[1] || /id="csrf-token" value="([^"]+)"/.exec(html)?.[1] || null;
 }
+
+// A browser-like session: it keeps its cookies, doesn't follow redirects,
+// and remembers the CSRF token of the last page it rendered, which it sends
+// with its next form post (`_csrf`) or API call (X-CSRF-Token) unless told
+// `csrf: false`, or given a `csrf` of its own. Responses resolve to
+// {status, headers, location, text, body} with `body` parsed when JSON.
+export function createSession() {
+    const jar = cookieJar();
+    let token = null;
+    const session = {
+        get csrf() { return token; },
+        get cookie() { return jar.header(); },
+        async request(method, path, { form, json, headers = {}, csrf = token } = {}) {
+            const init = { method, redirect: 'manual', headers: { cookie: jar.header(), ...headers } };
+            if (form) {
+                init.headers['content-type'] = 'application/x-www-form-urlencoded';
+                init.body = new URLSearchParams(csrf ? { _csrf: csrf, ...form } : form);
+            } else {
+                if (method !== 'GET' && csrf) init.headers['x-csrf-token'] = csrf;
+                if (json instanceof FormData) {
+                    init.body = json;
+                } else if (json !== undefined) {
+                    init.headers['content-type'] = 'application/json';
+                    init.body = JSON.stringify(json);
+                }
+            }
+            const res = await fetch(BASE_URL + path, init);
+            jar.store(res);
+            const text = await res.text();
+            token = csrfFrom(text) || token;
+            let body = null;
+            try { body = text ? JSON.parse(text) : null; } catch { /* a page */ }
+            return { status: res.status, headers: res.headers, location: res.headers.get('location') || '', text, body };
+        },
+        get: (path, opts) => session.request('GET', path, opts),
+        post: (path, form, opts) => session.request('POST', path, { form, ...opts }),
+        api: (method, path, json, opts) => session.request(method, `/api/v1${path}`, { json, ...opts })
+    };
+    return session;
+}
+
+export const CI_USER = { username: 'ci-admin', password: 'ci-password-123' };
 
 // Run the first-run setup wizard on a fresh instance and mint an API key.
 // Returns the raw `cbx_` key. Keys can only be created from a session, so this
@@ -173,58 +217,107 @@ export async function bootstrapApiKey(credentials) {
     return (await bootstrapPanel(credentials)).key;
 }
 
-// As bootstrapApiKey, plus `page(path)`: a GET on the logged-in session
-// resolving to {status, html}, for checking what the panel's pages render.
-export async function bootstrapPanel({ username = 'ci-admin', password = 'ci-password-123' } = {}) {
-    const jar = cookieJar();
-    const page = async (path) => {
-        const res = await fetch(BASE_URL + path, { headers: { cookie: jar.header() }, redirect: 'manual' });
-        jar.store(res);
-        return res;
-    };
-
-    const setupPage = await page('/setup');
+// As bootstrapApiKey, plus the logged-in `session` and `page(path)`, a GET on
+// it resolving to {status, html}, for checking what the panel's pages render.
+export async function bootstrapPanel({ username, password } = CI_USER) {
+    const session = createSession();
+    const setupPage = await session.get('/setup');
     if (setupPage.status !== 200) {
         throw new Error(`Expected a fresh instance, but /setup returned ${setupPage.status} (setup already done?).`);
     }
-    const setupRes = await fetch(`${BASE_URL}/setup`, {
-        method: 'POST',
-        redirect: 'manual',
-        headers: { cookie: jar.header(), 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-            _csrf: csrfFrom(await setupPage.text()),
-            username,
-            password,
-            confirmPassword: password
-        })
-    });
-    jar.store(setupRes);
-    if (setupRes.status !== 302 || !/dashboard/.test(setupRes.headers.get('location') || '')) {
-        throw new Error(`Setup failed: ${setupRes.status} → ${setupRes.headers.get('location')}`);
+    const setupRes = await session.post('/setup', { username, password, confirmPassword: password });
+    if (setupRes.status !== 302 || !/dashboard/.test(setupRes.location)) {
+        throw new Error(`Setup failed: ${setupRes.status} → ${setupRes.location}`);
     }
+    return { key: await mintApiKey(session), session, page: (path) => pageOf(session, path) };
+}
 
-    // Logging in regenerates the session, so fetch a token for the new one
-    const account = await page('/account');
-    const keyRes = await fetch(`${API}/account/apikeys`, {
-        method: 'POST',
-        headers: {
-            cookie: jar.header(),
-            'content-type': 'application/json',
-            'x-csrf-token': csrfFrom(await account.text())
-        },
-        body: JSON.stringify({ name: 'CI' })
-    });
-    const body = await keyRes.json();
-    if (keyRes.status !== 201 || !body.key) {
-        throw new Error(`Could not create an API key: ${keyRes.status} ${JSON.stringify(body)}`);
+// Log in to a panel that's already set up (each attempt counts towards the
+// login rate limit of 5 per 15 minutes) and mint an API key.
+export async function loginPanel({ username, password } = CI_USER) {
+    const session = createSession();
+    await session.get('/login');
+    const res = await session.post('/login', { username, password });
+    if (res.status !== 302 || /login/.test(res.location)) {
+        throw new Error(`Login failed: ${res.status} → ${res.location}`);
     }
-    return {
-        key: body.key,
-        page: async (path) => {
-            const res = await page(path);
-            return { status: res.status, html: await res.text() };
+    return { key: await mintApiKey(session), session, page: (path) => pageOf(session, path) };
+}
+
+async function pageOf(session, path) {
+    const res = await session.get(path);
+    return { status: res.status, html: res.text };
+}
+
+async function mintApiKey(session) {
+    // Logging in regenerates the session, so fetch a token for the new one
+    await session.get('/account');
+    const res = await session.api('POST', '/account/apikeys', { name: 'CI' });
+    if (res.status !== 201 || !res.body?.key) {
+        throw new Error(`Could not create an API key: ${res.status} ${res.text}`);
+    }
+    return res.body.key;
+}
+
+// ── WebSocket ──
+
+// A panel socket that keeps every message it receives, so a check can wait
+// for the one it expects (already arrived or still to come) rather than
+// racing the server. `cookie` is a logged-in session's; `path` '/ws/status'
+// opens the public socket.
+export async function openSocket({ cookie, path = '/' } = {}) {
+    const ws = new WebSocket(BASE_URL.replace(/^http/, 'ws') + path, cookie ? { headers: { cookie } } : undefined);
+    const messages = [];
+    const waiters = new Set();
+    ws.addEventListener('message', (event) => {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch { return; }
+        messages.push(msg);
+        for (const waiter of waiters) {
+            if (waiter.match(msg)) {
+                waiters.delete(waiter);
+                waiter.resolve(msg);
+            }
         }
+    });
+    await new Promise((resolve, reject) => {
+        ws.addEventListener('open', resolve, { once: true });
+        ws.addEventListener('error', () => reject(new Error(`WebSocket ${path} did not open`)), { once: true });
+    });
+    return {
+        messages,
+        send: (msg) => ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)),
+        // Where the message list is now, to wait only for what comes after
+        mark: () => messages.length,
+        waitFor(match, { timeoutMs = 30_000, what = 'matching message', since = 0 } = {}) {
+            const found = messages.slice(since).find(match);
+            if (found) return Promise.resolve(found);
+            return new Promise((resolve, reject) => {
+                const waiter = { match, resolve };
+                waiters.add(waiter);
+                setTimeout(() => {
+                    if (waiters.delete(waiter)) reject(new Error(`no ${what} within ${timeoutMs / 1000}s`));
+                }, timeoutMs);
+            });
+        },
+        close: () => ws.close()
     };
+}
+
+// The HTTP status a WebSocket upgrade request gets, for checking refusals
+export function upgradeStatus(path = '/', headers = {}) {
+    return new Promise((resolve, reject) => {
+        const req = http.request(BASE_URL + path, {
+            headers: {
+                connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13',
+                'sec-websocket-key': crypto.randomBytes(16).toString('base64'), ...headers
+            }
+        });
+        req.on('upgrade', (res, socket) => { socket.destroy(); resolve(res.statusCode); });
+        req.on('response', (res) => { res.resume(); resolve(res.statusCode); });
+        req.on('error', reject);
+        req.end();
+    });
 }
 
 // ── API client ──
@@ -292,7 +385,56 @@ export async function provisionServer(api, body, {
     });
 }
 
+// ── The container ──
+
+// Checks that reach inside the panel's container (killing a JVM, restarting
+// the panel, ageing a session) need its name in CRAFTBOX_CONTAINER, and are
+// skipped without it.
+export const CONTAINER = process.env.CRAFTBOX_CONTAINER || null;
+
+export function docker(args) {
+    return execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+// Run a command in the container as the panel's own user, from /app, so a
+// `node -e` there can require the panel's modules
+export function containerExec(args) {
+    return docker(['exec', '-u', 'craftbox', '-w', '/app', CONTAINER, ...args]);
+}
+
 // ── Test fixtures ──
+
+// A jar that passes for a plugin or mod of `serverType`'s loader: the
+// loader's metadata file and nothing else. Enough for uploads, listings and
+// downloads, not for a server to load.
+export function makeModJar(serverType, id = 'ci_mod') {
+    const metadata = {
+        fabric: ['fabric.mod.json', JSON.stringify({ schemaVersion: 1, id, version: '1.0.0', name: 'CI Mod', environment: '*' })],
+        forge: ['META-INF/mods.toml', `modLoader="javafml"\nloaderVersion="[1,)"\nlicense="MIT"\n[[mods]]\nmodId="${id}"\nversion="1.0.0"\n`],
+        neoforge: ['META-INF/neoforge.mods.toml', `modLoader="javafml"\nloaderVersion="[1,)"\nlicense="MIT"\n[[mods]]\nmodId="${id}"\nversion="1.0.0"\n`],
+        paper: ['plugin.yml', `name: ${id}\nversion: 1.0.0\nmain: ci.${id}.Plugin\napi-version: '1.20'\n`]
+    };
+    const [name, content] = metadata[serverType] || metadata[{ purpur: 'paper', folia: 'paper' }[serverType]];
+    return makeZip({ 'META-INF/MANIFEST.MF': 'Manifest-Version: 1.0\n', [name]: content });
+}
+
+// The names in a zip's central directory, for checking what an archive holds
+export function zipEntries(buf) {
+    const end = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    if (end < 0) throw new Error('not a zip: no end of central directory');
+    const count = buf.readUInt16LE(end + 10);
+    let offset = buf.readUInt32LE(end + 16);
+    const names = [];
+    for (let i = 0; i < count; i++) {
+        if (buf.readUInt32LE(offset) !== 0x02014b50) throw new Error('corrupt central directory');
+        const nameLen = buf.readUInt16LE(offset + 28);
+        const extraLen = buf.readUInt16LE(offset + 30);
+        const commentLen = buf.readUInt16LE(offset + 32);
+        names.push(buf.toString('utf8', offset + 46, offset + 46 + nameLen));
+        offset += 46 + nameLen + extraLen + commentLen;
+    }
+    return names;
+}
 
 // A zip of `entries` ({name: string | Buffer}), stored uncompressed: enough for
 // a test .mrpack without a zip dependency (zlib.crc32 needs Node 22.2+).
@@ -364,6 +506,12 @@ export function createRunner(title) {
                 }
             }
         },
+        // A check that can't run in this environment, such as one that needs
+        // the container when the panel isn't running in Docker
+        skip(name, why) {
+            results.push({ name, ok: true, skipped: why, ms: 0 });
+            console.log(`  - ${name} (skipped: ${why})`);
+        },
         get failed() {
             return results.filter((r) => !r.ok).length;
         },
@@ -374,7 +522,8 @@ export function createRunner(title) {
                 (outages ? ` (${outages} blocked by an upstream outage, not Craftbox)` : ''));
             if (process.env.GITHUB_STEP_SUMMARY) {
                 const cell = (s) => (s || '').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
-                const row = (r) => `| ${r.ok ? '✅' : r.upstream ? '⚠️' : '❌'} | ${cell(r.name)} | ${(r.ms / 1000).toFixed(1)}s | ${r.ok ? '' : cell(r.error)} |`;
+                const row = (r) => `| ${r.skipped ? '⏭️' : r.ok ? '✅' : r.upstream ? '⚠️' : '❌'} | ${cell(r.name)} | ` +
+                    `${(r.ms / 1000).toFixed(1)}s | ${r.skipped ? `skipped: ${cell(r.skipped)}` : r.ok ? '' : cell(r.error)} |`;
                 const table = (rows) => `| | Check | Time | Error |\n|---|---|---|---|\n${rows.map(row).join('\n')}\n\n`;
                 let md = `### ${title}\n\n${table(results.filter((r) => !r.upstream))}`;
                 if (outages) {
