@@ -9,7 +9,8 @@
 // invocations can share one panel.
 
 import {
-    waitForPanel, bootstrapApiKey, apiClient, waitForState,
+    waitForPanel, bootstrapApiKey, apiClient, waitForState, provisionServer,
+    withUpstream, transientError, TYPE_UPSTREAMS,
     createRunner, assert, assertStatus, sleep
 } from './lib.mjs';
 
@@ -47,33 +48,38 @@ for (const type of types) {
     let started = false;
 
     await run.step(`${type}: resolve the latest stable version`, async () => {
-        const res = await api('GET', `/versions?type=${encodeURIComponent(type)}`);
-        assertStatus(res, 200, 'versions');
-        version = res.body.latest;
+        await withUpstream(TYPE_UPSTREAMS[type], async () => {
+            const res = await api('GET', `/versions?type=${encodeURIComponent(type)}`);
+            // Craftbox answers 500 when it couldn't reach the upstream
+            if (res.status === 500) throw transientError(`versions: HTTP 500 ${res.text}`);
+            assertStatus(res, 200, 'versions');
+            version = res.body.latest;
+        });
         assert(version, 'no stable version published');
         console.log(`    latest: ${version}`);
     });
     if (!version) continue;
 
     await run.step(`${type} ${version}: provision`, async () => {
-        const res = await api('POST', '/servers', {
+        const server = await provisionServer(api, {
             name: `CI ${type}`, serverType: type, version,
             port: 25565, memory: 2048, eula: true
-        });
-        assertStatus(res, 201, 'create');
-        id = res.body.server.id;
-        const server = await waitForState(api, id, ['stopped'], { timeoutMs: PROVISION_TIMEOUT, label: type });
+        }, { timeoutMs: PROVISION_TIMEOUT, label: type });
+        id = server.id;
         console.log(`    build: ${server.build ?? 'n/a'}, Java ${server.javaMajor ?? '?'}`);
     });
     if (!id) continue;
 
     await run.step(`${type} ${version}: start and reach "Done"`, async () => {
-        assertStatus(await api('POST', `/servers/${id}/start`), 200, 'start');
-        try {
-            await waitForState(api, id, ['running'], { timeoutMs: START_TIMEOUT, label: type });
-        } catch (err) {
-            throw new Error(`${err.message}\n--- console (tail) ---\n${await consoleTail(api, id)}`);
-        }
+        // Paper and its forks fetch Mojang's jar on their first start
+        await withUpstream(['mojang'], async () => {
+            assertStatus(await api('POST', `/servers/${id}/start`), 200, 'start');
+            try {
+                await waitForState(api, id, ['running'], { timeoutMs: START_TIMEOUT, label: type });
+            } catch (err) {
+                throw new Error(`${err.message}\n--- console (tail) ---\n${await consoleTail(api, id, 30)}`);
+            }
+        });
         started = true;
     });
 

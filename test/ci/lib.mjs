@@ -10,6 +10,124 @@ const API = `${BASE_URL}/api/v1`;
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ── Upstream services ──
+//
+// Creating a server makes Craftbox download from Mojang, PaperMC, the Forge
+// and NeoForge Mavens, Fabric or Purpur, and some checks call Modrinth. Any of
+// them can be down or slow for a while, which is no fault of Craftbox's, so
+// such failures are retried and, if they persist, reported as an upstream
+// outage (UpstreamError) rather than as a failed check.
+
+export const UPSTREAMS = {
+    mojang: 'https://launchermeta.mojang.com/mc/game/version_manifest.json',
+    paper: 'https://fill.papermc.io/v3/projects/paper',
+    folia: 'https://fill.papermc.io/v3/projects/folia',
+    purpur: 'https://api.purpurmc.org/v2/purpur',
+    fabric: 'https://meta.fabricmc.net/v2/versions/game',
+    forge: 'https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json',
+    forgeMaven: 'https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml',
+    neoforge: 'https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge',
+    modrinth: 'https://api.modrinth.com/v2/'
+};
+
+// What each server type pulls from when it's created. Every type but custom
+// also asks Mojang which Java its version needs.
+export const TYPE_UPSTREAMS = {
+    vanilla: ['mojang'],
+    paper: ['paper', 'mojang'],
+    folia: ['folia', 'mojang'],
+    purpur: ['purpur', 'mojang'],
+    fabric: ['fabric', 'mojang'],
+    forge: ['forge', 'forgeMaven', 'mojang'],
+    neoforge: ['neoforge', 'mojang'],
+    custom: ['mojang'] // the tests point custom servers at Mojang's own jars
+};
+
+export class UpstreamError extends Error {
+    constructor(service, detail) {
+        super(`${service} unavailable: ${detail}`);
+        this.name = 'UpstreamError';
+        this.service = service;
+    }
+}
+
+// Messages that point at the network or an upstream rather than Craftbox:
+// Craftbox's own download errors (`HTTP 503`, `fetch failed`, `timed out`),
+// Node's socket errors, and the Java exceptions a Forge/NeoForge installer
+// prints when it can't fetch a library.
+const TRANSIENT_RE = /\bHTTP (?:5\d\d|429)\b|response code: (?:5\d\d|429)|fetch failed|timed out|\btimeout\b|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ENETUNREACH|socket hang up|UND_ERR|SocketTimeoutException|ConnectException|UnknownHostException|SSLHandshakeException|Connection reset/i;
+
+export function looksTransient(err) {
+    return err?.transient === true || TRANSIENT_RE.test(String(err?.message || err || ''));
+}
+
+// An error the check itself raises for something that may be an outage, such
+// as Craftbox answering 500 when it couldn't list an upstream's versions.
+export function transientError(message) {
+    return Object.assign(new Error(message), { transient: true });
+}
+
+// fetch() for a service outside Craftbox. Network errors, timeouts, 429 and
+// 5xx are retried with backoff and then thrown as an UpstreamError; any other
+// response is returned for the caller to judge.
+export async function upstreamFetch(url, init = {}, { attempts = 4, timeoutMs = 30_000 } = {}) {
+    const host = new URL(url).host;
+    let detail = '';
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        if (attempt > 1) await sleep(2000 * 2 ** (attempt - 2)); // 2s, 4s, 8s
+        try {
+            const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+            if (res.status !== 429 && res.status < 500) return res;
+            detail = `HTTP ${res.status}`;
+            await res.body?.cancel();
+        } catch (err) {
+            detail = err.cause?.code || err.message;
+        }
+    }
+    throw new UpstreamError(host, `${detail} (${attempts} attempts)`);
+}
+
+// The first of the named upstreams the runner can't reach, as an
+// UpstreamError, or null when they all answer.
+export async function probeUpstreams(names) {
+    for (const name of names) {
+        try {
+            await (await upstreamFetch(UPSTREAMS[name], {}, { attempts: 3 })).body?.cancel();
+        } catch (err) {
+            if (err instanceof UpstreamError) return err;
+            throw err;
+        }
+    }
+    return null;
+}
+
+// Run `fn`, which has Craftbox call out to the `names` upstreams. A failure
+// that looks like the network's is retried after a pause. If it persists and
+// the runner can't reach one of those upstreams either, it's rethrown as an
+// UpstreamError; if they all answer, the failure is Craftbox's to explain.
+export async function withUpstream(names, fn, { attempts = 2, pauseMs = 20_000 } = {}) {
+    let lastErr;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            return await fn(attempt);
+        } catch (err) {
+            if (err instanceof UpstreamError || !looksTransient(err)) throw err;
+            lastErr = err;
+            if (attempt < attempts) {
+                console.log(`    retrying in ${pauseMs / 1000}s: ${err.message.split('\n')[0]}`);
+                await sleep(pauseMs);
+            }
+        }
+    }
+    const down = await probeUpstreams(names);
+    if (down) {
+        down.message += `\n${lastErr.message}`;
+        throw down;
+    }
+    lastErr.message += `\n(${names.join(', ')} answered the runner, so this is not an outage there)`;
+    throw lastErr;
+}
+
 // ── Panel bootstrap ──
 
 // Wait until the panel answers at all (a container takes a few seconds to boot).
@@ -153,6 +271,27 @@ export async function waitForState(api, id, states, { timeoutMs, label = id } = 
     }
 }
 
+// Create a server (POST `path` with `body`, JSON or FormData) and wait for it
+// to finish provisioning, retrying through a short upstream outage. A failed
+// attempt's server is deleted before the next. `onCreated` sees the 201
+// response of each attempt. Resolves to the provisioned server.
+export async function provisionServer(api, body, {
+    path = '/servers', timeoutMs, label, upstreams = TYPE_UPSTREAMS[body.serverType] || ['mojang'], onCreated
+} = {}) {
+    return withUpstream(upstreams, async () => {
+        const res = await api('POST', path, typeof body === 'function' ? body() : body);
+        assertStatus(res, 201, `create ${label || ''}`.trim());
+        await onCreated?.(res);
+        const id = res.body.server.id;
+        try {
+            return await waitForState(api, id, ['stopped'], { timeoutMs, label: label || id });
+        } catch (err) {
+            await api('DELETE', `/servers/${id}`).catch(() => {});
+            throw err;
+        }
+    });
+}
+
 // ── Test fixtures ──
 
 // A zip of `entries` ({name: string | Buffer}), stored uncompressed: enough for
@@ -197,6 +336,14 @@ export function makeZip(entries) {
 
 // ── Tiny test runner ──
 
+// Workflow-command escaping: the message may span lines, and a property
+// (the title) may hold none of `:` or `,` unescaped.
+const escapeData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+const escapeProperty = (s) => escapeData(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
+
+// Checks that couldn't run because an upstream was down fail the run as
+// well, but are labelled as such everywhere: the log, the annotation and a
+// section of their own in the step summary.
 export function createRunner(title) {
     const results = [];
 
@@ -208,10 +355,13 @@ export function createRunner(title) {
                 results.push({ name, ok: true, ms: Date.now() - started });
                 console.log(`  ✔ ${name}`);
             } catch (err) {
-                results.push({ name, ok: false, ms: Date.now() - started, error: err.message });
-                console.log(`  ✘ ${name}\n      ${err.message}`);
-                // GitHub annotation, so the failure shows on the run summary
-                if (process.env.GITHUB_ACTIONS) console.log(`::error title=${title}: ${name}::${err.message.replace(/\r?\n/g, ' ')}`);
+                const upstream = err instanceof UpstreamError;
+                results.push({ name, ok: false, upstream, ms: Date.now() - started, error: err.message });
+                console.log(`  ${upstream ? '⚠ [upstream unavailable]' : '✘'} ${name}\n      ${err.message.replace(/\n/g, '\n      ')}`);
+                if (process.env.GITHUB_ACTIONS) {
+                    const heading = upstream ? `Upstream unavailable (${err.service}), not a Craftbox failure` : title;
+                    console.log(`::error title=${escapeProperty(`${heading}: ${name}`)}::${escapeData(err.message)}`);
+                }
             }
         },
         get failed() {
@@ -219,12 +369,20 @@ export function createRunner(title) {
         },
         finish() {
             const failed = this.failed;
-            console.log(`\n${title}: ${results.length - failed}/${results.length} passed`);
+            const outages = results.filter((r) => r.upstream).length;
+            console.log(`\n${title}: ${results.length - failed}/${results.length} passed` +
+                (outages ? ` (${outages} blocked by an upstream outage, not Craftbox)` : ''));
             if (process.env.GITHUB_STEP_SUMMARY) {
-                const rows = results.map((r) =>
-                    `| ${r.ok ? '✅' : '❌'} | ${r.name} | ${(r.ms / 1000).toFixed(1)}s | ${r.ok ? '' : (r.error || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')} |`);
-                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-                    `### ${title}\n\n| | Check | Time | Error |\n|---|---|---|---|\n${rows.join('\n')}\n\n`);
+                const cell = (s) => (s || '').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+                const row = (r) => `| ${r.ok ? '✅' : r.upstream ? '⚠️' : '❌'} | ${cell(r.name)} | ${(r.ms / 1000).toFixed(1)}s | ${r.ok ? '' : cell(r.error)} |`;
+                const table = (rows) => `| | Check | Time | Error |\n|---|---|---|---|\n${rows.map(row).join('\n')}\n\n`;
+                let md = `### ${title}\n\n${table(results.filter((r) => !r.upstream))}`;
+                if (outages) {
+                    md += `#### ⚠️ Upstream unavailable\n\nThese checks couldn't run because a service outside Craftbox ` +
+                        `was down, even after retries. They are not Craftbox failures; re-run the job once it's back.\n\n` +
+                        table(results.filter((r) => r.upstream));
+                }
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
             }
             process.exitCode = failed > 0 ? 1 : 0;
         }
