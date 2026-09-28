@@ -248,8 +248,8 @@ The response is `202 {"success": true, "status": "started"}` instead of the endp
 | POST | `/servers/:id/backups` | Create a backup. Body: `{name?, stopFirst?, startAfter?}`. Returns `202`; `409` if running without `stopFirst`, or if a backup is already in progress |
 | POST | `/servers/:id/backups/:backupId/restore` | Restore. Body: `{startAfter?}`. Returns `202` |
 | DELETE | `/servers/:id/backups/:backupId` | Delete a backup |
-| POST | `/servers/:id/backup-schedule` | Body: `{enabled, intervalHours (1–168), countdownMinutes (1–30)}`. Returns `{"backupSchedule": {...}, "nextBackupAt": ...}` |
-| POST | `/servers/:id/backup-retention` | Body: `{retentionCount (0–100), retentionDays (0–365)}` (0 = unlimited) |
+| POST | `/servers/:id/backup-schedule` | Body: `{enabled, intervalHours (1–168), countdownMinutes (1–30)}`. Returns `{"backupSchedule": {...}, "nextBackupAt": ...}`. A field left out or `null` keeps its value. `400` if `enabled` isn't `true`/`false` or a number isn't a whole number in range, and then nothing is saved |
+| POST | `/servers/:id/backup-retention` | Body: `{retentionCount (0–100), retentionDays (0–365)}` (0 = unlimited). A field left out or `null` keeps its value. `400` if a number isn't a whole number in range, and then nothing is saved |
 | GET | `/servers/:id/backups/:backupId/download` | Stream the backup archive as `application/zip`, with an exact `Content-Length` read off the file rather than the record. `404` if the backup does not belong to this server |
 
 

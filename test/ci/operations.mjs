@@ -291,9 +291,9 @@ async function backupsSection() {
         await stop(id);
     });
     await run.step('keeps the backup schedule within range', async () => {
-        const schedule = async (body) => {
+        const schedule = async (body, status = 200) => {
             const res = await api('POST', `/servers/${id}/backup-schedule`, body);
-            assert(res.status === 200 || res.status === 400, `${JSON.stringify(body)}: HTTP ${res.status}`);
+            assert(res.status === status, `${JSON.stringify(body)}: HTTP ${res.status}, expected ${status}`);
             return (await server(id)).backupSchedule;
         };
         let s = await schedule({ enabled: true, intervalHours: 12, countdownMinutes: 3 });
@@ -301,24 +301,30 @@ async function backupsSection() {
         const res = await api('POST', `/servers/${id}/backup-schedule`, { enabled: true, intervalHours: 12, countdownMinutes: 3 });
         const next = Date.parse(res.body.nextBackupAt) - Date.now();
         assert(next > 11 * 3600_000 && next <= 12 * 3600_000, `next backup in ${Math.round(next / 60_000)} minutes`);
-        for (const bad of [{ intervalHours: 0 }, { intervalHours: 169 }, { intervalHours: -5 }, { countdownMinutes: 0 }, { countdownMinutes: 31 }]) {
-            s = await schedule(bad);
-            assert(s.intervalHours === 12 && s.countdownMinutes === 3, `${JSON.stringify(bad)} was stored: ${JSON.stringify(s)}`);
+        // Refused whole, so the valid half of the last one isn't saved either
+        for (const bad of [{ intervalHours: 0 }, { intervalHours: 169 }, { intervalHours: -5 }, { intervalHours: '12abc' },
+            { intervalHours: 1.5 }, { countdownMinutes: 0 }, { countdownMinutes: 31 }, { countdownMinutes: 'soon' },
+            { enabled: 'yes' }, { intervalHours: 6, countdownMinutes: 31 }]) {
+            s = await schedule(bad, 400);
+            assert(s.enabled === true && s.intervalHours === 12 && s.countdownMinutes === 3, `${JSON.stringify(bad)} was stored: ${JSON.stringify(s)}`);
         }
+        s = await schedule({ intervalHours: '6', countdownMinutes: null });
+        assert(s.intervalHours === 6 && s.countdownMinutes === 3, `a digit string, and null for "keep": ${JSON.stringify(s)}`);
         s = await schedule({ enabled: false });
         assert(s.enabled === false, 'not disabled');
         assert((await api('POST', `/servers/${id}/backup-schedule`, {})).body.nextBackupAt === null, 'a disabled schedule has a next backup');
     });
     await run.step('keeps retention within range and applies it', async () => {
-        const retention = async (body) => {
+        const retention = async (body, status = 200) => {
             const res = await api('POST', `/servers/${id}/backup-retention`, body);
-            assert(res.status === 200 || res.status === 400, `${JSON.stringify(body)}: HTTP ${res.status}`);
+            assert(res.status === status, `${JSON.stringify(body)}: HTTP ${res.status}, expected ${status}`);
             return (await server(id)).backupSchedule;
         };
         let s = await retention({ retentionCount: 2, retentionDays: 0 });
         assert(s.retentionCount === 2 && s.retentionDays === 0, JSON.stringify(s));
-        for (const bad of [{ retentionCount: -1 }, { retentionCount: 101 }, { retentionDays: 366 }, { retentionDays: -1 }]) {
-            s = await retention(bad);
+        for (const bad of [{ retentionCount: -1 }, { retentionCount: 101 }, { retentionCount: '3x' }, { retentionDays: 366 },
+            { retentionDays: -1 }, { retentionDays: 0.5 }, { retentionCount: 4, retentionDays: 366 }]) {
+            s = await retention(bad, 400);
             assert(s.retentionCount === 2 && s.retentionDays === 0, `${JSON.stringify(bad)} was stored: ${JSON.stringify(s)}`);
         }
         for (const name of ['CI retention 1', 'CI retention 2']) {

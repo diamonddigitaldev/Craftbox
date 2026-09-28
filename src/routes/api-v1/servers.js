@@ -699,13 +699,47 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
     }
 });
 
+// The backup schedule's numeric settings, with the range each accepts and how
+// a refusal reads (the Backups page shows it as is).
+const BACKUP_SETTINGS = {
+    intervalHours: { min: 1, max: 168, error: 'The backup interval must be a whole number of hours between 1 and 168.' },
+    countdownMinutes: { min: 1, max: 30, error: 'The warning countdown must be a whole number of minutes between 1 and 30.' },
+    retentionCount: { min: 0, max: 100, error: 'The number of backups to keep must be a whole number between 0 and 100.' },
+    retentionDays: { min: 0, max: 365, error: 'The number of days to keep backups for must be a whole number between 0 and 365.' }
+};
+
+// Read the named backup settings from a request body, all or nothing: a
+// setting left out (or null, which is what the page sends for an empty box)
+// keeps its value, and anything else must be a whole number in range, as a
+// number or a string of digits. parseInt used to take '12abc' as 12 and 1.5
+// as 1, and an out-of-range value was dropped while the request still
+// answered 200.
+function readBackupSettings(body, keys) {
+    const values = {};
+    for (const key of keys) {
+        const raw = body[key];
+        if (raw == null) continue;
+        const n = typeof raw === 'number' ? raw
+            : typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : NaN;
+        const { min, max, error } = BACKUP_SETTINGS[key];
+        if (!Number.isInteger(n) || n < min || n > max) return { error };
+        values[key] = n;
+    }
+    return { values };
+}
+
 // POST /servers/:id/backup-schedule — Update backup schedule settings
 router.post('/servers/:id/backup-schedule', async (req, res) => {
     try {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
-        const { enabled, intervalHours, countdownMinutes } = req.body;
+        const body = req.body || {};
+        if (body.enabled != null && ![true, false, 'true', 'false'].includes(body.enabled)) {
+            return res.status(400).json({ error: 'enabled must be true or false.' });
+        }
+        const { values, error } = readBackupSettings(body, ['intervalHours', 'countdownMinutes']);
+        if (error) return res.status(400).json({ error });
 
         if (!server.backupSchedule) {
             server.backupSchedule = {
@@ -717,15 +751,8 @@ router.post('/servers/:id/backup-schedule', async (req, res) => {
             };
         }
 
-        if (typeof enabled === 'boolean') server.backupSchedule.enabled = enabled;
-        if (intervalHours != null) {
-            const h = parseInt(intervalHours, 10);
-            if (h >= 1 && h <= 168) server.backupSchedule.intervalHours = h;
-        }
-        if (countdownMinutes != null) {
-            const m = parseInt(countdownMinutes, 10);
-            if (m >= 1 && m <= 30) server.backupSchedule.countdownMinutes = m;
-        }
+        if (body.enabled != null) server.backupSchedule.enabled = body.enabled === true || body.enabled === 'true';
+        Object.assign(server.backupSchedule, values);
 
         delete server.backupSchedule.nextBackupAt;
 
@@ -757,6 +784,9 @@ router.post('/servers/:id/backup-retention', async (req, res) => {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
+        const { values, error } = readBackupSettings(req.body || {}, ['retentionCount', 'retentionDays']);
+        if (error) return res.status(400).json({ error });
+
         if (!server.backupSchedule) {
             server.backupSchedule = {
                 enabled: false,
@@ -767,15 +797,7 @@ router.post('/servers/:id/backup-retention', async (req, res) => {
             };
         }
 
-        const { retentionCount, retentionDays } = req.body;
-        if (retentionCount != null) {
-            const n = parseInt(retentionCount, 10);
-            if (n >= 0 && n <= 100) server.backupSchedule.retentionCount = n;
-        }
-        if (retentionDays != null) {
-            const d = parseInt(retentionDays, 10);
-            if (d >= 0 && d <= 365) server.backupSchedule.retentionDays = d;
-        }
+        Object.assign(server.backupSchedule, values);
 
         await serversDb.set(`server_${server.id}`, server);
         res.json({ backupSchedule: server.backupSchedule });
