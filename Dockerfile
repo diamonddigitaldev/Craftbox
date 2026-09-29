@@ -74,6 +74,8 @@ WORKDIR /app
 # Compiled dependencies from the builder stage
 COPY --from=builder --chown=craftbox:craftbox /app/node_modules ./node_modules
 COPY --chown=craftbox:craftbox package*.json ./
+# The AGPL's text goes with every copy distributed, the image included
+COPY --chown=craftbox:craftbox LICENSE ./
 
 # Application source
 COPY --chown=craftbox:craftbox src/ ./src/
