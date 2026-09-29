@@ -135,8 +135,9 @@ for (const target of targets) {
 
         await run.step(`${label}: answer a console command`, async () => {
             assertStatus(await api('POST', `/servers/${id}/command`, { command: 'list' }), 200, 'command');
-            // "There are 0 of a max of 20 players online", or "0/20" before 1.13
-            await waitForConsole(api, id, /There are \d+(\/\d+| of a max of \d+)? players online/i, 30_000);
+            // "There are 0 of a max of 20 players online", "0 of a max 20" from
+            // 1.13 to 1.15, or "0/20" before 1.13
+            await waitForConsole(api, id, /There are \d+(\/\d+| of a max (of )?\d+)? players online/i, 30_000);
         });
 
         await run.step(`${label}: stop cleanly`, async () => {
