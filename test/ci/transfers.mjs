@@ -279,6 +279,20 @@ await run.step('duplicates a server, with and without its world', async () => {
     const whole = await copy('CI Copy World', 25571, true);
     assert(await readFile(whole, 'world/ci.txt') === 'a world\n', 'the world was left behind');
     assertStatus(await api('POST', `${v}/duplicate`, { name: 'bad/name', port: 25572 }), 400, 'a bad name');
+
+    // A world under its own level-name, as Paper splits it into three
+    // folders, is left behind just the same
+    assertStatus(await api('POST', `${v}/properties`, { 'level-name': 'ci-realm' }), 200, 'level-name');
+    const realm = ['ci-realm', 'ci-realm_nether', 'ci-realm_the_end'];
+    for (const dir of realm) {
+        assertStatus(await api('POST', `${v}/files/mkdir`, { name: dir }), [200, 201], dir);
+        assertStatus(await api('POST', `${v}/edit-file`, { filePath: `${dir}/ci.txt`, content: 'a realm\n' }), 200, `${dir} file`);
+    }
+    const named = await copy('CI Copy Named World', 25573, false);
+    const copied = [];
+    for (const dir of realm) if (await exists(named, `${dir}/ci.txt`)) copied.push(dir);
+    assert(copied.length === 0, `came along without includeWorld: ${copied.join(', ')}`);
+    assertStatus(await api('POST', `${v}/properties`, { 'level-name': 'world' }), 200, 'level-name back');
 });
 await run.step('saves a template from a server and deletes it', async () => {
     assertStatus(await api('POST', '/templates', { serverId: vanilla.id, name: 'bad/name' }), 400, 'a bad name');

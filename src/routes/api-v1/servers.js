@@ -2180,9 +2180,18 @@ router.post('/servers/:id/duplicate', async (req, res) => {
                 await fs.promises.cp(sourceDir, newDir, { recursive: true });
 
                 if (includeWorld !== 'true' && includeWorld !== true) {
-                    const worldDirs = ['world', 'world_nether', 'world_the_end'];
+                    // The world lives under level-name ("world" unless changed),
+                    // split into three folders by Paper, Purpur and Folia. The
+                    // default names go too, as they did before, in case a world
+                    // was generated under them before level-name changed.
+                    const level = parseServerProperties(newDir)['level-name'] || 'world';
+                    const worldDirs = new Set(['world', 'world_nether', 'world_the_end',
+                        level, `${level}_nether`, `${level}_the_end`]);
                     for (const dir of worldDirs) {
                         const worldPath = path.join(newDir, dir);
+                        // level-name is free text: never let "." or "../x"
+                        // point this at the copy itself or outside it
+                        if (path.resolve(worldPath) === path.resolve(newDir) || !isPathInside(newDir, worldPath)) continue;
                         await fs.promises.rm(worldPath, { recursive: true, force: true });
                     }
                 }
