@@ -8,7 +8,7 @@ const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
 const { isEditableFile, listDirectory, MAX_TEXT_BYTES } = require('../utils/fileBrowser');
 const { formatSize, getDirectorySize } = require('../utils/resourceStats');
 const { serversDb, SERVERS_DIR } = require('../db');
-const { parseServerProperties } = require('../mc/serverProperties');
+const { parseServerProperties, modeNameOf } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { WORLD_PRESETS, LEGACY_WORLD_TYPES, worldTypesFor, worldTypeFor } = require('../mc/worldTypes');
 const { log } = require('../utils/log');
@@ -140,6 +140,11 @@ router.get('/servers/:id/properties', ensureAuth, blockWhileProvisioning, async 
 
     const serverDir = path.join(SERVERS_DIR, server.id);
     const properties = parseServerProperties(serverDir);
+    // A server before 1.14 holds these as numbers; the selects show names,
+    // and a save writes the numbers back (POST /api/v1/servers/:id/properties)
+    for (const key of ['gamemode', 'difficulty']) {
+        if (key in properties) properties[key] = modeNameOf(key, properties[key]);
+    }
 
     res.render('servers/properties', {
         title: server.name + ' Properties',

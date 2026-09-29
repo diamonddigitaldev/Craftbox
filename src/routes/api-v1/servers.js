@@ -2461,7 +2461,7 @@ router.post('/servers/:id/edit', async (req, res) => {
                 'difficulty': difficultyStr,
                 ...(levelTypeStr !== undefined ? { 'level-type': levelTypeStr } : {}),
                 'level-seed': seedStr
-            });
+            }, { version: server.version });
         }
 
         const proc = req.app.get('serverManager')?.getProcess(id);
@@ -2526,7 +2526,9 @@ router.post('/servers/:id/properties', async (req, res) => {
             updates[key] = String(body[key]);
         }
 
-        updateServerProperties(serverDir, updates);
+        // Game mode and difficulty are shown and taken as names; a server
+        // before 1.14 is written the numbers it reads
+        updateServerProperties(serverDir, updates, { version: server.version });
         await syncServerConfig(id);
 
         const changed = Object.keys(updates).filter(key => updates[key] !== currentProps[key]);
