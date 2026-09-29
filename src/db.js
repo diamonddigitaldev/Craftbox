@@ -43,7 +43,10 @@ async function markAllServersStopped({ reason } = {}) {
         for (const row of rows) {
             const server = row?.value;
             if (!server || typeof server !== 'object') continue;
-            if (server.state === 'stopped') continue;
+            // Only states a restart makes untrue are reset. A crash stays one,
+            // with its reason and exit code: resetting it to `stopped` lost the
+            // banner, and left a failed duplicate or import looking whole.
+            if (server.state === 'stopped' || server.state === 'crashed') continue;
 
             const incompleteReason = INCOMPLETE_STATES[server.state];
             if (incompleteReason) {

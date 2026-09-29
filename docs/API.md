@@ -89,6 +89,8 @@ Allowed lifecycle actions: **start** from `stopped`/`crashed`; **stop** from `ru
 
 A server whose process ends without Craftbox asking it to is `crashed`, and `crashReason` says why: `oom` (an `OutOfMemoryError` in the console, on which Craftbox kills the server straight away), `crash_report` (Minecraft wrote a crash report), `exit_code` (a non-zero exit, given in `exitCode`) or `signal` (the process was killed by a signal, so `exitCode` is null; this is how the system's out-of-memory killer ends a server in a memory-limited container). A failed operation leaves a sentence instead, such as `Duplication failed: …`. A stop, restart or kill from Craftbox, or `stop` typed into the console, ends in `stopped`.
 
+When the panel restarts, a server that was `starting`, `running`, `stopping`, `backing_up` or `restoring` comes back `stopped` (auto-start then starts the ones that have it on), and one caught `provisioning` or `upgrading_jar` comes back `crashed` with a reason saying so. A `crashed` server stays `crashed`, with its `crashReason` and `exitCode`; before 1.2.3 a panel restart turned it into `stopped`.
+
 > **Provisioning is exclusive.** A server created, imported, duplicated or built from a modpack stays `provisioning` until its directory is fully assembled, and can only leave that state for `stopped` or `crashed`. Backups, restores, jar upgrades, restarts, and the settings/properties restore-point saves all reject with `409 {"error": "Wait for the server to finish provisioning."}` until it clears — `stopFirst` does not override this. Poll `GET /servers/:id` or watch the WebSocket `state` message to know when it is ready.
 
 ### Shared ports

@@ -222,6 +222,7 @@
                 if (crashReason && (
                     crashReason.indexOf('Provisioning failed') === 0 ||
                     crashReason.indexOf('Duplication failed') === 0 ||
+                    crashReason.indexOf('Import failed') === 0 ||
                     crashReason.indexOf('Jar upgrade interrupted') === 0 ||
                     crashReason.indexOf('Provisioning interrupted') === 0 ||
                     crashReason.indexOf('Modpack install failed') === 0

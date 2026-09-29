@@ -6,7 +6,8 @@
 //   restart behind a backup, kill, the guards on a running server, a second
 //   server sharing its port (warned about, never run beside it), crash
 //   detection and auto-restart (the JVM killed inside the container), a
-//   restore-point settings save, and auto-start across a panel restart;
+//   restore-point settings save, and a crash and auto-start across a panel
+//   restart;
 // - backups: backup, download, restore, restore-point Properties saves,
 //   backing up and restoring a running server, and the schedule and
 //   retention settings.
@@ -210,7 +211,7 @@ async function lifecycle() {
     const crash = 'detects a crash, and keeps its details off the status page';
     const autoRestart = 'restarts itself after a crash when auto-restart is on';
     const signalled = 'detects a JVM killed by a signal (as the kernel\'s OOM killer does)';
-    const autoStart = 'auto-starts across a panel restart only when asked to';
+    const autoStart = 'keeps a crash, and auto-starts only when asked to, across a panel restart';
     if (!CONTAINER) {
         for (const name of [crash, autoRestart, signalled, autoStart]) run.skip(name, 'CRAFTBOX_CONTAINER not set');
         // Leave the port free for whatever uses this panel next
@@ -254,11 +255,20 @@ async function lifecycle() {
             socket = await openSocket({ cookie: session.cookie });
         };
         assertStatus(await api('POST', `/servers/${id}/autostart`, { enabled: false }), 200, 'autostart off');
+        // Crashed going in, which the restart must keep (it used to become
+        // a clean stop, losing the crash banner)
+        assertStatus(await api('POST', `/servers/${id}/autorestart`, { enabled: false }), 200, 'autorestart off');
+        signalJava('TERM');
+        await waitForState(api, id, ['crashed'], { timeoutMs: 60_000 });
         await restartPanel();
         await sleep(5000);
         const after = await server(id);
-        assert(after.state === 'stopped', `with auto-start off it came back ${after.state}`);
+        assert(after.state === 'crashed' && after.crashReason === 'exit_code' && after.exitCode === 143,
+            `with auto-start off it came back ${after.state} (crashReason ${after.crashReason}, exitCode ${after.exitCode})`);
         assert(after.name === 'CI Lifecycle' && after.version === latest, 'the record changed across the restart');
+        const html = (await session.get(`/servers/${id}`)).text;
+        assert(/id="crash-banner"\s+style="display: flex;"/.test(html) && /Exit code: <strong>143<\/strong>/.test(html),
+            'no crash banner on the server page after the restart');
 
         assertStatus(await api('POST', `/servers/${id}/autostart`, { enabled: true }), 200, 'autostart on');
         await restartPanel();
