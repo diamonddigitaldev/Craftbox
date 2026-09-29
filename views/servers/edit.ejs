@@ -88,7 +88,11 @@ const _gate = 'stopped crashed'; %>
                                                     <label for="port" class="form-label required-star">Server
                                                         Port</label>
                                                     <input type="number" class="form-control" id="port" name="port"
-                                                        value="<%= server.port %>" min="1024" max="65535" required>
+                                                        value="<%= server.port %>" min="1024" max="65535" required
+                                                        data-ports-in-use="<%= JSON.stringify(portsInUse) %>"
+                                                        data-port-exclude="<%= server.id %>">
+                                                    <div class="form-text text-warning d-none" data-port-clash-for="port"
+                                                        aria-live="polite"></div>
                                                 </div>
                                 </div>
 
@@ -483,7 +487,10 @@ const _gate = 'stopped crashed'; %>
                                                             Port</label>
                                                         <input type="number" class="form-control" id="dup-port"
                                                             name="port" value="<%= server.port + 1 %>" min="1024"
-                                                            max="65535" required>
+                                                            max="65535" required
+                                                            data-ports-in-use="<%= JSON.stringify(portsInUse) %>">
+                                                        <div class="form-text text-warning d-none"
+                                                            data-port-clash-for="dup-port" aria-live="polite"></div>
                                                     </div>
                                                 </div>
                                                 <div class="form-check mb-3">

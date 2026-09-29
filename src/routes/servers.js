@@ -8,13 +8,14 @@ const blockWhileProvisioning = require('../middleware/blockWhileProvisioning');
 const { isEditableFile, listDirectory, MAX_TEXT_BYTES } = require('../utils/fileBrowser');
 const { formatSize, getDirectorySize } = require('../utils/resourceStats');
 const { serversDb, SERVERS_DIR } = require('../db');
-const { parseServerProperties } = require('../mc/serverProperties');
+const { parseServerProperties, modeNameOf } = require('../mc/serverProperties');
 const { PROPERTY_META, GROUPS } = require('../mc/propertyMeta');
 const { WORLD_PRESETS, LEGACY_WORLD_TYPES, worldTypesFor, worldTypeFor } = require('../mc/worldTypes');
 const { log } = require('../utils/log');
 const { hasIcon } = require('../utils/serverIcon');
 const { isPathInside } = require('../utils/pathSafety');
 const { getDistinctGroups } = require('../utils/serverGroups');
+const { portsInUse } = require('../utils/portClash');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, async (req, res) => {
@@ -26,6 +27,8 @@ router.get('/servers/create', ensureAuth, async (req, res) => {
         groupNames: await getDistinctGroups().catch(() => []),
         // The version is picked on the page, so both World Type lists go along
         worldTypeLists: { presets: WORLD_PRESETS, legacy: LEGACY_WORLD_TYPES },
+        // A new server listens on every address, so every server's port counts
+        portsInUse: await portsInUse(),
         messages: req.session.flash || {},
         csrfToken: res.locals.csrfToken
     });
@@ -113,6 +116,8 @@ router.get('/servers/:id/edit', ensureAuth, blockWhileProvisioning, async (req, 
             ? (worldTypeFor(props['level-type'], server.version) || props['level-type'])
             : worldTypesFor(server.version)[0].value,
         hasIcon: hasIcon(server.id),
+        // For the Port and Duplicate fields; a copy keeps this server-ip too
+        portsInUse: await portsInUse({ serverIp: props['server-ip'] || '' }),
         user: req.user,
         groupNames: await getDistinctGroups().catch(() => []),
         messages: req.session.flash || {},
@@ -135,6 +140,11 @@ router.get('/servers/:id/properties', ensureAuth, blockWhileProvisioning, async 
 
     const serverDir = path.join(SERVERS_DIR, server.id);
     const properties = parseServerProperties(serverDir);
+    // A server before 1.14 holds these as numbers; the selects show names,
+    // and a save writes the numbers back (POST /api/v1/servers/:id/properties)
+    for (const key of ['gamemode', 'difficulty']) {
+        if (key in properties) properties[key] = modeNameOf(key, properties[key]);
+    }
 
     res.render('servers/properties', {
         title: server.name + ' Properties',

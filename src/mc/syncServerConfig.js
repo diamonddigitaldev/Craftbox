@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { serversDb, SERVERS_DIR } = require('../db');
-const { parseServerProperties } = require('./serverProperties');
+const { parseServerProperties, modeNameOf } = require('./serverProperties');
 const { log } = require('../utils/log');
 
 /**
@@ -31,16 +31,15 @@ async function syncServerConfig(serverId) {
         }
     }
 
-    if (props['gamemode'] && props['gamemode'] !== server.gamemode) {
-        log('info', `[${server.name}] Config sync: gamemode ${server.gamemode} → ${props['gamemode']}`);
-        server.gamemode = props['gamemode'];
-        changed = true;
-    }
-
-    if (props['difficulty'] && props['difficulty'] !== server.difficulty) {
-        log('info', `[${server.name}] Config sync: difficulty ${server.difficulty} → ${props['difficulty']}`);
-        server.difficulty = props['difficulty'];
-        changed = true;
+    // Before 1.14 the file holds these as numbers (see serverProperties.js);
+    // the record always holds the name
+    for (const key of ['gamemode', 'difficulty']) {
+        const value = props[key] ? modeNameOf(key, props[key]) : '';
+        if (value && value !== server[key]) {
+            log('info', `[${server.name}] Config sync: ${key} ${server[key]} → ${value}`);
+            server[key] = value;
+            changed = true;
+        }
     }
 
     if (props['level-seed'] !== undefined && props['level-seed'] !== server.seed) {

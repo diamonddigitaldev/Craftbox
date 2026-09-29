@@ -222,6 +222,7 @@
                 if (crashReason && (
                     crashReason.indexOf('Provisioning failed') === 0 ||
                     crashReason.indexOf('Duplication failed') === 0 ||
+                    crashReason.indexOf('Import failed') === 0 ||
                     crashReason.indexOf('Jar upgrade interrupted') === 0 ||
                     crashReason.indexOf('Provisioning interrupted') === 0 ||
                     crashReason.indexOf('Modpack install failed') === 0
@@ -230,7 +231,9 @@
                 } else {
                     var reasonText = crashReason === 'oom'
                         ? ' due to Out of Memory'
-                        : '';
+                        : crashReason === 'signal'
+                            ? ': its process was killed, as the system does when it runs out of memory'
+                            : '';
                     var exitText = exitCode != null
                         ? ' Exit code: <strong>' + exitCode + '</strong>.'
                         : '';

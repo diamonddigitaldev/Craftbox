@@ -1,5 +1,6 @@
 // Server start test: for each server type, create a server through the API,
-// start it, wait for the "Done" line, round-trip a console command, stop it
+// start it, wait for the "Done" line, check it plays the game mode and
+// difficulty it was given, round-trip a console command, stop it
 // and delete it.
 //
 //   CRAFTBOX_URL=http://localhost:6464 node test/ci/server-start.mjs paper fabric
@@ -88,7 +89,8 @@ for (const target of targets) {
     const label = `${type} ${version}`;
 
     await run.step(`${label}: provision`, async () => {
-        const body = { name: `CI ${type}`, serverType: type, version, port: 25565, memory: 2048, eula: true };
+        // Not the defaults, so a version that can't read them shows it
+        const body = { name: `CI ${type}`, serverType: type, version, port: 25565, memory: 2048, eula: true, gamemode: 'creative', difficulty: 'hard' };
         if (type === 'custom') {
             body.customJarUrl = await mojangServerJar(version);
             delete body.version;
@@ -121,10 +123,21 @@ for (const target of targets) {
             });
         }
 
+        await run.step(`${label}: play the game mode and difficulty it was given`, async () => {
+            // A value the server couldn't read is rewritten as the default it
+            // used instead (Survival, Easy) by the time it's up. Before 1.14
+            // the file holds numbers.
+            const props = (await api('GET', `/servers/${id}/file?path=server.properties`)).body?.file?.content || '';
+            const value = (key) => new RegExp(`^${key}=(.*)$`, 'm').exec(props)?.[1]?.trim();
+            assert(['1', 'creative'].includes(value('gamemode')) && ['3', 'hard'].includes(value('difficulty')),
+                `gamemode=${value('gamemode')}, difficulty=${value('difficulty')}`);
+        });
+
         await run.step(`${label}: answer a console command`, async () => {
             assertStatus(await api('POST', `/servers/${id}/command`, { command: 'list' }), 200, 'command');
-            // "There are 0 of a max of 20 players online", or "0/20" before 1.13
-            await waitForConsole(api, id, /There are \d+(\/\d+| of a max of \d+)? players online/i, 30_000);
+            // "There are 0 of a max of 20 players online", "0 of a max 20" from
+            // 1.13 to 1.15, or "0/20" before 1.13
+            await waitForConsole(api, id, /There are \d+(\/\d+| of a max (of )?\d+)? players online/i, 30_000);
         });
 
         await run.step(`${label}: stop cleanly`, async () => {

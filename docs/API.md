@@ -30,7 +30,7 @@ Failed authentication returns `401 {"error": "unauthorized"}`.
 
 ### Session cookies (browser clients)
 
-The panel frontend authenticates with a session cookie (`POST /login`, rate limited to 5 attempts per 15 minutes per IP). Cookie-based callers must send a CSRF token on every mutating request (POST/DELETE), either as an `X-CSRF-Token` header or a `_csrf` body field. The token is embedded in every panel page. CSRF failures return `403 {"error": "forbidden"}`.
+The panel frontend authenticates with a session cookie (`POST /login`, rate limited to 5 failed sign-ins per 15 minutes per IP). Cookie-based callers must send a CSRF token on every mutating request (POST/DELETE), either as an `X-CSRF-Token` header or a `_csrf` body field. The token is embedded in every panel page. CSRF failures return `403 {"error": "forbidden"}`.
 
 > If you are building an external tool, use an API key. Sessions are `SameSite=Strict`, expire after one hour, and require CSRF handling.
 
@@ -87,7 +87,18 @@ Completion is signalled over the WebSocket as an `operation` message (see [WebSo
 
 Allowed lifecycle actions: **start** from `stopped`/`crashed`; **stop** from `running`/`starting`; **restart** from `running`; **kill** from `running`/`starting`/`stopping`.
 
+A server whose process ends without Craftbox asking it to is `crashed`, and `crashReason` says why: `oom` (an `OutOfMemoryError` in the console, on which Craftbox kills the server straight away), `crash_report` (Minecraft wrote a crash report), `exit_code` (a non-zero exit, given in `exitCode`) or `signal` (the process was killed by a signal, so `exitCode` is null; this is how the system's out-of-memory killer ends a server in a memory-limited container). A failed operation leaves a sentence instead, such as `Duplication failed: …`. A stop, restart or kill from Craftbox, or `stop` typed into the console, ends in `stopped`.
+
+When the panel restarts, a server that was `starting`, `running`, `stopping`, `backing_up` or `restoring` comes back `stopped` (auto-start then starts the ones that have it on), and one caught `provisioning` or `upgrading_jar` comes back `crashed` with a reason saying so. A `crashed` server stays `crashed`, with its `crashReason` and `exitCode`; before 1.2.3 a panel restart turned it into `stopped`.
+
 > **Provisioning is exclusive.** A server created, imported, duplicated or built from a modpack stays `provisioning` until its directory is fully assembled, and can only leave that state for `stopped` or `crashed`. Backups, restores, jar upgrades, restarts, and the settings/properties restore-point saves all reject with `409 {"error": "Wait for the server to finish provisioning."}` until it clears — `stopFirst` does not override this. Poll `GET /servers/:id` or watch the WebSocket `state` message to know when it is ready.
+
+### Shared ports
+
+Two servers can be saved with the same port, since keeping a copy of a server beside it is a fair use; only one of them can run at a time. A server's `server-ip` (blank means every address) is taken into account, so servers bound to two different specific addresses don't share anything.
+
+- **Starting** or **restarting** a server while another server's process holds its port is refused with `409 {"error": "Port 25565 is in use by \"Survival\". Stop that server, or change this one's port."}`. Before 1.2.3 the second server was started anyway and crashed when Minecraft couldn't bind the port. The operations that start a server afterwards (`startAfter`, a restore-point save of a running server, auto-start) report the same reason as they report any failed start.
+- **Saving** a server with a port another server uses answers as usual, with a `warnings` array of sentences such as `Port 25565 is also used by "Survival". Only one of them can run at a time.` This happens on every create (`/servers`, `/servers/from-modpack`, `/servers/from-mrpack`), on `/duplicate` and on `/import`, and on `/edit` and `/properties` when the request changes the port (or, on `/properties`, `server-ip`). Those responses always carry `warnings`, empty when there's nothing to say, `202` restore-point answers included.
 
 
 ## Servers
@@ -110,10 +121,10 @@ The server object returned by these endpoints contains the full configuration (n
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. `gamemode` defaults to `survival` and `difficulty` to `normal`. See [World Type](#world-type) for `levelType`. Returns `201 {"success": true, "server": {...}}`; provisioning continues in the background |
+| POST | `/servers` | Create a server. Body: `{name, serverType, version, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, customJarUrl?}`. `eula` must be truthy; `customJarUrl` required (http/https) when `serverType` is `custom`. `gamemode` defaults to `survival` and `difficulty` to `normal`; both are always names here and in the server record, but Minecraft before 1.14 reads them only as numbers (a name there quietly plays Survival on Easy), so for those versions Craftbox writes the numbers to `server.properties`. See [World Type](#world-type) for `levelType`. Returns `201 {"success": true, "server": {...}, "warnings": [...]}` (see [Shared ports](#shared-ports)); provisioning continues in the background |
 | POST | `/servers/from-modpack` | Create from a Modrinth modpack — see [Modrinth](#modrinth) |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack` file — see [Modrinth](#modrinth) |
-| POST | `/servers/:id/duplicate` | Clone a server. Body: `{name, port, includeWorld?, stopFirst?, startAfter?}`. `409` if running and `stopFirst` is not set. Returns `201` |
+| POST | `/servers/:id/duplicate` | Clone a server. Body: `{name, port, includeWorld?, stopFirst?, startAfter?}`. Without `includeWorld: true` the copy leaves the world out: the folder `level-name` names, its `_nether` and `_the_end` folders, and `world`, `world_nether` and `world_the_end`. `409` if running and `stopFirst` is not set. Returns `201 {"success": true, "server": {...}, "warnings": [...]}` (see [Shared ports](#shared-ports)) |
 | POST | `/servers/import` | Import a transfer archive — see [Server transfer](#server-transfer) |
 | DELETE | `/servers/:id` | Delete a server and its data. `409` unless `stopped`/`crashed` |
 
@@ -121,9 +132,9 @@ The server object returned by these endpoints contains the full configuration (n
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/start` | Start. Returns `{"success": true, "message": ...}`; `400` on invalid state transition |
+| POST | `/servers/:id/start` | Start. Returns `{"success": true, "message": ...}`; `400` on invalid state transition; `409` while another server holds its port (see [Shared ports](#shared-ports)) |
 | POST | `/servers/:id/stop` | Graceful stop |
-| POST | `/servers/:id/restart` | Restart. Body: `{backup?: true}` to back up first (returns `202`; `409` if a backup is already in progress) |
+| POST | `/servers/:id/restart` | Restart. Body: `{backup?: true}` to back up first (returns `202`; `409` if a backup is already in progress). `409` while another server holds the port it would restart on, checked before it stops |
 | POST | `/servers/:id/kill` | Force-kill the process |
 | POST | `/servers/:id/command` | Send a console line. Body: `{command}`. `409` if not running |
 
@@ -145,14 +156,14 @@ The [WebSocket](#websocket-protocol) is the live feed, but it does not accept be
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, version?, customJarUrl?, backup?}`. Version changes must be upgrades (release versions compare numerically; snapshot/pre-release versions compare by the provider's chronological ordering) and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool}`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead |
+| POST | `/servers/:id/edit` | Edit config. Body: `{name, port, memory, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?, version?, customJarUrl?, backup?}`. Version changes must be upgrades (release versions compare numerically; snapshot/pre-release versions compare by the provider's chronological ordering) and require the server stopped (`409` otherwise); may download a new jar. Returns `{"success": true, "server": {...}, "versionChanged": bool, "jarChanged": bool, "warnings": [...]}` (see [Shared ports](#shared-ports)). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead |
 | POST | `/servers/:id/group` | Assign the dashboard group. Body: `{group}` (empty/null to ungroup). Returns `{"group": ..., "color": ...}` — `color` is the group's folder color (null when ungrouped) |
 | POST | `/servers/:id/autorestart` | Body: `{enabled: bool}`. Returns `{"autoRestart": bool}` |
 | POST | `/servers/:id/autostart` | Body: `{enabled: bool}`. Returns `{"autoStart": bool}` |
 | POST | `/servers/:id/statuspublic` | Toggle listing on the `/status` index. Body: `{enabled: bool}`. Does **not** gate direct access — see [Public status endpoints](#public-status-endpoints) |
 | POST | `/servers/:id/advertisedip` | Set the address shown on the status page. Body: `{value}` |
 | POST | `/servers/:id/motd` | Set the MOTD. Body: `{motd}` |
-| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). A partial update: properties left out keep their current value, and keys not already in the file are ignored. Toggles take `true`/`false` (boolean or string) — anything else is `400`. With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true}` |
+| POST | `/servers/:id/properties` | Update `server.properties`. Body: an object keyed by property name, plus an optional `backup` flag (reserved — never written as a property). A partial update: properties left out keep their current value, and keys not already in the file are ignored. Toggles take `true`/`false` (boolean or string) — anything else is `400`. `gamemode` and `difficulty` take names, written as the numbers a server before Minecraft 1.14 reads (see `POST /servers`). With `backup: true` see [Restore-point backups](#restore-point-backups) — returns `202` instead of `{"success": true, "warnings": [...]}` (see [Shared ports](#shared-ports)) |
 | POST | `/servers/:id/edit-file` | Save a text file inside the server directory. Body: `{filePath, content}`. `403` on path traversal, `400` if the target is not text (see [Text vs binary](#files)) |
 
 ### World Type
@@ -246,8 +257,8 @@ The response is `202 {"success": true, "status": "started"}` instead of the endp
 | POST | `/servers/:id/backups` | Create a backup. Body: `{name?, stopFirst?, startAfter?}`. Returns `202`; `409` if running without `stopFirst`, or if a backup is already in progress |
 | POST | `/servers/:id/backups/:backupId/restore` | Restore. Body: `{startAfter?}`. Returns `202` |
 | DELETE | `/servers/:id/backups/:backupId` | Delete a backup |
-| POST | `/servers/:id/backup-schedule` | Body: `{enabled, intervalHours (1–168), countdownMinutes (1–30)}`. Returns `{"backupSchedule": {...}, "nextBackupAt": ...}` |
-| POST | `/servers/:id/backup-retention` | Body: `{retentionCount (0–100), retentionDays (0–365)}` (0 = unlimited) |
+| POST | `/servers/:id/backup-schedule` | Body: `{enabled, intervalHours (1–168), countdownMinutes (1–30)}`. Returns `{"backupSchedule": {...}, "nextBackupAt": ...}`. A field left out or `null` keeps its value. `400` if `enabled` isn't `true`/`false` or a number isn't a whole number in range, and then nothing is saved |
+| POST | `/servers/:id/backup-retention` | Body: `{retentionCount (0–100), retentionDays (0–365)}` (0 = unlimited). A field left out or `null` keeps its value. `400` if a number isn't a whole number in range, and then nothing is saved |
 | GET | `/servers/:id/backups/:backupId/download` | Stream the backup archive as `application/zip`, with an exact `Content-Length` read off the file rather than the record. `404` if the backup does not belong to this server |
 
 
@@ -285,7 +296,7 @@ Import behavior:
 - The source server UUID is kept when free on the target instance, otherwise a new UUID is generated. Backup and event records always get fresh IDs.
 - All settings are preserved, `advertisedIp` included — the archive is a snapshot of the server as it was, so an address that does not apply on the new host is an edit away rather than something to remember. Only runtime state is reset (`exitCode`, `crashReason`, timestamps); the server stays stopped after import until started.
 - The dashboard group comes across by name, and its color travels in the manifest alongside it. A group that already exists on the target instance keeps the color chosen there — an import never restyles servers that were already in it.
-- A port collision with an existing server does not block the import; a warning is returned instead.
+- A port shared with an existing server does not block the import; a warning is returned instead (see [Shared ports](#shared-ports)).
 
 
 ## Chunked uploads (DGUP)
@@ -396,7 +407,7 @@ Two quirks of Modrinth's search are worked around inside the proxy, so these end
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
+| POST | `/servers/from-modpack` | Body: `{projectId, versionId, name, port, memory, eula, javaArgs?, gamemode?, difficulty?, levelType?, seed?, group?}`. Pack metadata is re-fetched server-side (client values cannot spoof it); the loader (Fabric/Forge/NeoForge) and Minecraft version come from the pack itself. Returns `201 {"success": true, "server": {...}, "warnings": [...]}`; the install continues in the background (see progress below). `400` for Quilt packs, loaderless packs, or versions with no `.mrpack` file; `404`/`429`/`502` from the Modrinth lookups as above |
 | POST | `/servers/from-mrpack` | Create from an uploaded `.mrpack`. Multipart, file field `mrpack`, max 2 GiB, plus the same base fields as text fields. The pack is parsed and the loader resolved **before** any server record is created, so malformed or Quilt packs fail with a clean `400`. Returns `201` + background install. Also accepts [chunked uploads](#chunked-uploads-dgup) at `/servers/from-mrpack/upload/*` |
 
 The background install downloads the pack's files (SHA-512 verified; download hosts restricted to the mrpack spec whitelist), installs the loader server pinned to the pack's loader version, and applies `overrides/` then `server-overrides/`. No pack file, whether from the manifest or the overrides, may land among the server's launch files: anything under `libraries/` (where Forge and NeoForge keep the argument file handed to the JVM), a `.jar` or `*_args.txt` at the top of the server directory, `user_jvm_args.txt`, `run.sh`/`run.bat` or `fabric-server-launcher.properties`. Such files are skipped and named in the `complete` message's `warnings`, so a pack cannot change how the server is started. A `server.properties` the pack ships is kept: the port, gamemode and difficulty from the request are written over it (and the seed and `levelType`, when given — left blank, the pack's are kept), `online-mode`, `enable-rcon`, `rcon.password` and `server-ip` are always reset to `true`, `false`, empty and empty, and Craftbox's defaults fill in any other key it leaves out. If the pack had set any of those four differently, the `complete` message's `warnings` says so. Mods the pack marks as unsupported on the server are still installed, but land disabled on disk and tagged `client` in the mod environment map — so they show as **Client Only** on the plugins page and are included in the status page's mods download for players, without the loader ever seeing them. Progress streams over the WebSocket as `operation: "modpack-install"`, `status: "progress"` messages with payload `{phase, done?, total?}` — phases: `download`, `parse`, `loader`, `files`, `overrides`, `finalize` — ending in `complete` or `failed`. The `files` phase carries `done`/`total` counts of **mods** (every jar destined for `mods/`, from the manifest and from the overrides, client-only ones included — so the total matches what the mods page lists afterwards, not the raw file count); it keeps ticking during the `overrides` phase as any mods shipped there land. On `failed` the half-built server is removed automatically (see [Asynchronous operations](#asynchronous-operations)). The created server records a `modpack` block (`{projectId, versionId, name, versionNumber, iconUrl, source: "modrinth"|"file", installedAt}`) for future tooling; it survives export/import.
@@ -485,9 +496,9 @@ The server pings every 30 seconds and drops sockets that miss a pong.
 
 > **`operation: "download"` reports how a download went.** A browser download is invisible to the page that started it, so any download endpoint under a server reports its own outcome here — including the ones that are plain links rather than API calls. Add `?dl=<token>` (any opaque string, up to 64 characters) to the download URL and the token comes back in every message about it, which is how a client matches an outcome to the request it made. Without the token nothing is emitted; API clients read the HTTP status instead.
 >
-> `progress` carries `{token, label, phase, done, total}` where `phase` is `packing` (bytes read so far, out of the estimated source size) or `sending` (`total` is the finished archive's size), throttled to one message a second. `complete` and `cancelled` carry `{token, label, bytes, sizeFormatted}` — `cancelled` means the client hung up before the last byte, whether during packing or mid-transfer. `failed` carries the reason in `error` and covers everything a download can be refused for, including the guard failures (`409` server running, `404` missing file, `507` no staging space) whose response body the browser never shows.
+> `progress` carries `{token, label, phase, done, total}` where `phase` is `packing` (bytes read so far, out of the estimated source size) or `sending` (`total` is the finished archive's size), throttled to one message a second. `complete` and `cancelled` carry `{token, label, bytes, sizeFormatted}` — `cancelled` means the client hung up before the last byte, whether during packing or mid-transfer. `failed` carries the reason in `error`, beside a payload of `{token, label}` (before 1.2.3 it had no payload, so no token), and covers everything a download can be refused for, including the guard failures (`409` server running, `404` missing file, `507` no staging space) whose response body the browser never shows.
 
 
 ## Rate limiting
 
-Only `POST /login` is rate limited (5 attempts per 15 minutes per IP; behind a reverse proxy, set `TRUST_PROXY` to the number of proxies in front of Craftbox so the client IP is read from `X-Forwarded-For` rather than being the proxy's own). There is currently **no rate limiting on `/api/v1`, `/status`, or the WebSocket** — be a considerate client, and treat API keys like passwords.
+Only `POST /login` is rate limited: 5 failed sign-ins per 15 minutes per IP, after which every attempt is refused with `429` until the window has passed, the right password included. A successful sign-in isn't counted (before 1.2.3 it was), although it still shows in the `RateLimit-Remaining` header of its own response. Behind a reverse proxy, set `TRUST_PROXY` to the number of proxies in front of Craftbox so the client IP is read from `X-Forwarded-For` rather than being the proxy's own. There is currently **no rate limiting on `/api/v1`, `/status`, or the WebSocket** — be a considerate client, and treat API keys like passwords.

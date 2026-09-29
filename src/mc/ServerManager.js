@@ -3,6 +3,7 @@ const { serversDb } = require('../db');
 const { canPerformAction, canTransition } = require('./stateMachine');
 const { syncServerConfig } = require('./syncServerConfig');
 const { log } = require('../utils/log');
+const { addressesOverlap, serverIpOf } = require('../utils/portClash');
 
 class ServerManager {
     constructor() {
@@ -79,6 +80,33 @@ class ServerManager {
         throw err;
     }
 
+    /**
+     * The other server whose JVM holds `port` at an address overlapping
+     * `serverIp` (or held it until a moment ago and is restarting), or null.
+     * @param {string} serverId - the server asking, which is skipped
+     */
+    portHolder(serverId, port, serverIp) {
+        for (const [id, proc] of this.processes) {
+            if (id === serverId || !(proc.child || proc._restarting)) continue;
+            if (proc.boundPort === Number(port) && addressesOverlap(proc.boundIp, serverIp)) return proc;
+        }
+        return null;
+    }
+
+    /**
+     * Throw a 409-tagged error if another server holds the port `proc` would
+     * listen on. Left to the JVM, the second server fails to bind and dies
+     * with a BindException, which reads as a crash.
+     */
+    assertPortFree(proc) {
+        const port = Number(proc.config.port);
+        const holder = this.portHolder(proc.id, port, serverIpOf(proc.id));
+        if (!holder) return;
+        const err = new Error(`Port ${port} is in use by "${holder.config.name}". Stop that server, or change this one's port.`);
+        err.status = 409;
+        throw err;
+    }
+
     async _ensureProcess(serverId) {
         let proc = this.processes.get(serverId);
 
@@ -126,6 +154,7 @@ class ServerManager {
         if (!canPerformAction(proc.state, 'start')) {
             throw new Error(`Cannot start server in state: ${proc.state}`);
         }
+        this.assertPortFree(proc);
 
         if (opts.initiatedBy) proc._initiatedBy = opts.initiatedBy;
         await proc.start();
@@ -162,6 +191,9 @@ class ServerManager {
         if (!canPerformAction(proc.state, 'restart')) {
             throw new Error(`Cannot restart server in state: ${proc.state}`);
         }
+        // A port edited while the server ran takes effect on this restart, so
+        // check it before stopping rather than leave the server down.
+        this.assertPortFree(proc);
 
         if (opts.initiatedBy) proc._initiatedBy = opts.initiatedBy;
         await proc.restart();
@@ -267,13 +299,19 @@ class ServerManager {
      * @param {'backup'|'restore'|'jar-upgrade'|'settings-save'|'create'|'duplicate'|'import'|'modpack-install'|'download'} operation
      * @param {'complete'|'failed'|'progress'|'cancelled'} status
      * @param {object|string} payloadOrError - error message on failed, payload object otherwise
+     * @param {object} [failedPayload] - on failed, a payload to send beside the
+     *   error (a download's `dl` token, so the page can tell which one failed)
      */
-    broadcastOperation(serverId, operation, status, payloadOrError) {
+    broadcastOperation(serverId, operation, status, payloadOrError, failedPayload) {
         const proc = this.getProcess(serverId);
         if (!proc) return;
         const data = { type: 'operation', serverId, operation, status };
-        if (status === 'failed') data.error = String(payloadOrError);
-        else data.payload = payloadOrError || {};
+        if (status === 'failed') {
+            data.error = String(payloadOrError);
+            if (failedPayload) data.payload = failedPayload;
+        } else {
+            data.payload = payloadOrError || {};
+        }
         proc.broadcast(data);
     }
 

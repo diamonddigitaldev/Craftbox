@@ -3,9 +3,11 @@
 // can run them side by side:
 //
 // - lifecycle: a version upgrade (and the refusals around it), restart,
-//   restart behind a backup, kill, the guards on a running server, crash
+//   restart behind a backup, kill, the guards on a running server, a second
+//   server sharing its port (warned about, never run beside it), crash
 //   detection and auto-restart (the JVM killed inside the container), a
-//   restore-point settings save, and auto-start across a panel restart;
+//   restore-point settings save, and a crash and auto-start across a panel
+//   restart;
 // - backups: backup, download, restore, restore-point Properties saves,
 //   backing up and restoring a running server, and the schedule and
 //   retention settings.
@@ -90,7 +92,7 @@ async function lifecycle() {
     await run.step('offers vanilla no build upgrade, and says why', async () => {
         const res = await api('GET', `/servers/${id}/check-upgrade`);
         assertStatus(res, 200, 'check-upgrade');
-        assert(res.body.upgradeAvailable === false && res.body.reason, JSON.stringify(res.body));
+        assert(res.body.upgradeAvailable === false && /no build tracking/i.test(res.body.reason), JSON.stringify(res.body));
     });
     await run.step(`upgrades it to ${latest}, refusing bad versions and downgrades`, async () => {
         assertStatus(await api('POST', `/servers/${id}/upgrade-jar`, { version: '../1.21' }), 400, 'bad version');
@@ -139,6 +141,46 @@ async function lifecycle() {
         assert(wrong.length === 0, wrong.join('\n'));
         assert((await server(id)).state === 'running', 'no longer running');
     });
+    await run.step('warns when a port is shared, and won\'t run two servers on one', async () => {
+        const shares = (res) => res.body?.warnings?.length === 1 && res.body.warnings[0].includes('"CI Lifecycle"');
+        let other = null;
+        try {
+            let created = null;
+            other = (await provisionServer(api, {
+                name: 'CI Port Share', serverType: 'vanilla', version: latest, port: 25565, memory: 1024, eula: true
+            }, { timeoutMs: PROVISION_TIMEOUT, label: 'vanilla', onCreated: (res) => { created = res; } })).id;
+            assert(shares(created), `create: ${JSON.stringify(created.body.warnings)}`);
+            const refused = await api('POST', `/servers/${other}/start`);
+            assert(refused.status === 409 && /in use by "CI Lifecycle"/.test(refused.body?.error), `start: ${refused.status} ${refused.text}`);
+            assert((await server(other)).state === 'stopped', `left ${(await server(other)).state}`);
+
+            // Only a change of port warns
+            const edit = (port) => api('POST', `/servers/${other}/edit`, { name: 'CI Port Share', port, memory: 1024 });
+            let res = await edit(25590);
+            assert(res.status === 200 && res.body.warnings?.length === 0, `edit away: ${res.status} ${res.text}`);
+            res = await edit(25565);
+            assert(res.status === 200 && shares(res), `edit back: ${res.status} ${res.text}`);
+            res = await edit(25565);
+            assert(res.status === 200 && res.body.warnings?.length === 0, `unchanged port: ${res.text}`);
+            res = await api('POST', `/servers/${other}/properties`, { 'server-port': 25590 });
+            assert(res.status === 200 && res.body.warnings?.length === 0, `properties away: ${res.status} ${res.text}`);
+
+            // Moved onto a running server's port while running, a server saves
+            // (with a warning) but won't restart onto it, and keeps running
+            await start(other);
+            res = await api('POST', `/servers/${id}/edit`, { name: 'CI Lifecycle', port: 25590, memory: 1536 });
+            assert(res.status === 200 && res.body.warnings?.some((w) => w.includes('"CI Port Share"')), `edit onto it: ${res.status} ${res.text}`);
+            res = await api('POST', `/servers/${id}/restart`);
+            assert(res.status === 409 && /in use by "CI Port Share"/.test(res.body?.error), `restart: ${res.status} ${res.text}`);
+            assert((await server(id)).state === 'running', 'the refused restart stopped it');
+            assertStatus(await api('POST', `/servers/${id}/edit`, { name: 'CI Lifecycle', port: 25565, memory: 1536 }), 200, 'edit back');
+        } finally {
+            if (other) {
+                if ((await server(other)).state === 'running') await stop(other);
+                await api('DELETE', `/servers/${other}`);
+            }
+        }
+    });
     await run.step('restarts behind a backup', async () => {
         const since = socket.mark();
         assertStatus(await api('POST', `/servers/${id}/restart`, { backup: true }), 202, 'restart with backup');
@@ -169,7 +211,7 @@ async function lifecycle() {
     const crash = 'detects a crash, and keeps its details off the status page';
     const autoRestart = 'restarts itself after a crash when auto-restart is on';
     const signalled = 'detects a JVM killed by a signal (as the kernel\'s OOM killer does)';
-    const autoStart = 'auto-starts across a panel restart only when asked to';
+    const autoStart = 'keeps a crash, and auto-starts only when asked to, across a panel restart';
     if (!CONTAINER) {
         for (const name of [crash, autoRestart, signalled, autoStart]) run.skip(name, 'CRAFTBOX_CONTAINER not set');
         // Leave the port free for whatever uses this panel next
@@ -199,12 +241,12 @@ async function lifecycle() {
     await run.step(signalled, async () => {
         const since = socket.mark();
         signalJava('KILL');
-        await socket.waitFor((m) => m.type === 'state' && m.serverId === id && ['crashed', 'stopped'].includes(m.state), { since, what: 'the exit' });
-        const s = await server(id);
-        assert(s.state === 'crashed' || s.state === 'starting' || s.state === 'running',
-            `recorded as a clean stop (state ${s.state}, exitCode ${s.exitCode}, crashReason ${s.crashReason}), so auto-restart never fires`);
+        const exit = await socket.waitFor((m) => m.type === 'state' && m.serverId === id && ['crashed', 'stopped'].includes(m.state), { since, what: 'the exit' });
+        assert(exit.state === 'crashed' && exit.crashReason === 'signal' && exit.exitCode === null,
+            `recorded as ${exit.state} (exitCode ${exit.exitCode}, crashReason ${exit.crashReason}), so auto-restart never fires`);
+        await socket.waitFor((m) => m.type === 'event' && m.serverId === id && m.eventType === 'crashed', { since, what: 'crashed event' });
         await socket.waitFor((m) => m.type === 'state' && m.serverId === id && m.state === 'running', { since, what: 'the auto-restart', timeoutMs: START_TIMEOUT });
-    }, { knownIssue: 'a JVM that dies from a signal exits with code null, which ServerProcess treats as a clean stop' });
+    });
     await run.step(autoStart, async () => {
         const restartPanel = async () => {
             socket.close();
@@ -213,11 +255,20 @@ async function lifecycle() {
             socket = await openSocket({ cookie: session.cookie });
         };
         assertStatus(await api('POST', `/servers/${id}/autostart`, { enabled: false }), 200, 'autostart off');
+        // Crashed going in, which the restart must keep (it used to become
+        // a clean stop, losing the crash banner)
+        assertStatus(await api('POST', `/servers/${id}/autorestart`, { enabled: false }), 200, 'autorestart off');
+        signalJava('TERM');
+        await waitForState(api, id, ['crashed'], { timeoutMs: 60_000 });
         await restartPanel();
         await sleep(5000);
         const after = await server(id);
-        assert(after.state === 'stopped', `with auto-start off it came back ${after.state}`);
+        assert(after.state === 'crashed' && after.crashReason === 'exit_code' && after.exitCode === 143,
+            `with auto-start off it came back ${after.state} (crashReason ${after.crashReason}, exitCode ${after.exitCode})`);
         assert(after.name === 'CI Lifecycle' && after.version === latest, 'the record changed across the restart');
+        const html = (await session.get(`/servers/${id}`)).text;
+        assert(/id="crash-banner"\s+style="display: flex;"/.test(html) && /Exit code: <strong>143<\/strong>/.test(html),
+            'no crash banner on the server page after the restart');
 
         assertStatus(await api('POST', `/servers/${id}/autostart`, { enabled: true }), 200, 'autostart on');
         await restartPanel();
@@ -291,9 +342,9 @@ async function backupsSection() {
         await stop(id);
     });
     await run.step('keeps the backup schedule within range', async () => {
-        const schedule = async (body) => {
+        const schedule = async (body, status = 200) => {
             const res = await api('POST', `/servers/${id}/backup-schedule`, body);
-            assert(res.status === 200 || res.status === 400, `${JSON.stringify(body)}: HTTP ${res.status}`);
+            assert(res.status === status, `${JSON.stringify(body)}: HTTP ${res.status}, expected ${status}`);
             return (await server(id)).backupSchedule;
         };
         let s = await schedule({ enabled: true, intervalHours: 12, countdownMinutes: 3 });
@@ -301,24 +352,30 @@ async function backupsSection() {
         const res = await api('POST', `/servers/${id}/backup-schedule`, { enabled: true, intervalHours: 12, countdownMinutes: 3 });
         const next = Date.parse(res.body.nextBackupAt) - Date.now();
         assert(next > 11 * 3600_000 && next <= 12 * 3600_000, `next backup in ${Math.round(next / 60_000)} minutes`);
-        for (const bad of [{ intervalHours: 0 }, { intervalHours: 169 }, { intervalHours: -5 }, { countdownMinutes: 0 }, { countdownMinutes: 31 }]) {
-            s = await schedule(bad);
-            assert(s.intervalHours === 12 && s.countdownMinutes === 3, `${JSON.stringify(bad)} was stored: ${JSON.stringify(s)}`);
+        // Refused whole, so the valid half of the last one isn't saved either
+        for (const bad of [{ intervalHours: 0 }, { intervalHours: 169 }, { intervalHours: -5 }, { intervalHours: '12abc' },
+            { intervalHours: 1.5 }, { countdownMinutes: 0 }, { countdownMinutes: 31 }, { countdownMinutes: 'soon' },
+            { enabled: 'yes' }, { intervalHours: 6, countdownMinutes: 31 }]) {
+            s = await schedule(bad, 400);
+            assert(s.enabled === true && s.intervalHours === 12 && s.countdownMinutes === 3, `${JSON.stringify(bad)} was stored: ${JSON.stringify(s)}`);
         }
+        s = await schedule({ intervalHours: '6', countdownMinutes: null });
+        assert(s.intervalHours === 6 && s.countdownMinutes === 3, `a digit string, and null for "keep": ${JSON.stringify(s)}`);
         s = await schedule({ enabled: false });
         assert(s.enabled === false, 'not disabled');
         assert((await api('POST', `/servers/${id}/backup-schedule`, {})).body.nextBackupAt === null, 'a disabled schedule has a next backup');
     });
     await run.step('keeps retention within range and applies it', async () => {
-        const retention = async (body) => {
+        const retention = async (body, status = 200) => {
             const res = await api('POST', `/servers/${id}/backup-retention`, body);
-            assert(res.status === 200 || res.status === 400, `${JSON.stringify(body)}: HTTP ${res.status}`);
+            assert(res.status === status, `${JSON.stringify(body)}: HTTP ${res.status}, expected ${status}`);
             return (await server(id)).backupSchedule;
         };
         let s = await retention({ retentionCount: 2, retentionDays: 0 });
         assert(s.retentionCount === 2 && s.retentionDays === 0, JSON.stringify(s));
-        for (const bad of [{ retentionCount: -1 }, { retentionCount: 101 }, { retentionDays: 366 }, { retentionDays: -1 }]) {
-            s = await retention(bad);
+        for (const bad of [{ retentionCount: -1 }, { retentionCount: 101 }, { retentionCount: '3x' }, { retentionDays: 366 },
+            { retentionDays: -1 }, { retentionDays: 0.5 }, { retentionCount: 4, retentionDays: 366 }]) {
+            s = await retention(bad, 400);
             assert(s.retentionCount === 2 && s.retentionDays === 0, `${JSON.stringify(bad)} was stored: ${JSON.stringify(s)}`);
         }
         for (const name of ['CI retention 1', 'CI retention 2']) {

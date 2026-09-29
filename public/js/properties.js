@@ -41,6 +41,7 @@
             return;
         }
         flashToast('Properties saved.', 'success');
+        ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
         window.location.href = '/servers/' + serverId + '/properties?saved=1';
     });
 
@@ -73,6 +74,7 @@
             flashToast('Backup created and properties saved.' +
                 (payload.restarted ? ' Server restarted.' : ''), 'success');
         }
+        ((res.data && res.data.warnings) || []).forEach(function (w) { flashToast(w, 'warning'); });
         window.location.href = '/servers/' + serverId + '/properties';
     }
 })();

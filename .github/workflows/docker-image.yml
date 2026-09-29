@@ -70,6 +70,10 @@ jobs:
             type=semver,pattern={{major}},value=${{ env.TAG }},enable=${{ env.PRERELEASE != 'true' }}
             type=raw,value=latest,enable=${{ env.PRERELEASE != 'true' }}
             type=raw,value=next,enable=${{ env.PRERELEASE == 'true' }}
+          # GitHub's licence detection gives AGPL-3.0; package.json declares
+          # AGPL-3.0-only
+          labels: |
+            org.opencontainers.image.licenses=AGPL-3.0-only
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

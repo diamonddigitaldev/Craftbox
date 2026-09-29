@@ -167,10 +167,10 @@ await run.step('reports plugin downloads over the WebSocket', async () => {
     assert(msg.payload?.token === 'ci-all', JSON.stringify(msg.payload));
     since = socket.mark();
     assertStatus(await fetchBytes(`${p}/plugins/download?file=missing.jar&dl=ci-missing`), 404, 'a missing plugin');
-    // A failure carries its reason as a string, naming the file but not the
-    // token (public/js/download.js allows for that)
+    // A failure carries its reason as a string naming the file, and the token
+    // like every other report, so the page can tell which download failed
     msg = await socket.waitFor((m) => m.type === 'operation' && m.operation === 'download' && m.status === 'failed', { since, what: 'the failed download' });
-    assert(/missing\.jar/.test(msg.error), JSON.stringify(msg));
+    assert(/missing\.jar/.test(msg.error) && msg.payload?.token === 'ci-missing', JSON.stringify(msg));
     assertStatus(await api('POST', `${p}/plugins/delete-all`), 200, 'delete-all');
     assert((await api('GET', `${p}/plugins`)).body.files.length === 0, 'plugins left after delete-all');
 });
@@ -279,6 +279,20 @@ await run.step('duplicates a server, with and without its world', async () => {
     const whole = await copy('CI Copy World', 25571, true);
     assert(await readFile(whole, 'world/ci.txt') === 'a world\n', 'the world was left behind');
     assertStatus(await api('POST', `${v}/duplicate`, { name: 'bad/name', port: 25572 }), 400, 'a bad name');
+
+    // A world under its own level-name, as Paper splits it into three
+    // folders, is left behind just the same
+    assertStatus(await api('POST', `${v}/properties`, { 'level-name': 'ci-realm' }), 200, 'level-name');
+    const realm = ['ci-realm', 'ci-realm_nether', 'ci-realm_the_end'];
+    for (const dir of realm) {
+        assertStatus(await api('POST', `${v}/files/mkdir`, { name: dir }), [200, 201], dir);
+        assertStatus(await api('POST', `${v}/edit-file`, { filePath: `${dir}/ci.txt`, content: 'a realm\n' }), 200, `${dir} file`);
+    }
+    const named = await copy('CI Copy Named World', 25573, false);
+    const copied = [];
+    for (const dir of realm) if (await exists(named, `${dir}/ci.txt`)) copied.push(dir);
+    assert(copied.length === 0, `came along without includeWorld: ${copied.join(', ')}`);
+    assertStatus(await api('POST', `${v}/properties`, { 'level-name': 'world' }), 200, 'level-name back');
 });
 await run.step('saves a template from a server and deletes it', async () => {
     assertStatus(await api('POST', '/templates', { serverId: vanilla.id, name: 'bad/name' }), 400, 'a bad name');

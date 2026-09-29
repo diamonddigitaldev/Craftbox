@@ -43,6 +43,7 @@ const {
 } = require('../../utils/fileBrowser');
 const { readConsoleTail } = require('../../utils/consoleLog');
 const { cleanupServerData } = require('../../utils/serverCleanup');
+const { portClashWarnings, serverIpOf } = require('../../utils/portClash');
 const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = require('../../mc/modpackInstaller');
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
 const modrinth = require('../../services/modrinth');
@@ -175,7 +176,7 @@ function httpError(status, message) {
 // Responds 202 immediately; completion is broadcast as `operation` over the
 // WebSocket. If the backup or the change fails, the server is put back the way
 // it was found and the failure is broadcast.
-async function runWithRestorePoint({ req, res, server, label, operation, apply }) {
+async function runWithRestorePoint({ req, res, server, label, operation, apply, warnings = [] }) {
     const id = server.id;
     const serverManager = req.app.get('serverManager');
     const initiatedBy = req.user.username;
@@ -200,7 +201,7 @@ async function runWithRestorePoint({ req, res, server, label, operation, apply }
 
         await serverManager.setOperationalState(id, STATES.BACKING_UP);
         lockOwnedByRoute = false; // handed off to the task below
-        res.status(202).json({ success: true, status: 'started' });
+        res.status(202).json({ success: true, status: 'started', warnings });
 
         (async () => {
             let result;
@@ -511,7 +512,9 @@ router.get('/servers/:id/check-upgrade', async (req, res) => {
         const provider = getProvider(type);
         if (!provider) return res.json({ upgradeAvailable: false });
 
-        if (type === 'custom' || (!provider.getBuilds && !provider.getLatestBuild)) {
+        // Vanilla has a getBuilds() for the provider interface, but a Mojang
+        // release is one jar with no builds, so it always returns null.
+        if (type === 'custom' || type === 'vanilla' || (!provider.getBuilds && !provider.getLatestBuild)) {
             return res.json({ upgradeAvailable: false, reason: 'No build tracking for this server type.' });
         }
 
@@ -699,13 +702,47 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
     }
 });
 
+// The backup schedule's numeric settings, with the range each accepts and how
+// a refusal reads (the Backups page shows it as is).
+const BACKUP_SETTINGS = {
+    intervalHours: { min: 1, max: 168, error: 'The backup interval must be a whole number of hours between 1 and 168.' },
+    countdownMinutes: { min: 1, max: 30, error: 'The warning countdown must be a whole number of minutes between 1 and 30.' },
+    retentionCount: { min: 0, max: 100, error: 'The number of backups to keep must be a whole number between 0 and 100.' },
+    retentionDays: { min: 0, max: 365, error: 'The number of days to keep backups for must be a whole number between 0 and 365.' }
+};
+
+// Read the named backup settings from a request body, all or nothing: a
+// setting left out (or null, which is what the page sends for an empty box)
+// keeps its value, and anything else must be a whole number in range, as a
+// number or a string of digits. parseInt used to take '12abc' as 12 and 1.5
+// as 1, and an out-of-range value was dropped while the request still
+// answered 200.
+function readBackupSettings(body, keys) {
+    const values = {};
+    for (const key of keys) {
+        const raw = body[key];
+        if (raw == null) continue;
+        const n = typeof raw === 'number' ? raw
+            : typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : NaN;
+        const { min, max, error } = BACKUP_SETTINGS[key];
+        if (!Number.isInteger(n) || n < min || n > max) return { error };
+        values[key] = n;
+    }
+    return { values };
+}
+
 // POST /servers/:id/backup-schedule — Update backup schedule settings
 router.post('/servers/:id/backup-schedule', async (req, res) => {
     try {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
-        const { enabled, intervalHours, countdownMinutes } = req.body;
+        const body = req.body || {};
+        if (body.enabled != null && ![true, false, 'true', 'false'].includes(body.enabled)) {
+            return res.status(400).json({ error: 'enabled must be true or false.' });
+        }
+        const { values, error } = readBackupSettings(body, ['intervalHours', 'countdownMinutes']);
+        if (error) return res.status(400).json({ error });
 
         if (!server.backupSchedule) {
             server.backupSchedule = {
@@ -717,15 +754,8 @@ router.post('/servers/:id/backup-schedule', async (req, res) => {
             };
         }
 
-        if (typeof enabled === 'boolean') server.backupSchedule.enabled = enabled;
-        if (intervalHours != null) {
-            const h = parseInt(intervalHours, 10);
-            if (h >= 1 && h <= 168) server.backupSchedule.intervalHours = h;
-        }
-        if (countdownMinutes != null) {
-            const m = parseInt(countdownMinutes, 10);
-            if (m >= 1 && m <= 30) server.backupSchedule.countdownMinutes = m;
-        }
+        if (body.enabled != null) server.backupSchedule.enabled = body.enabled === true || body.enabled === 'true';
+        Object.assign(server.backupSchedule, values);
 
         delete server.backupSchedule.nextBackupAt;
 
@@ -757,6 +787,9 @@ router.post('/servers/:id/backup-retention', async (req, res) => {
         const server = await loadServerOr404(req, res);
         if (!server) return;
 
+        const { values, error } = readBackupSettings(req.body || {}, ['retentionCount', 'retentionDays']);
+        if (error) return res.status(400).json({ error });
+
         if (!server.backupSchedule) {
             server.backupSchedule = {
                 enabled: false,
@@ -767,15 +800,7 @@ router.post('/servers/:id/backup-retention', async (req, res) => {
             };
         }
 
-        const { retentionCount, retentionDays } = req.body;
-        if (retentionCount != null) {
-            const n = parseInt(retentionCount, 10);
-            if (n >= 0 && n <= 100) server.backupSchedule.retentionCount = n;
-        }
-        if (retentionDays != null) {
-            const d = parseInt(retentionDays, 10);
-            if (d >= 0 && d <= 365) server.backupSchedule.retentionDays = d;
-        }
+        Object.assign(server.backupSchedule, values);
 
         await serversDb.set(`server_${server.id}`, server);
         res.json({ backupSchedule: server.backupSchedule });
@@ -1189,7 +1214,11 @@ router.post('/servers', async (req, res) => {
         await serversDb.set(`server_${id}`, server);
 
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(server) });
+        res.status(201).json({
+            success: true,
+            server: publicServer(server),
+            warnings: await portClashWarnings(server.port, { excludeId: server.id })
+        });
 
         const serverManager = req.app.get('serverManager');
         (async () => {
@@ -1486,7 +1515,11 @@ router.post('/servers/from-modpack', async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from Modrinth modpack "${project.title}" ${version.version_number}`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(server) });
+        res.status(201).json({
+            success: true,
+            server: publicServer(server),
+            warnings: await portClashWarnings(server.port, { excludeId: server.id })
+        });
 
         provisionModpackServer({
             req,
@@ -1575,7 +1608,11 @@ const createFromMrpackHandler = async (req, res) => {
 
         log('info', `Creating server "${base.trimmedName}" (${id}) from uploaded modpack "${manifest.name || req.file.originalname}"`);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(server) });
+        res.status(201).json({
+            success: true,
+            server: publicServer(server),
+            warnings: await portClashWarnings(server.port, { excludeId: server.id })
+        });
 
         provisionModpackServer({
             req,
@@ -1675,6 +1712,9 @@ router.post('/servers/:id/restart', async (req, res) => {
     let lockOwnedByRoute = true;
     try {
         const proc = serverManager?.getProcess(id);
+        // Refused up front: found only at the start after the backup, a port
+        // clash would leave the server down and read as a failed backup.
+        if (proc) serverManager.assertPortFree(proc);
         if (proc && ['running', 'starting'].includes(proc.state)) {
             await serverManager.stopServer(id, { initiatedBy });
             await proc.waitForState('stopped', 60000);
@@ -1865,13 +1905,10 @@ const importServerHandler = async (req, res) => {
             finalId = uuidv4();
         }
 
-        const warnings = [];
-        const allServers = await serversDb.all();
-        const portClash = allServers.map(row => row.value).find(s => s && s.port === portNum);
-        if (portClash) {
-            warnings.push(`Port ${portNum} is already used by "${portClash.name}". Edit this server's port before starting it.`);
-            log('warn', `Import of "${trimmedName}": port ${portNum} clashes with "${portClash.name}"`);
-        }
+        // The archive's server.properties isn't unpacked yet, so its server-ip
+        // is taken as every address, which can only warn more, never less.
+        const warnings = await portClashWarnings(portNum, { excludeId: finalId });
+        if (warnings.length > 0) log('warn', `Import of "${trimmedName}": ${warnings[0]}`);
 
         const groupResult = normalizeGroupName(source.group);
         const importedServer = {
@@ -2130,16 +2167,31 @@ router.post('/servers/:id/duplicate', async (req, res) => {
 
         await serversDb.set(`server_${newId}`, newServer);
         notifyDashboard(req);
-        res.status(201).json({ success: true, server: publicServer(newServer), warning: null });
+        res.status(201).json({
+            success: true,
+            server: publicServer(newServer),
+            warning: null,
+            // The copy keeps the source's server.properties, server-ip included
+            warnings: await portClashWarnings(portNum, { excludeId: newId, serverIp: serverIpOf(id) })
+        });
 
         (async () => {
             try {
                 await fs.promises.cp(sourceDir, newDir, { recursive: true });
 
                 if (includeWorld !== 'true' && includeWorld !== true) {
-                    const worldDirs = ['world', 'world_nether', 'world_the_end'];
+                    // The world lives under level-name ("world" unless changed),
+                    // split into three folders by Paper, Purpur and Folia. The
+                    // default names go too, as they did before, in case a world
+                    // was generated under them before level-name changed.
+                    const level = parseServerProperties(newDir)['level-name'] || 'world';
+                    const worldDirs = new Set(['world', 'world_nether', 'world_the_end',
+                        level, `${level}_nether`, `${level}_the_end`]);
                     for (const dir of worldDirs) {
                         const worldPath = path.join(newDir, dir);
+                        // level-name is free text: never let "." or "../x"
+                        // point this at the copy itself or outside it
+                        if (path.resolve(worldPath) === path.resolve(newDir) || !isPathInside(newDir, worldPath)) continue;
                         await fs.promises.rm(worldPath, { recursive: true, force: true });
                     }
                 }
@@ -2409,7 +2461,7 @@ router.post('/servers/:id/edit', async (req, res) => {
                 'difficulty': difficultyStr,
                 ...(levelTypeStr !== undefined ? { 'level-type': levelTypeStr } : {}),
                 'level-seed': seedStr
-            });
+            }, { version: server.version });
         }
 
         const proc = req.app.get('serverManager')?.getProcess(id);
@@ -2418,6 +2470,13 @@ router.post('/servers/:id/edit', async (req, res) => {
         return { versionChanged, jarChanged };
     };
 
+    // Moving onto a port another server uses is allowed, with a warning.
+    // Saving a port that was already shared says nothing new, so it doesn't
+    // warn again (the Settings page shows it beside the field either way).
+    const warnings = Number(server.port) !== portNum
+        ? await portClashWarnings(portNum, { excludeId: id, serverIp: serverIpOf(id) })
+        : [];
+
     // A backup taken after the save can't undo it — so when one is asked for,
     // it is taken first and the edit is applied on the far side of it.
     if (req.body?.backup === true || req.body?.backup === 'true') {
@@ -2425,14 +2484,15 @@ router.post('/servers/:id/edit', async (req, res) => {
             req, res, server,
             label: 'Pre-edit backup',
             operation: 'settings-save',
-            apply: applyEdit
+            apply: applyEdit,
+            warnings
         });
     }
 
     try {
         const { versionChanged, jarChanged } = await applyEdit();
         notifyDashboard(req);
-        res.json({ success: true, server: publicServer(server), versionChanged, jarChanged });
+        res.json({ success: true, server: publicServer(server), versionChanged, jarChanged, warnings });
     } catch (err) {
         res.status(err.status || 500).json({ error: err.message });
     }
@@ -2466,7 +2526,9 @@ router.post('/servers/:id/properties', async (req, res) => {
             updates[key] = String(body[key]);
         }
 
-        updateServerProperties(serverDir, updates);
+        // Game mode and difficulty are shown and taken as names; a server
+        // before 1.14 is written the numbers it reads
+        updateServerProperties(serverDir, updates, { version: server.version });
         await syncServerConfig(id);
 
         const changed = Object.keys(updates).filter(key => updates[key] !== currentProps[key]);
@@ -2476,18 +2538,29 @@ router.post('/servers/:id/properties', async (req, res) => {
         return {};
     };
 
+    // Warn, as /edit does, when this moves the server onto a port (or an
+    // address) that shares one with another server. Only keys already in the
+    // file are written, so only those can change anything.
+    const fileProps = parseServerProperties(path.join(SERVERS_DIR, id));
+    const sent = (key) => (key in fileProps && body[key] !== undefined ? String(body[key]).trim() : fileProps[key] || '');
+    const newPort = parseInt(sent('server-port'), 10);
+    const warnings = newPort && (sent('server-port') !== (fileProps['server-port'] || '') || sent('server-ip') !== (fileProps['server-ip'] || ''))
+        ? await portClashWarnings(newPort, { excludeId: id, serverIp: sent('server-ip') })
+        : [];
+
     // As with /edit: a backup only rolls the change back if it predates it.
     if (req.body?.backup === true || req.body?.backup === 'true') {
         return runWithRestorePoint({
             req, res, server,
             label: 'Pre-properties backup',
             operation: 'settings-save',
-            apply: applyProperties
+            apply: applyProperties,
+            warnings
         });
     }
 
     await applyProperties();
-    res.json({ success: true });
+    res.json({ success: true, warnings });
 });
 
 // Where ServerProcess writes the console log for a server.

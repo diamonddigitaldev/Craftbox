@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-    writeServerProperties, writeEula, parseServerProperties, updateServerProperties, DEFAULT_PROPERTIES
+    writeServerProperties, writeEula, parseServerProperties, updateServerProperties, DEFAULT_PROPERTIES, modeNameOf
 } = require('../../src/mc/serverProperties');
 const { PROPERTY_META } = require('../../src/mc/propertyMeta');
 
@@ -163,6 +163,43 @@ test('update does nothing when there is no file', (t) => {
     const dir = tempDir(t);
     updateServerProperties(dir, { a: 1 });
     assert.equal(fs.existsSync(path.join(dir, 'server.properties')), false);
+});
+
+// Before 1.14 Minecraft can't read a game mode or difficulty name: it plays
+// Survival on Easy and rewrites the file with those numbers
+test('game mode and difficulty are written as numbers before 1.14', (t) => {
+    const modes = (dir) => { const p = parseServerProperties(dir); return `${p.gamemode} ${p.difficulty}`; };
+    const cases = {
+        '1.8.9': '1 3', '1.12.2': '1 3', '1.13.2': '1 3', '19w14b': '1 3',
+        '1.14': 'creative hard', '1.20.4': 'creative hard', '26.3': 'creative hard', '': 'creative hard'
+    };
+    for (const [version, expected] of Object.entries(cases)) {
+        const dir = tempDir(t);
+        writeServerProperties(dir, { gamemode: 'creative', difficulty: 'hard' }, { version });
+        assert.equal(modes(dir), expected, `new file on ${version || 'no version'}`);
+    }
+
+    const dir = tempDir(t);
+    writeServerProperties(dir, {}, { version: '1.12.2' });
+    assert.equal(modes(dir), '0 2', 'the defaults');
+
+    write(dir, 'gamemode=survival\ndifficulty=easy\nmotd=A pack\n');
+    writeServerProperties(dir, { gamemode: 'adventure', difficulty: 'peaceful' }, { mergeExisting: true, version: '1.12.2' });
+    assert.equal(modes(dir), '2 0', 'merged into a pack\'s file');
+
+    updateServerProperties(dir, { gamemode: 'spectator', difficulty: 'normal' }, { version: '1.7.10' });
+    assert.equal(modes(dir), '3 2', 'an update given the version');
+    updateServerProperties(dir, { gamemode: 'creative' });
+    assert.equal(modes(dir), 'creative 2', 'an update not given one writes what it\'s given');
+});
+
+test('modeNameOf reads either form as the name', () => {
+    assert.equal(modeNameOf('difficulty', '2'), 'normal');
+    assert.equal(modeNameOf('difficulty', ' 0 '), 'peaceful');
+    assert.equal(modeNameOf('gamemode', '3'), 'spectator');
+    assert.equal(modeNameOf('gamemode', 'creative'), 'creative');
+    assert.equal(modeNameOf('gamemode', '7'), '7');
+    assert.equal(modeNameOf('motd', '1'), '1');
 });
 
 test('writeEula accepts the EULA', (t) => {
