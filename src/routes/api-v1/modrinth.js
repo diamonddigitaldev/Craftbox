@@ -7,7 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const modrinth = require('../../services/modrinth');
-const { loaderGroupFor, scanInstalled, describeRow, installProject, updateContent } = require('../../services/modrinthContent');
+const {
+    loaderGroupFor, scanInstalled, installedProjectIds, describeRow, installProject, updateContent
+} = require('../../services/modrinthContent');
 const { serversDb, SERVERS_DIR } = require('../../db');
 const { getContentType } = require('../../utils/contentType');
 const { logEvent } = require('../../utils/eventLogger');
@@ -236,7 +238,8 @@ router.post('/servers/:id/modrinth-install', async (req, res) => {
     const installed = [];
     try {
         fs.mkdirSync(path.join(SERVERS_DIR, server.id, contentType.folder), { recursive: true });
-        await installProject({ server, installed, seenProjects: new Set() }, projectId, versionId || null, 0);
+        await installProject({ server, installed, seenProjects: await installedProjectIds(server) },
+            projectId, versionId || null, 0);
         const names = installed.map(i => `"${i.filename}"`).join(', ');
         logEvent(server.id, 'action', `Installed ${names} from Modrinth`, { initiatedBy: req.user.username }).catch(() => {});
         log('info', `Installed ${names} from Modrinth into server ${server.id}.`);

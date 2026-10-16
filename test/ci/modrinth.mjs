@@ -111,15 +111,19 @@ await run.step('reports and applies updates, and a client-only mod stays client-
     }, { timeoutMs: PROVISION_TIMEOUT, label: 'fabric updates' });
     const fapi = await installOldest(updates.id, 'fabric-api');
     const lithium = await installOldest(updates.id, 'lithium');
+    assert(fapi.projectId === FABRIC_API, `projectId ${fapi.projectId}, not the project's id`);
     assertStatus(await api('POST', `/servers/${updates.id}/plugins/environment`,
         { filename: lithium.filename, environment: 'client' }), 200, 'client-only');
 
     const state = (await modrinth('GET', `/servers/${updates.id}/modrinth-installed`)).body;
     for (const mod of [fapi, lithium]) {
-        const u = Object.values(state.updates || {}).find((x) => x.filename === mod.filename);
+        const u = state.updates?.[mod.projectId];
         assert(u?.updateAvailable && u.filename === mod.filename && u.latest.versionNumber !== mod.versionNumber,
             `no update for ${mod.filename}: ${JSON.stringify(state.updates)}`);
     }
+    // A dependency already there, in another version, isn't installed again
+    const apple = await modrinth('POST', `/servers/${updates.id}/modrinth-install`, { projectId: 'appleskin' });
+    assert(apple.status === 200 && apple.body.installed.length === 1, `appleskin: ${apple.text}`);
 
     const one = await modrinth('POST', `/servers/${updates.id}/modrinth-update`, { filenames: [fapi.filename] });
     assert(one.status === 200 && one.body.updated.length === 1 && one.body.updated[0].projectId === FABRIC_API, `update one: ${one.text}`);
@@ -127,7 +131,7 @@ await run.step('reports and applies updates, and a client-only mod stays client-
     assert(rest.status === 200 && rest.body.updated.length === 1 && rest.body.updated[0].filename === lithium.filename, `update the rest: ${rest.text}`);
     const files = await modFiles(updates.id);
     const names = files.map((f) => f.name);
-    assert(!names.includes(fapi.filename) && names.includes(one.body.updated[0].newFilename), names.join(', '));
+    assert(names.filter((n) => /^fabric-api/.test(n)).length === 1 && names.includes(one.body.updated[0].newFilename), names.join(', '));
     assert(files.find((f) => f.name === rest.body.updated[0].newFilename)?.environment === 'client', 'lithium is no longer client-only');
     const after = (await modrinth('GET', `/servers/${updates.id}/modrinth-installed`)).body.updates;
     assert(Object.keys(after).length === 0, `still to update: ${JSON.stringify(after)}`);

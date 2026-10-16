@@ -98,6 +98,16 @@ async function hashContent(server) {
 }
 
 /**
+ * The ids of the Modrinth projects already in the server's content folder,
+ * whichever versions they are.
+ */
+async function installedProjectIds(server) {
+    const hashes = [...(await hashContent(server)).keys()];
+    const current = hashes.length ? await modrinth.getVersionsByHashes(hashes, 'sha512') : {};
+    return new Set(Object.values(current || {}).map(v => v && v.project_id).filter(Boolean));
+}
+
+/**
  * The server's content folder matched against Modrinth by file hash, the way
  * launchers do it. Locally built or modified jars simply don't match. One row
  * per listed mod (a jar and its `.disabled` twin are one), for the ones
@@ -167,11 +177,14 @@ function describeRow(row) {
  * project (depth 0) is strict — incompatibilities are errors carrying an
  * httpStatus. Dependencies degrade gracefully: already-installed or
  * version-less ones are skipped with a log line.
- * @param {object} ctx - { server, installed: [], seenProjects: Set }
+ * @param {object} ctx - { server, installed: [], seenProjects: Set } —
+ *   seenProjects starts with the projects already on the server (see
+ *   installedProjectIds), so a dependency present in another version, under
+ *   another file name, isn't installed a second time beside it.
  */
 async function installProject(ctx, pid, wantedVersionId, depth) {
     const { server, installed, seenProjects } = ctx;
-    if (depth > 5 || seenProjects.has(pid)) return;
+    if (depth > 5 || (depth > 0 && seenProjects.has(pid))) return;
     seenProjects.add(pid);
 
     const contentDir = contentDirFor(server);
@@ -233,7 +246,8 @@ async function installProject(ctx, pid, wantedVersionId, depth) {
         try { fs.unlinkSync(dest); } catch { /* ignore */ }
         throw new Error(`"${filename}" is not a valid jar file.`);
     }
-    installed.push({ filename, versionNumber: version.version_number, projectId: pid });
+    // The project's id, whether it was asked for by id or by slug
+    installed.push({ filename, versionNumber: version.version_number, projectId: version.project_id || pid });
 
     for (const dep of version.dependencies || []) {
         if (dep.dependency_type === 'required' && dep.project_id) {
@@ -376,6 +390,7 @@ module.exports = {
     LOADER_GROUPS,
     loaderGroupFor,
     scanInstalled,
+    installedProjectIds,
     describeRow,
     installProject,
     updateContent
