@@ -117,6 +117,31 @@ function _formToBody(form) {
     });
 })();
 
+// What a jar upgrade's Modrinth update of the mods or plugins did, as the
+// end of the upgrade's toast: { text, ok }, or null when none was asked for.
+// `label` is "mods" or "plugins".
+function describeContentUpdate(update, label, version) {
+    if (!update) return null;
+    var singular = label.slice(0, -1);
+    function count(n, verb) {
+        return n + ' ' + (n === 1 ? singular : label) + ' ' + verb;
+    }
+    if (update.error) {
+        return { text: label.charAt(0).toUpperCase() + label.slice(1) + ' not updated: ' + update.error, ok: false };
+    }
+    var skipped = update.skipped || [];
+    var noVersion = skipped.filter(function (s) { return s.reason === 'no-compatible-version'; }).length;
+    var failed = skipped.filter(function (s) { return s.reason === 'failed'; }).length;
+    var parts = [];
+    if ((update.updated || []).length > 0) parts.push(count(update.updated.length, 'updated'));
+    if (noVersion > 0) parts.push(count(noVersion, (noVersion === 1 ? 'has' : 'have') + ' no version for ' + version));
+    if (failed > 0) parts.push(count(failed, 'failed to update'));
+    if (parts.length === 0) {
+        return { text: 'All ' + label + ' were up to date.', ok: true };
+    }
+    return { text: parts.join(', ') + '.', ok: noVersion === 0 && failed === 0 };
+}
+
 // ── Version Upgrade ──
 // Accept Risk applies the upgrade immediately via POST /upgrade-jar
 // {version, backup?}: the server enters the upgrading_jar state (preceded by
@@ -158,9 +183,12 @@ function _formToBody(form) {
             setVersionField(v.id);
             document.getElementById('upgrade-from').textContent = currentVersion;
             document.getElementById('upgrade-to').textContent = v.id;
-            // Pre-upgrade backup defaults to on for every new upgrade prompt
+            // Pre-upgrade backup and the mod update default to on for every
+            // new upgrade prompt
             var backupCheck = document.getElementById('upgradeBackup');
             if (backupCheck) backupCheck.checked = true;
+            var contentCheck = document.getElementById('upgradeContent');
+            if (contentCheck) contentCheck.checked = true;
             modal.show();
         }
     });
@@ -193,13 +221,17 @@ function _formToBody(form) {
             resetToCurrent();
         } else {
             var version = (msg.payload && msg.payload.version) || versionHidden.value;
+            var contentCheck = document.getElementById('upgradeContent');
+            var update = describeContentUpdate(msg.payload && msg.payload.contentUpdate,
+                (contentCheck && contentCheck.dataset.label) || 'mods', version);
             // flashToast — the reload below would wipe a regular toast.
-            flashToast('Server upgraded to ' + version + '.', 'success');
+            flashToast('Server upgraded to ' + version + '.' + (update ? ' ' + update.text : ''),
+                !update || update.ok ? 'success' : 'warning');
             window.location.reload();
         }
     }
 
-    async function startUpgrade(newVersion, backupFirst) {
+    async function startUpgrade(newVersion, backupFirst, updateContent) {
         browseBtn.disabled = true;
         showToast(backupFirst
             ? 'Backing up, then upgrading to version ' + newVersion + '...'
@@ -212,7 +244,7 @@ function _formToBody(form) {
 
         var res = await apiFetch('/api/v1/servers/' + serverId + '/upgrade-jar', {
             method: 'POST',
-            body: { version: newVersion, backup: backupFirst }
+            body: { version: newVersion, backup: backupFirst, updateContent: updateContent }
         });
         if (!res.ok) {
             document.removeEventListener('craftbox:operation', onUpgradeOperation);
@@ -232,7 +264,9 @@ function _formToBody(form) {
         upgradeAccepted = true;
         modal.hide();
         var backupCheck = document.getElementById('upgradeBackup');
-        startUpgrade(versionHidden.value, !backupCheck || backupCheck.checked);
+        var contentCheck = document.getElementById('upgradeContent');
+        startUpgrade(versionHidden.value, !backupCheck || backupCheck.checked,
+            !!contentCheck && contentCheck.checked);
     });
 
     modalEl.addEventListener('hidden.bs.modal', function () {
@@ -778,8 +812,12 @@ function _formToBody(form) {
             if (msg.status === 'failed') {
                 showToast('Jar upgrade failed: ' + (msg.error || 'unknown error'), 'danger');
             } else {
+                var contentCheck = document.getElementById('upgradeContent');
+                var update = describeContentUpdate(msg.payload && msg.payload.contentUpdate,
+                    (contentCheck && contentCheck.dataset.label) || 'mods', msg.payload && msg.payload.version);
                 // flashToast — the reload below would wipe a regular toast.
-                flashToast('Jar upgraded successfully.', 'success');
+                flashToast('Jar upgraded successfully.' + (update ? ' ' + update.text : ''),
+                    !update || update.ok ? 'success' : 'warning');
                 window.location.reload();
             }
         });

@@ -34,7 +34,7 @@ Whether you're running a single Vanilla server or maintaining multiple modded in
 - **Live Console** — Real-time server log streaming and command input via WebSocket.
 - **Server Configuration UI** — Edit `server.properties`, JVM flags, memory allocation, game mode, difficulty, and more — all from the browser.
 - **Backups** — One-click manual backups, scheduled backups with retention policies, and one-click restore.
-- **Plugin & Mod Management** — Upload, manage, search, install, and update plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge) with an intuitive interface powered by [Modrinth](https://modrinth.com/).
+- **Plugin & Mod Management** — Upload, manage, search, install, and update plugins (Paper/Purpur/Folia) and mods (Fabric/Forge/NeoForge) with an intuitive interface powered by [Modrinth](https://modrinth.com/). Upgrading a server's Minecraft version can update its mods to match.
 - **Modpack Servers** — Create a ready-to-play server from any Modrinth modpack, or upload your own `.mrpack`. Craftbox installs the loader, the mods, and the pack's overrides for you.
 - **File Manager** — Browse, edit, upload, create, rename, and delete server files from the browser, with large-file streaming for logs.
 - **Jar Upgrades** — Check for and apply newer loader builds and Minecraft versions in place, with an optional restore-point backup first.

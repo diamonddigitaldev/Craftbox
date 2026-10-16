@@ -2,14 +2,14 @@
 // so it runs weekly rather than on every PR. The proxied search and
 // lookups, installing a mod with its required dependency into a Fabric
 // server and starting it with them loaded, a plugin into Paper, updating
-// older mods, and a whole server created from a published modpack, then
-// started.
+// older mods, and with a version upgrade, and a whole server created from a
+// published modpack, then started.
 //
 //   CRAFTBOX_URL=http://localhost:6464 node test/ci/modrinth.mjs
 
 import {
     waitForPanel, openPanel, apiClient, provisionServer, waitForState, withUpstream, transientError,
-    createRunner, assert, assertStatus
+    openSocket, createRunner, assert, assertStatus
 } from './lib.mjs';
 
 const PROVISION_TIMEOUT = 15 * 60_000;
@@ -131,6 +131,30 @@ await run.step('reports and applies updates, and a client-only mod stays client-
     assert(files.find((f) => f.name === rest.body.updated[0].newFilename)?.environment === 'client', 'lithium is no longer client-only');
     const after = (await modrinth('GET', `/servers/${updates.id}/modrinth-installed`)).body.updates;
     assert(Object.keys(after).length === 0, `still to update: ${JSON.stringify(after)}`);
+});
+await run.step('a version upgrade updates the mods for the new version', async () => {
+    assert(updates, 'no server from the previous step');
+    for (const f of await modFiles(updates.id)) {
+        assertStatus(await api('POST', `/servers/${updates.id}/plugins/delete`, { filename: f.name }), 200, 'delete');
+    }
+    const fapi = await installOldest(updates.id, 'fabric-api');
+    const mc = (await api('GET', '/versions?type=fabric')).body.latest;
+    const socket = await openSocket({ cookie: panel.session.cookie });
+    socket.send({ type: 'subscribe', serverId: updates.id });
+    const since = socket.mark();
+    await withUpstream(['fabric', 'modrinth'], async () => {
+        assertStatus(await api('POST', `/servers/${updates.id}/upgrade-jar`, { version: mc, updateContent: true }), 202, 'upgrade-jar');
+    });
+    const done = await socket.waitFor((m) => m.type === 'operation' && m.operation === 'jar-upgrade' && m.status !== 'progress',
+        { timeoutMs: PROVISION_TIMEOUT, what: 'the jar upgrade', since });
+    socket.close();
+    assert(done.status === 'complete' && done.payload.version === mc, JSON.stringify(done));
+    const updated = done.payload.contentUpdate?.updated || [];
+    assert(updated.length === 1 && updated[0].filename === fapi.filename, `contentUpdate: ${JSON.stringify(done.payload.contentUpdate)}`);
+    const latest = (await modrinth('GET', `/modrinth/projects/fabric-api/versions?loader=fabric&gameVersion=${mc}`)).body.versions[0];
+    assert(updated[0].toVersion === latest.versionNumber, `${updated[0].toVersion}, newest for ${mc} is ${latest.versionNumber}`);
+    const names = (await modFiles(updates.id)).map((f) => f.name);
+    assert(names.length === 1 && names[0] === updated[0].newFilename, names.join(', '));
 });
 
 console.log('Modpacks');

@@ -1,6 +1,8 @@
 // A server's mods and plugins as Modrinth sees them: which of the jars in its
 // content folder are Modrinth files, which have a newer version for the
 // server's loader and Minecraft version, and installing or updating them.
+// Shared by the Modrinth routes and the jar upgrade, which can update a
+// server's mods for the version it has just moved to.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');

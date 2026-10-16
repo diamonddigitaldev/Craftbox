@@ -16,6 +16,7 @@ const { hasIcon } = require('../utils/serverIcon');
 const { isPathInside } = require('../utils/pathSafety');
 const { getDistinctGroups } = require('../utils/serverGroups');
 const { portsInUse } = require('../utils/portClash');
+const { getContentType } = require('../utils/contentType');
 
 // GET /servers/create — Server creation form
 router.get('/servers/create', ensureAuth, async (req, res) => {
@@ -116,6 +117,8 @@ router.get('/servers/:id/edit', ensureAuth, blockWhileProvisioning, async (req, 
             ? (worldTypeFor(props['level-type'], server.version) || props['level-type'])
             : worldTypesFor(server.version)[0].value,
         hasIcon: hasIcon(server.id),
+        // Mods or plugins a version upgrade can update from Modrinth, if any
+        contentType: getContentType(server.serverType),
         // For the Port and Duplicate fields; a copy keeps this server-ip too
         portsInUse: await portsInUse({ serverIp: props['server-ip'] || '' }),
         user: req.user,

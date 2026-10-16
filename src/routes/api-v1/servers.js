@@ -48,6 +48,7 @@ const { installModpack, parseMrpack, resolveLoader, pickLoaderFromArray } = requ
 const { assertWhitelistedUrl } = require('../../utils/httpDownload');
 const modrinth = require('../../services/modrinth');
 const { sendModrinthError } = require('./modrinth');
+const { updateContent } = require('../../services/modrinthContent');
 
 // Shared 404 helper — returns the server record or sends 404 JSON and returns null.
 // The caller must `return` after a null result.
@@ -623,6 +624,12 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
 
     const initiatedBy = req.user.username;
 
+    // Optional Modrinth update of the server's mods/plugins once the new jar
+    // is in, so they move to the versions built for it. Only a version change
+    // asks for it in the panel, but a build upgrade may too.
+    const updateMods = (req.body?.updateContent === true || req.body?.updateContent === 'true')
+        && !!getContentType(type);
+
     // Optional pre-upgrade backup — mirrors the restart-with-backup flow:
     // claim the backup lock synchronously so the 409 happens before the 202.
     const backupFirst = req.body?.backup === true || req.body?.backup === 'true';
@@ -669,6 +676,25 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
                     if (freshProc) Object.assign(freshProc.config, fresh);
                 }
 
+                // The jar upgrade has landed whatever happens here: a failed
+                // mod update is reported beside it, not as an upgrade failure.
+                let contentUpdate = null;
+                if (updateMods && fresh) {
+                    try {
+                        contentUpdate = await updateContent(fresh);
+                    } catch (err) {
+                        log('warn', `Mod update after the jar upgrade of ${server.id} failed: ${err.message}`);
+                        contentUpdate = { updated: [], installed: [], skipped: [], error: err.message };
+                    }
+                    if (contentUpdate.updated.length > 0 || contentUpdate.installed.length > 0) {
+                        const names = contentUpdate.updated.map(u => `"${u.newFilename}"`)
+                            .concat(contentUpdate.installed.map(i => `"${i.filename}"`)).join(', ');
+                        logEvent(server.id, 'action', `Updated ${names} from Modrinth`, { initiatedBy }).catch(() => {});
+                        log('info', `Updated ${names} from Modrinth on server ${server.id}.`);
+                        notifyContentChanged(req, server.id, 'plugins');
+                    }
+                }
+
                 await serverManager.setOperationalState(server.id, STATES.STOPPED);
                 const doneMsg = type === 'custom'
                     ? 'Jar replaced from new URL'
@@ -680,7 +706,8 @@ router.post('/servers/:id/upgrade-jar', async (req, res) => {
                 if (isVersionChange) notifyDashboard(req);
                 serverManager.broadcastOperation(server.id, 'jar-upgrade', 'complete', {
                     build: result?.build || null,
-                    version: isVersionChange ? targetVersion : server.version
+                    version: isVersionChange ? targetVersion : server.version,
+                    ...(contentUpdate ? { contentUpdate } : {})
                 });
             } catch (err) {
                 libStash?.rollback();
