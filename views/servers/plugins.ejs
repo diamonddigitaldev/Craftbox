@@ -24,6 +24,13 @@ const _gate = 'stopped crashed';
 <div class="d-flex align-items-center justify-content-between mb-3">
     <h6 class="text-body-secondary mb-0" id="installed-count"><%= files.length %> <%= files.length === 1 ? contentType.label.toLowerCase().slice(0, -1) : contentType.label.toLowerCase() %> installed</h6>
     <div class="d-flex gap-2<%= files.length > 0 ? '' : ' d-none' %>" id="list-actions">
+        <%# Shown by plugins.js once Modrinth reports an update for a listed file. %>
+        <button type="button" class="btn btn-primary btn-sm d-flex align-items-center gap-1 d-none" id="update-all-btn"
+            data-enable-when="<%= _gate %>" data-disabled-title="Stop the server to update" data-enabled-title=""
+            <%- _serverStopped ? '' : 'disabled title="Stop the server to update"' %>>
+            <span class="material-icons-outlined" style="font-size: 1rem;">upgrade</span>
+            <span>Update All (<span id="update-all-count">0</span>)</span>
+        </button>
         <a href="/servers/<%= server.id %>/plugins/download-all" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1"
            data-download="mods and plugins">
             <span class="material-icons-outlined" style="font-size: 1rem;">download</span>
@@ -95,7 +102,7 @@ const _gate = 'stopped crashed';
                     <% if (contentType.label === 'Mods') { %>
                     <th style="width: 200px;">Environment</th>
                     <% } %>
-                    <th style="width: 90px;"></th>
+                    <th style="width: 130px;"></th>
                 </tr>
             </thead>
             <tbody id="plugins-tbody" data-gate="<%= _gate %>" data-icon="<%= contentType.icon %>"
@@ -123,8 +130,11 @@ const _gate = 'stopped crashed';
                         </select>
                     </td>
                     <% } %>
-                    <td class="text-center">
-                        <div class="d-inline-flex gap-1">
+                    <%# Right-aligned, so Download and Delete keep their place whether or not
+                        plugins.js has put an Update button before them. %>
+                    <td class="text-end">
+                        <%# plugins.js puts an Update button first in here when Modrinth has a newer version. %>
+                        <div class="d-inline-flex gap-1 row-actions">
                             <a href="/servers/<%= server.id %>/plugins/download?file=<%= encodeURIComponent(file.name) %>"
                                class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center"
                                style="width: 32px; height: 32px; padding: 0;" title="Download"

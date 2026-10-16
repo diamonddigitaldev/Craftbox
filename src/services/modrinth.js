@@ -223,6 +223,27 @@ async function getVersionsByHashes(hashes, algorithm) {
 }
 
 /**
+ * For each file hash, the newest version of the same project that matches the
+ * given loaders and game versions — how launchers check for mod updates. A
+ * hash with no matching version (none for this Minecraft version, or not on
+ * Modrinth at all) is absent from the map. Not cached, as above.
+ * @param {string[]} hashes - hex digests
+ * @param {'sha512'|'sha1'} algorithm
+ * @param {{loaders?: string[], gameVersions?: string[]}} filters
+ */
+async function getLatestVersionsByHashes(hashes, algorithm, { loaders, gameVersions } = {}) {
+    if (!hashes.length) return {};
+    const body = { hashes, algorithm };
+    if (Array.isArray(loaders) && loaders.length) body.loaders = loaders;
+    if (Array.isArray(gameVersions) && gameVersions.length) body.game_versions = gameVersions;
+    return mrRequest('/version_files/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+}
+
+/**
  * List a project's versions, optionally filtered by loader / game version
  * (Modrinth expects both filters as JSON-encoded arrays).
  *
@@ -257,5 +278,6 @@ module.exports = {
     getVersion,
     getProjectVersions,
     getVersionsByHashes,
+    getLatestVersionsByHashes,
     isQuiltOnly
 };

@@ -1,18 +1,15 @@
 // Same-origin proxy for the Modrinth API (browser CSP is connect-src 'self')
-// plus the install-into-existing-server route. Server creation from a modpack
-// lives in servers.js alongside the other create flows.
+// plus the routes that install and update an existing server's mods and
+// plugins. Server creation from a modpack lives in servers.js alongside the
+// other create flows.
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const router = express.Router();
 const modrinth = require('../../services/modrinth');
+const { loaderGroupFor, scanInstalled, describeRow, installProject, updateContent } = require('../../services/modrinthContent');
 const { serversDb, SERVERS_DIR } = require('../../db');
 const { getContentType } = require('../../utils/contentType');
-const { isPathInside } = require('../../utils/pathSafety');
-const { isZipFile } = require('../../utils/uploadSafety');
-const { DISABLED_SUFFIX } = require('../../utils/modEnvironment');
-const { downloadToFile } = require('../../utils/httpDownload');
 const { logEvent } = require('../../utils/eventLogger');
 const { log } = require('../../utils/log');
 const { notifyContentChanged } = require('../../utils/liveUpdates');
@@ -21,21 +18,6 @@ const { notifyContentChanged } = require('../../utils/liveUpdates');
 const { MC_VERSION_RE } = require('../../utils/mcVersion');
 const SEARCH_INDEXES = ['relevance', 'downloads', 'follows', 'newest', 'updated'];
 const MODPACK_LOADERS = ['fabric', 'forge', 'neoforge'];
-
-// Craftbox server type -> Modrinth loader facets. Plugin platforms accept
-// their upstream families (a Bukkit/Spigot plugin runs fine on Paper).
-const LOADER_GROUPS = {
-    fabric: ['fabric'],
-    forge: ['forge'],
-    neoforge: ['neoforge'],
-    paper: ['paper', 'spigot', 'bukkit'],
-    purpur: ['purpur', 'paper', 'spigot', 'bukkit'],
-    folia: ['folia']
-};
-
-function loaderGroupFor(serverTypeOrLoader) {
-    return LOADER_GROUPS[serverTypeOrLoader] || null;
-}
 
 function sendModrinthError(res, err) {
     if (err instanceof modrinth.ModrinthApiError) {
@@ -191,76 +173,40 @@ router.get('/modrinth/projects/:idOrSlug/versions', async (req, res) => {
     }
 });
 
-// Per-file digest memo for the installed-projects lookup — hashing a large
-// modpack's mods folder on every modal open would be wasteful. Keyed by
-// path+size+mtime so an edited or replaced jar re-hashes.
-const jarHashCache = new Map();
-const JAR_HASH_CACHE_MAX = 5000;
-
-function sha512File(filePath) {
-    return new Promise((resolve, reject) => {
-        const hash = crypto.createHash('sha512');
-        fs.createReadStream(filePath)
-            .on('error', reject)
-            .on('data', (chunk) => hash.update(chunk))
-            .on('end', () => resolve(hash.digest('hex')));
-    });
-}
-
-async function hashJarCached(filePath) {
-    const stat = await fs.promises.stat(filePath);
-    const key = `${filePath}|${stat.size}|${stat.mtimeMs}`;
-    if (jarHashCache.has(key)) return jarHashCache.get(key);
-    const digest = await sha512File(filePath);
-    if (jarHashCache.size >= JAR_HASH_CACHE_MAX) jarHashCache.clear();
-    jarHashCache.set(key, digest);
-    return digest;
-}
-
 // GET /servers/:id/modrinth-installed — which Modrinth projects are already
 // present in the server's content folder, matched by file hash the way
-// launchers do it. Locally-built or modified jars simply won't match — the
-// 409 on install remains the fallback for those.
+// launchers do it, and which of them have a newer version for the server.
+// Locally-built or modified jars simply won't match — the 409 on install
+// remains the fallback for those.
 router.get('/servers/:id/modrinth-installed', async (req, res) => {
     const server = await serversDb.get(`server_${req.params.id}`);
     if (!server) return res.status(404).json({ error: 'Server not found.' });
 
-    const contentType = getContentType(server.serverType);
-    if (!contentType) {
+    if (!getContentType(server.serverType)) {
         return res.status(400).json({ error: 'This server type does not support plugins or mods.' });
     }
 
-    const contentDir = path.join(SERVERS_DIR, server.id, contentType.folder);
-    let files = [];
     try {
-        // Disabled jars count as installed: a modpack's client-only mods land
-        // pre-disabled, and leaving them out would offer them for install again.
-        files = (await fs.promises.readdir(contentDir)).filter(f => {
-            const lower = f.toLowerCase();
-            return lower.endsWith('.jar') || lower.endsWith('.jar' + DISABLED_SUFFIX);
-        });
-    } catch { /* no content dir yet — nothing installed */ }
-    if (files.length === 0) return res.json({ projects: {} });
-
-    try {
-        const hashToFile = new Map();
-        for (const name of files) {
-            try {
-                hashToFile.set(await hashJarCached(path.join(contentDir, name)), name);
-            } catch { /* unreadable file — skip it */ }
-        }
-        const matches = await modrinth.getVersionsByHashes([...hashToFile.keys()], 'sha512');
+        const rows = await scanInstalled(server);
         const projects = {};
-        for (const [hash, version] of Object.entries(matches || {})) {
-            if (version && version.project_id) {
-                projects[version.project_id] = hashToFile.get(hash) || true;
-            }
+        const updates = {};
+        for (const row of rows) {
+            projects[row.projectId] = row.filename;
+            if (row.updateAvailable) updates[row.projectId] = describeRow(row);
         }
-        res.json({ projects });
+        res.json({ projects, updates, files: rows.map(describeRow) });
     } catch (err) {
         sendModrinthError(res, err);
     }
 });
+
+// Same gate as uploads — no changing content under a running server
+function contentLocked(req, server) {
+    const serverManager = req.app.get('serverManager');
+    const proc = serverManager?.getProcess(server.id);
+    const state = proc ? proc.state : server.state;
+    return !['stopped', 'crashed'].includes(state);
+}
 
 // POST /servers/:id/modrinth-install — install a mod/plugin (and its required
 // dependencies, Modrinth-style "also installs Fabric API") from Modrinth into
@@ -274,12 +220,7 @@ router.post('/servers/:id/modrinth-install', async (req, res) => {
     if (!contentType) {
         return res.status(400).json({ error: 'This server type does not support plugins or mods.' });
     }
-
-    // Same gate as uploads — no changing content under a running server
-    const serverManager = req.app.get('serverManager');
-    const proc = serverManager?.getProcess(server.id);
-    const state = proc ? proc.state : server.state;
-    if (!['stopped', 'crashed'].includes(state)) {
+    if (contentLocked(req, server)) {
         return res.status(400).json({ error: `The server must be stopped before installing ${contentType.label.toLowerCase()}.` });
     }
 
@@ -292,89 +233,10 @@ router.post('/servers/:id/modrinth-install', async (req, res) => {
         return res.status(400).json({ error: 'Invalid version id.' });
     }
 
-    const loaders = loaderGroupFor(server.serverType);
-    const gameVersions = server.version && server.version !== 'latest' ? [server.version] : undefined;
-    const contentDir = path.join(SERVERS_DIR, server.id, contentType.folder);
     const installed = [];
-    const seenProjects = new Set();
-
-    // Recursive, cycle-safe, depth-capped. The requested project (depth 0) is
-    // strict — incompatibilities are errors. Dependencies degrade gracefully:
-    // already-installed or version-less deps are skipped with a log line.
-    async function installProject(pid, wantedVersionId, depth) {
-        if (depth > 5 || seenProjects.has(pid)) return;
-        seenProjects.add(pid);
-
-        const versions = await modrinth.getProjectVersions(pid, { loaders, gameVersions });
-        let version;
-        if (depth === 0 && wantedVersionId) {
-            version = (versions || []).find(v => v.id === wantedVersionId);
-        } else {
-            // Deps: prefer the pinned version when compatible, else newest compatible
-            version = (wantedVersionId && (versions || []).find(v => v.id === wantedVersionId))
-                || (versions || [])[0];
-        }
-        if (!version) {
-            if (depth === 0) {
-                const e = new Error('No compatible version found for this server.');
-                e.httpStatus = 404;
-                throw e;
-            }
-            log('warn', `Modrinth install for ${server.id}: no compatible version of dependency ${pid} — skipped.`);
-            return;
-        }
-
-        const file = (version.files || []).find(f => f.primary) || (version.files || [])[0];
-        if (!file || !/\.jar$/i.test(file.filename || '')) {
-            if (depth === 0) {
-                const e = new Error('This version has no installable .jar file.');
-                e.httpStatus = 400;
-                throw e;
-            }
-            log('warn', `Modrinth install for ${server.id}: dependency ${pid} has no .jar file — skipped.`);
-            return;
-        }
-
-        const filename = path.basename(file.filename);
-        const dest = path.join(contentDir, filename);
-        if (!isPathInside(contentDir, dest)) {
-            const e = new Error('Invalid file name.');
-            e.httpStatus = 400;
-            throw e;
-        }
-        // A disabled twin is still an install — re-downloading it would leave two
-        // copies of the same mod, and reconcile would delete the enabled one on
-        // the next start anyway (client-only mods from a modpack are disabled).
-        if (fs.existsSync(dest) || fs.existsSync(dest + DISABLED_SUFFIX)) {
-            if (depth === 0) {
-                const e = new Error(`"${filename}" is already installed.`);
-                e.httpStatus = 409;
-                throw e;
-            }
-            return; // dependency already present
-        }
-
-        await downloadToFile(file.url, dest, {
-            maxBytes: 2 * 1024 * 1024 * 1024,
-            sha512: file.hashes?.sha512 || null,
-            enforceWhitelist: true
-        });
-        if (!isZipFile(dest)) {
-            try { fs.unlinkSync(dest); } catch { /* ignore */ }
-            throw new Error(`"${filename}" is not a valid jar file.`);
-        }
-        installed.push({ filename, versionNumber: version.version_number, projectId: pid });
-
-        for (const dep of version.dependencies || []) {
-            if (dep.dependency_type === 'required' && dep.project_id) {
-                await installProject(dep.project_id, dep.version_id || null, depth + 1);
-            }
-        }
-    }
-
     try {
-        fs.mkdirSync(contentDir, { recursive: true });
-        await installProject(projectId, versionId || null, 0);
+        fs.mkdirSync(path.join(SERVERS_DIR, server.id, contentType.folder), { recursive: true });
+        await installProject({ server, installed, seenProjects: new Set() }, projectId, versionId || null, 0);
         const names = installed.map(i => `"${i.filename}"`).join(', ');
         logEvent(server.id, 'action', `Installed ${names} from Modrinth`, { initiatedBy: req.user.username }).catch(() => {});
         log('info', `Installed ${names} from Modrinth into server ${server.id}.`);
@@ -389,6 +251,52 @@ router.post('/servers/:id/modrinth-install', async (req, res) => {
         // disk, so the listing moved either way.
         if (installed.length > 0) notifyContentChanged(req, server.id, 'plugins');
     }
+});
+
+// POST /servers/:id/modrinth-update — update installed Modrinth mods/plugins
+// to the newest version for the server's loader and Minecraft version. Body
+// {filenames?}: the listed files only, or every file with an update when
+// omitted. Synchronous, like an install.
+router.post('/servers/:id/modrinth-update', async (req, res) => {
+    const server = await serversDb.get(`server_${req.params.id}`);
+    if (!server) return res.status(404).json({ error: 'Server not found.' });
+
+    const contentType = getContentType(server.serverType);
+    if (!contentType) {
+        return res.status(400).json({ error: 'This server type does not support plugins or mods.' });
+    }
+    if (contentLocked(req, server)) {
+        return res.status(400).json({ error: `The server must be stopped before updating ${contentType.label.toLowerCase()}.` });
+    }
+
+    let filenames;
+    const body = req.body || {};
+    if (body.filenames !== undefined && body.filenames !== null) {
+        if (!Array.isArray(body.filenames) || body.filenames.length === 0 || body.filenames.length > 1000
+            || !body.filenames.every(f => typeof f === 'string' && f && f === path.basename(f))) {
+            return res.status(400).json({ error: 'filenames must be a list of file names.' });
+        }
+        filenames = body.filenames;
+    }
+
+    let result;
+    try {
+        result = await updateContent(server, { filenames });
+    } catch (err) {
+        if (err.httpStatus) return res.status(err.httpStatus).json({ error: err.message });
+        if (err instanceof modrinth.ModrinthApiError) return sendModrinthError(res, err);
+        log('error', `Modrinth update failed for server ${server.id}: ${err.message}`);
+        return res.status(500).json({ error: err.message || 'Update failed.' });
+    }
+
+    if (result.updated.length > 0 || result.installed.length > 0) {
+        const names = result.updated.map(u => `"${u.newFilename}"`)
+            .concat(result.installed.map(i => `"${i.filename}"`)).join(', ');
+        logEvent(server.id, 'action', `Updated ${names} from Modrinth`, { initiatedBy: req.user.username }).catch(() => {});
+        log('info', `Updated ${names} from Modrinth on server ${server.id}.`);
+        notifyContentChanged(req, server.id, 'plugins');
+    }
+    res.json({ success: true, ...result });
 });
 
 module.exports = router;

@@ -38,6 +38,16 @@ async function clearModEnv(serverId, filename) {
     }
 }
 
+// A mod updated to a file with a new name keeps its environment tag.
+async function renameModEnv(serverId, fromName, toName) {
+    if (fromName === toName) return;
+    const map = await getModEnvMap(serverId);
+    if (!(fromName in map)) return;
+    map[toName] = map[fromName];
+    delete map[fromName];
+    await setModEnvMap(serverId, map);
+}
+
 async function clearAllModEnv(serverId) {
     await modMetadataDb.delete(`modmeta_${serverId}`);
 }
@@ -189,6 +199,7 @@ module.exports = {
     getModEnv,
     setModEnv,
     clearModEnv,
+    renameModEnv,
     clearAllModEnv,
     copyModEnvMap,
     listModFiles,

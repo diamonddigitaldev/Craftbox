@@ -88,9 +88,9 @@
         }
 
         var actionsTd = document.createElement('td');
-        actionsTd.className = 'text-center';
+        actionsTd.className = 'text-end';
         var group = document.createElement('div');
-        group.className = 'd-inline-flex gap-1';
+        group.className = 'd-inline-flex gap-1 row-actions';
 
         var download = document.createElement('a');
         download.href = '/servers/' + serverId + '/plugins/download?file=' + encodeURIComponent(file.name);
@@ -138,6 +138,9 @@
         if (searchBar) searchBar.classList.toggle('d-none', count === 0);
         if (emptyRow) emptyRow.classList.toggle('d-none', count > 0);
 
+        // Rows drawn again lose their update buttons; put back the ones the
+        // last Modrinth lookup knows about until the next one lands.
+        applyUpdateButtons();
         // New controls take the live gate, not the one the page loaded with.
         applyStateGates();
         applyFilters();
@@ -161,6 +164,9 @@
             return;
         }
         renderRows(res.data.files || []);
+        // What changed on disk can change what Modrinth reports, both for the
+        // rows' update buttons and for the Browse Modrinth panel.
+        loadModrinthState();
     }
 
     // Another tab changed the folder. Own changes are skipped — the handler
@@ -174,6 +180,166 @@
         clearTimeout(remoteRefreshTimer);
         remoteRefreshTimer = setTimeout(refreshList, 300);
     });
+
+    // ── Modrinth updates ──
+    // Which listed files are Modrinth files, and which of those have a newer
+    // version for this server's loader and Minecraft version — matched by hash
+    // server-side. Fetched on load and again after every change to the
+    // listing, so neither the rows' update buttons nor the Browse Modrinth
+    // panel's Install / Installed / Update can go stale.
+
+    var updateAllBtn = document.getElementById('update-all-btn');
+    var updateAllCountEl = document.getElementById('update-all-count');
+    // { projects: {projectId: filename}, updates: {projectId: {...}} }, null
+    // until the first lookup lands.
+    var mrState = null;
+    var updatesByFilename = {};
+    var mrStateSeq = 0;
+    // Called with each new state — the Browse panel re-marks its rows.
+    var mrStateListeners = [];
+
+    async function loadModrinthState() {
+        var seq = ++mrStateSeq;
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/modrinth-installed');
+        if (seq !== mrStateSeq) return;
+        // Modrinth unreachable: offer no updates and mark nothing installed;
+        // installing a file that is already there still answers 409.
+        var data = (res.ok && res.data) || {};
+        mrState = { projects: data.projects || {}, updates: data.updates || {} };
+        updatesByFilename = {};
+        Object.keys(mrState.updates).forEach(function (projectId) {
+            var info = mrState.updates[projectId];
+            updatesByFilename[info.filename] = info;
+        });
+        applyUpdateButtons();
+        mrStateListeners.forEach(function (fn) { fn(); });
+    }
+
+    function buildUpdateButton(filename) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-primary btn-sm d-inline-flex align-items-center justify-content-center update-btn';
+        btn.style.cssText = 'width: 32px; height: 32px; padding: 0;';
+        btn.dataset.filename = filename;
+        btn.dataset.enableWhen = gate;
+        btn.dataset.disabledTitle = 'Stop the server to update';
+        btn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">upgrade</span>';
+        return btn;
+    }
+
+    // An Update button on each row Modrinth has a newer version for, and on
+    // none of the others; Update All counts them.
+    function applyUpdateButtons() {
+        var count = 0;
+        listedRows.forEach(function (row) {
+            var info = updatesByFilename[row.dataset.filename];
+            var btn = row.querySelector('.update-btn');
+            if (!info) {
+                if (btn && !btn.dataset.busy) btn.remove();
+                return;
+            }
+            count++;
+            if (!btn) {
+                btn = buildUpdateButton(row.dataset.filename);
+                var group = row.querySelector('.row-actions');
+                if (group) group.insertBefore(btn, group.firstChild);
+            }
+            btn.dataset.enabledTitle = 'Update to ' + info.latest.versionNumber;
+        });
+        if (updateAllBtn) updateAllBtn.classList.toggle('d-none', count === 0);
+        if (updateAllCountEl) updateAllCountEl.textContent = String(count);
+        applyStateGates();
+    }
+
+    // POST /modrinth-update, for the named files or (null) all of them.
+    // Resolves to the response, after the listing has caught up with it.
+    async function requestUpdate(filenames) {
+        var res = await apiFetch('/api/v1/servers/' + serverId + '/modrinth-update', {
+            method: 'POST',
+            body: filenames ? { filenames: filenames } : {}
+        });
+        if (res.ok && res.data && ((res.data.updated || []).length || (res.data.installed || []).length)) {
+            await refreshList();
+        }
+        return res;
+    }
+
+    // The toast for updating one file: what it became, or why it didn't.
+    function singleUpdateToast(res) {
+        var data = res.data || {};
+        if (!res.ok) {
+            showToast(data.message || data.error || 'Update failed.', 'danger');
+            return false;
+        }
+        var updated = (data.updated || [])[0];
+        var deps = (data.installed || []).length;
+        if (updated) {
+            showToast(updated.filename + ' updated to ' + updated.toVersion
+                + (deps ? ' (+' + deps + ' ' + (deps === 1 ? 'dependency' : 'dependencies') + ')' : '') + '.', 'success');
+            return true;
+        }
+        var skipped = (data.skipped || [])[0] || {};
+        if (skipped.reason === 'up-to-date') {
+            showToast(skipped.filename + ' is already up to date.', 'info');
+        } else {
+            showToast('Update failed' + (skipped.error ? ': ' + skipped.error : '.'), 'danger');
+        }
+        return false;
+    }
+
+    if (tbody) {
+        // Bound once, on the table, so rows drawn later work too.
+        tbody.addEventListener('click', async function (e) {
+            var btn = e.target.closest('.update-btn');
+            if (!btn || btn.disabled) return;
+            btn.disabled = true;
+            btn.dataset.busy = '1';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+            try {
+                singleUpdateToast(await requestUpdate([btn.dataset.filename]));
+            } catch {
+                showToast('Update failed. Please try again.', 'danger');
+            }
+            // A row that updated was redrawn without this button; one that
+            // didn't keeps it, as Modrinth still has the update.
+            delete btn.dataset.busy;
+            btn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">upgrade</span>';
+            applyUpdateButtons();
+        });
+    }
+
+    if (updateAllBtn) {
+        updateAllBtn.addEventListener('click', async function () {
+            if (updateAllBtn.disabled) return;
+            updateAllBtn.disabled = true;
+            showOverlay('Updating ' + contentLabel + '...', 'Downloading the latest versions from Modrinth.');
+            try {
+                var res = await requestUpdate(null);
+                var data = res.data || {};
+                hideOverlay();
+                if (!res.ok) {
+                    showToast(data.message || data.error || 'Update failed.', 'danger');
+                } else {
+                    var count = (data.updated || []).length;
+                    var failed = (data.skipped || []).filter(function (s) { return s.reason === 'failed'; }).length;
+                    var noun = count === 1 ? contentSingular : contentLabel;
+                    if (failed > 0) {
+                        showToast(count + ' ' + noun + ' updated, ' + failed + ' failed.', 'warning');
+                    } else if (count > 0) {
+                        showToast(count + ' ' + noun + ' updated.', 'success');
+                    } else {
+                        showToast('All ' + contentLabel + ' are up to date.', 'info');
+                    }
+                }
+            } catch {
+                hideOverlay();
+                showToast('Update failed. Please try again.', 'danger');
+            }
+            applyStateGates();
+        });
+    }
+
+    if (tbody && listedRows.length > 0) loadModrinthState();
 
     // ── Search / Filter ──
     // Both live here rather than only in their inputs, so a redraw after an
@@ -566,9 +732,6 @@
         var mrTotal = 0;
         var mrSeq = 0;
         var mrLoadedOnce = false;
-        // projectId -> filename for files already in the content folder,
-        // matched by hash server-side. null until the lookup lands.
-        var mrInstalledProjects = null;
 
         function mrCompactNumber(n) {
             if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -578,28 +741,31 @@
 
         modrinthBrowseBtn.addEventListener('click', function () {
             bsModrinthModal.show();
+            // Asked again on every open: the folder may have changed since,
+            // here or in another tab, and the rows must say so.
+            loadModrinthState();
             if (!mrLoadedOnce) {
                 mrLoadedOnce = true;
-                loadInstalledProjects();
                 mrSearch(false);
             }
         });
 
-        // Already-installed detection: rows render immediately from the search,
-        // then get re-marked once the hash lookup answers (whichever is slower).
-        async function loadInstalledProjects() {
-            var res = await apiFetch('/api/v1/servers/' + serverId + '/modrinth-installed');
-            mrInstalledProjects = (res.ok && res.data && res.data.projects) || {};
-            markInstalledRows();
-        }
-
+        // Rows render straight from the search, then get re-marked whenever
+        // the installed lookup answers (whichever is slower) — every row, so
+        // a mod deleted since goes back to Install.
         function markInstalledRows() {
-            if (!mrInstalledProjects) return;
+            if (!mrState) return;
             mrResults.querySelectorAll('button[data-project-id]').forEach(function (btn) {
-                if (!btn.disabled && mrInstalledProjects[btn.dataset.projectId]) {
-                    mrMarkInstalled(btn);
-                }
+                if (btn.dataset.busy) return;
+                mrSetButton(btn, mrModeFor(btn.dataset.projectId));
             });
+        }
+        mrStateListeners.push(markInstalledRows);
+
+        function mrModeFor(projectId) {
+            if (!mrState) return 'install';
+            if (mrState.updates[projectId]) return 'update';
+            return mrState.projects[projectId] ? 'installed' : 'install';
         }
 
         async function mrSearch(append) {
@@ -712,43 +878,73 @@
             btnTd.style.width = '130px';
             var installBtn = document.createElement('button');
             installBtn.type = 'button';
-            installBtn.className = 'btn btn-success btn-sm d-inline-flex align-items-center gap-1';
-            installBtn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">download</span>Install';
             installBtn.dataset.projectId = hit.projectId;
             installBtn.addEventListener('click', function () {
-                mrInstall(installBtn, hit);
+                if (installBtn.dataset.mode === 'update') mrUpdate(installBtn, hit);
+                else mrInstall(installBtn, hit);
             });
-            if (mrInstalledProjects && mrInstalledProjects[hit.projectId]) {
-                mrMarkInstalled(installBtn);
-            }
+            mrSetButton(installBtn, mrModeFor(hit.projectId));
             btnTd.appendChild(installBtn);
             tr.appendChild(btnTd);
 
             return tr;
         }
 
+        var MR_MODES = {
+            install: { className: 'btn-success', icon: 'download', label: 'Install' },
+            installed: { className: 'btn-outline-success', icon: 'check', label: 'Installed' },
+            update: { className: 'btn-primary', icon: 'upgrade', label: 'Update' }
+        };
+
+        function mrSetButton(btn, mode) {
+            var m = MR_MODES[mode];
+            btn.dataset.mode = mode;
+            btn.className = 'btn ' + m.className + ' btn-sm d-inline-flex align-items-center gap-1';
+            btn.disabled = mode === 'installed';
+            var info = mode === 'update' && mrState && mrState.updates[btn.dataset.projectId];
+            btn.title = info ? 'Update to ' + info.latest.versionNumber : '';
+            btn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">' + m.icon + '</span>' + m.label;
+        }
+
         function mrMarkInstalled(btn) {
-            btn.className = 'btn btn-outline-success btn-sm d-inline-flex align-items-center gap-1';
+            mrSetButton(btn, 'installed');
+        }
+
+        async function mrUpdate(btn, hit) {
+            var filename = mrState && mrState.projects[hit.projectId];
+            if (!filename) return;
             btn.disabled = true;
-            btn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">check</span>Installed';
+            btn.dataset.busy = '1';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Updating...';
+            var updated = false;
+            try {
+                updated = singleUpdateToast(await requestUpdate([filename]));
+            } catch {
+                showToast('Update failed. Please try again.', 'danger');
+            }
+            delete btn.dataset.busy;
+            // The listing's refresh brings a new state that re-marks the row;
+            // until then it shows what just happened.
+            mrSetButton(btn, updated ? 'installed' : mrModeFor(hit.projectId));
         }
 
         async function mrInstall(btn, hit) {
             btn.disabled = true;
+            btn.dataset.busy = '1';
             btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Installing...';
 
             var res = await apiFetch('/api/v1/servers/' + serverId + '/modrinth-install', {
                 method: 'POST',
                 body: { projectId: hit.projectId }
             });
+            delete btn.dataset.busy;
             if (!res.ok) {
                 showToast((res.data && (res.data.message || res.data.error)) || 'Install failed.',
                     res.status === 409 ? 'warning' : 'danger');
                 if (res.status === 409) {
                     mrMarkInstalled(btn);
                 } else {
-                    btn.disabled = false;
-                    btn.innerHTML = '<span class="material-icons-outlined" style="font-size: 1rem;">download</span>Install';
+                    mrSetButton(btn, 'install');
                 }
                 return;
             }
@@ -760,10 +956,11 @@
             showToast(msg, 'success');
             mrMarkInstalled(btn);
             // Fold the new files (incl. auto-installed dependencies) into the
-            // installed set so their rows flip to "Installed" too.
-            if (mrInstalledProjects) {
+            // installed set so their rows flip to "Installed" too, ahead of
+            // the fresh lookup the listing's refresh makes.
+            if (mrState) {
                 files.forEach(function (f) {
-                    if (f.projectId) mrInstalledProjects[f.projectId] = f.filename;
+                    if (f.projectId) mrState.projects[f.projectId] = f.filename;
                 });
                 markInstalledRows();
             }

@@ -1,8 +1,9 @@
 // Modrinth test: Craftbox's Modrinth integration against the real Modrinth,
 // so it runs weekly rather than on every PR. The proxied search and
 // lookups, installing a mod with its required dependency into a Fabric
-// server and starting it with them loaded, a plugin into Paper, and a whole
-// server created from a published modpack, then started.
+// server and starting it with them loaded, a plugin into Paper, updating
+// older mods, and a whole server created from a published modpack, then
+// started.
 //
 //   CRAFTBOX_URL=http://localhost:6464 node test/ci/modrinth.mjs
 
@@ -18,9 +19,14 @@ const FABRIC_API = 'P7dR8mSH';
 // built to run on servers too
 const MODPACK = 'BYfVnHa7';
 
+// The Minecraft version the update checks start from: old enough that the
+// mods have newer versions for it, and newer ones for later Minecraft
+const OLD_MC = '1.21.4';
+
 const run = createRunner('Modrinth test');
 await waitForPanel();
-const api = apiClient((await openPanel()).key);
+const panel = await openPanel();
+const api = apiClient(panel.key);
 
 // A Modrinth lookup through Craftbox, which answers 502 or 429 when
 // Modrinth is down or rate limiting
@@ -85,6 +91,46 @@ await run.step('installs a plugin into a Paper server', async () => {
     assert(res.status === 200 && res.body.installed.length === 1, `install: ${res.status} ${res.text}`);
     const files = (await api('GET', `/servers/${server.id}/plugins`)).body.files.map((f) => f.name);
     assert(files.includes(res.body.installed[0].filename), `plugins: ${files.join(', ')}`);
+});
+
+console.log('Updates');
+let updates = null;
+// The oldest version of a project for Fabric on OLD_MC, installed
+async function installOldest(id, project) {
+    const versions = (await modrinth('GET', `/modrinth/projects/${project}/versions?loader=fabric&gameVersion=${OLD_MC}`)).body.versions;
+    assert(versions?.length > 1, `${project} has no older version for Fabric ${OLD_MC}`);
+    const oldest = versions[versions.length - 1];
+    const res = await modrinth('POST', `/servers/${id}/modrinth-install`, { projectId: project, versionId: oldest.id });
+    assert(res.status === 200, `install ${project}: ${res.status} ${res.text}`);
+    return res.body.installed[0];
+}
+const modFiles = async (id) => (await api('GET', `/servers/${id}/plugins`)).body.files;
+await run.step('reports and applies updates, and a client-only mod stays client-only', async () => {
+    updates = await provisionServer(api, {
+        name: 'CI Modrinth Updates', serverType: 'fabric', version: OLD_MC, port: 25568, memory: 2048, eula: true
+    }, { timeoutMs: PROVISION_TIMEOUT, label: 'fabric updates' });
+    const fapi = await installOldest(updates.id, 'fabric-api');
+    const lithium = await installOldest(updates.id, 'lithium');
+    assertStatus(await api('POST', `/servers/${updates.id}/plugins/environment`,
+        { filename: lithium.filename, environment: 'client' }), 200, 'client-only');
+
+    const state = (await modrinth('GET', `/servers/${updates.id}/modrinth-installed`)).body;
+    for (const mod of [fapi, lithium]) {
+        const u = Object.values(state.updates || {}).find((x) => x.filename === mod.filename);
+        assert(u?.updateAvailable && u.filename === mod.filename && u.latest.versionNumber !== mod.versionNumber,
+            `no update for ${mod.filename}: ${JSON.stringify(state.updates)}`);
+    }
+
+    const one = await modrinth('POST', `/servers/${updates.id}/modrinth-update`, { filenames: [fapi.filename] });
+    assert(one.status === 200 && one.body.updated.length === 1 && one.body.updated[0].projectId === FABRIC_API, `update one: ${one.text}`);
+    const rest = await modrinth('POST', `/servers/${updates.id}/modrinth-update`, {});
+    assert(rest.status === 200 && rest.body.updated.length === 1 && rest.body.updated[0].filename === lithium.filename, `update the rest: ${rest.text}`);
+    const files = await modFiles(updates.id);
+    const names = files.map((f) => f.name);
+    assert(!names.includes(fapi.filename) && names.includes(one.body.updated[0].newFilename), names.join(', '));
+    assert(files.find((f) => f.name === rest.body.updated[0].newFilename)?.environment === 'client', 'lithium is no longer client-only');
+    const after = (await modrinth('GET', `/servers/${updates.id}/modrinth-installed`)).body.updates;
+    assert(Object.keys(after).length === 0, `still to update: ${JSON.stringify(after)}`);
 });
 
 console.log('Modpacks');
