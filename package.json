@@ -33,7 +33,7 @@
         "bcrypt": "^6.0.0",
         "better-sqlite3": "^13.0.3",
         "bootstrap": "^5.3.8",
-        "chart.js": "^4.5.1",
+        "chart.js": "^4.6.1",
         "content-disposition": "^3.0.0",
         "ejs": "^6.0.1",
         "express": "^5.2.1",
