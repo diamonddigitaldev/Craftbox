@@ -46,7 +46,7 @@
         "passport-local": "^1.0.0",
         "quick.db": "^9.1.7",
         "sharp": "^0.35.5",
-        "uuid": "^14.0.2",
+        "uuid": "^14.0.3",
         "ws": "^8.22.0"
     },
     "allowScripts": {
